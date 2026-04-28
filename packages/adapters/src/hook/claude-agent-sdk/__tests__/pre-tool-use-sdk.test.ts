@@ -43,7 +43,7 @@ describe("createPreToolUseHandler (SDK)", () => {
 
     expect(result.permissionDecision).toBe("deny");
     expect(result.permissionDecisionReason).toContain("fetch");
-    expect(result.permissionDecisionReason).toMatch(/◈ TeamAgent 阻止操作/);
+    expect(result.permissionDecisionReason).toMatch(/\+-- TeamAgent 阻止操作 -+\+/);
     expect(result.permissionDecisionReason).toMatch(/置信度 0\.\d+/);
     expect(mockEventLog.append).toHaveBeenCalledWith(expect.objectContaining({
       kind: "hook-pre.blocked",
@@ -76,7 +76,7 @@ describe("createPreToolUseHandler (SDK)", () => {
 
     expect(result.permissionDecision).toBe("allow");
     expect(result.systemMessage).toContain("fetch");
-    expect(result.systemMessage).toMatch(/◈ TeamAgent 经验提醒/);
+    expect(result.systemMessage).toMatch(/\+-- TeamAgent 经验提醒 -+\+/);
     expect(result.systemMessage).toMatch(/置信度 0\.\d+/);
     expect(result.systemMessage).toMatch(/前学到/);
     expect(mockEventLog.append).toHaveBeenCalledWith(expect.objectContaining({

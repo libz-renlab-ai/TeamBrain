@@ -13,6 +13,7 @@
     "smoke:llm": "tsx scripts/smoke-llm.ts",
     "smoke:hook": "tsx scripts/hook-smoke-test.ts",
     "smoke:claudefast": "tsx scripts/claudefast-stream-json-tests.ts",
+    "smoke:claudefast:rule-card": "tsx scripts/claudefast-rule-card-smoke.ts",
     "verify": "tsx packages/cli/src/bin.ts verify",
     "dogfood-report": "tsx packages/cli/src/bin.ts dogfood-report",
     "benchmark": "pnpm --filter @teamagent/benchmark bench",
