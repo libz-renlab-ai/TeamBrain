@@ -11,6 +11,7 @@ packages/*/.teamagent/
 .teamagent/
 .worktrees/
 .claude/worktrees/
+.codex/worktrees/
 packages/benchmark/bench-report.json
 packages/benchmark/bench-report.md
 packages/benchmark/bench-*.json

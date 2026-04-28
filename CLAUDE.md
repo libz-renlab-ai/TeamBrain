@@ -23,6 +23,7 @@
 - **TDD**：每个新功能先写测试（看到红）→ 写最小实现（变绿）→ commit。
 - **小 commit**：每个 commit 覆盖一个 "概念上完整的小事"。跑得通、测试绿。
 - **commit message 格式**：`feat(m{N}): <...>` / `fix(m{N}): <...>` / `refactor(m{N}): <...>`，让 Milestone 产出在 git 历史中可溯。
+- **worktree 位置**：新建 git worktree 必须放在仓库内的 `.codex/worktrees/` 目录下，不要放在仓库同级目录、`.worktrees/` 或 `.claude/worktrees/`。
 
 ## 跑命令
 
