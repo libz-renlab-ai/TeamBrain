@@ -1,0 +1,31 @@
+Captured from claudefast interactive mode on 2026-04-28.
+
+Purpose:
+This file documents that the verification flow also exercises interactive
+claudefast, not only `claudefast -p --output-format stream-json`.
+
+Steps used:
+1. Started `claudefast` without `-p`, so Claude Code opened interactive mode.
+2. Sent: `Say exactly TEAMAGENT_EXPORT_SMOKE_OK`
+3. Ran: `/export`
+4. The export command produced the conversation text below.
+
+Exported conversation:
+
+ ▐▛███▜▌   Claude Code v2.1.121
+▝▜█████▛▘  MiniMax-M2.7-highspeed · API Usage Billing
+  ▘▘ ▝▝    ~/projects/TeamBrain
+
+
+ ⚠Auth conflict: Both a token (ANTHROPIC_AUTH_TOKEN) and an API key (ANTHROPIC_API_KEY) are set. This may lead to unexpected behavior.
+    · Trying to use ANTHROPIC_AUTH_TOKEN? Unset the ANTHROPIC_API_KEY environment variable, or claude /logout then say "No" to the API key approval before login.
+    · Trying to use ANTHROPIC_API_KEY? Unset the ANTHROPIC_AUTH_TOKEN environment variable.
+
+❯ Say exactly TEAMAGENT_EXPORT_SMOKE_OK
+
+⏺ TEAMAGENT_EXPORT_SMOKE_OK
+
+✻ Crunched for 2s
+
+❯ /export
+  ⎿  Conversation copied to clipboard
