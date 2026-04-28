@@ -135,11 +135,11 @@ function formatWarnMessage(rule: any, now: Date): string {
   const correct = rule.correct_pattern ?? rule.trigger ?? "";
   const wrong = rule.wrong_pattern ?? "";
   const reasoning = rule.reasoning ?? "";
-  const lines = [`◈ TeamAgent 经验提醒 [置信度 ${conf} · ${age}学到]`];
-  if (wrong) lines.push(`  ✗ 避免: ${wrong}`);
-  if (correct) lines.push(`  ✓ 使用: ${correct}`);
-  if (reasoning) lines.push(`  · 理由: ${reasoning}`);
-  return lines.join("\n");
+  const lines = [`置信度 ${conf} · ${age}学到`];
+  if (wrong) lines.push(...formatRuleField("避免", wrong));
+  if (correct) lines.push(...formatRuleField("使用", correct));
+  if (reasoning) lines.push(...formatRuleField("理由", reasoning));
+  return formatAsciiRuleBlock("TeamAgent 经验提醒", lines);
 }
 
 function formatBlockReason(rule: any, now: Date): string {
@@ -149,9 +149,65 @@ function formatBlockReason(rule: any, now: Date): string {
   const correct = rule.correct_pattern ?? rule.trigger ?? "";
   const wrong = rule.wrong_pattern ?? "";
   const reasoning = rule.reasoning ?? "";
-  const lines = [`◈ TeamAgent 阻止操作 [置信度 ${conf} · 已触发 ${hitCount} 次 · ${age}学到]`];
-  if (wrong) lines.push(`  ✗ 避免: ${wrong}`);
-  if (correct) lines.push(`  ✓ 使用: ${correct}`);
-  if (reasoning) lines.push(`  · 理由: ${reasoning}`);
-  return lines.join("\n");
+  const lines = [`置信度 ${conf} · 已触发 ${hitCount} 次 · ${age}学到`];
+  if (wrong) lines.push(...formatRuleField("避免", wrong));
+  if (correct) lines.push(...formatRuleField("使用", correct));
+  if (reasoning) lines.push(...formatRuleField("理由", reasoning));
+  return formatAsciiRuleBlock("TeamAgent 阻止操作", lines);
+}
+
+const RULE_BOX_WIDTH = 72;
+const RULE_BOX_INNER_WIDTH = RULE_BOX_WIDTH - 4;
+
+function formatRuleField(label: string, value: string): string[] {
+  return wrapRuleLine(`${label}: ${value}`, RULE_BOX_INNER_WIDTH);
+}
+
+function formatAsciiRuleBlock(title: string, lines: string[]): string {
+  const titlePrefix = `+-- ${title} `;
+  const titleBorder = "-".repeat(Math.max(2, RULE_BOX_WIDTH - titlePrefix.length - 1));
+  const border = `+${"-".repeat(RULE_BOX_WIDTH - 2)}+`;
+  const body = lines.flatMap((line) => wrapRuleLine(line, RULE_BOX_INNER_WIDTH));
+
+  return [
+    `${titlePrefix}${titleBorder}+`,
+    ...body.map((line) => `| ${line.padEnd(RULE_BOX_INNER_WIDTH, " ")} |`),
+    border,
+  ].join("\n");
+}
+
+function wrapRuleLine(line: string, width: number): string[] {
+  if (line.length <= width) return [line];
+
+  const wrapped: string[] = [];
+  let current = "";
+
+  for (const word of line.split(/(\s+)/)) {
+    if (word.length === 0) continue;
+    if (/^\s+$/.test(word)) {
+      if (current && !current.endsWith(" ")) current += " ";
+      continue;
+    }
+
+    if (word.length > width) {
+      if (current.trim()) {
+        wrapped.push(current.trimEnd());
+        current = "";
+      }
+      for (let i = 0; i < word.length; i += width) {
+        wrapped.push(word.slice(i, i + width));
+      }
+      continue;
+    }
+
+    if ((current + word).length > width) {
+      if (current.trim()) wrapped.push(current.trimEnd());
+      current = word;
+    } else {
+      current += word;
+    }
+  }
+
+  if (current.trim()) wrapped.push(current.trimEnd());
+  return wrapped.length > 0 ? wrapped : [line.slice(0, width)];
 }
