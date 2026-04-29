@@ -39,6 +39,30 @@ teamagent init --target=both
 
 ---
 
+## 实时 dashboard
+
+想看真实规则和 Hook 事件的实时变化，直接在项目根目录启动：
+
+```bash
+pnpm teamagent dashboard --watch --open
+```
+
+它会先生成 `docs/dashboard.html`，再启动本地服务，默认地址是：
+
+```text
+http://127.0.0.1:8787/dashboard.html
+```
+
+实时模式每 2 秒重新读取 `.teamagent/knowledge.db`、`~/.teamagent/global.db`
+和 `~/.teamagent/events.db`，重生成 dashboard，并让浏览器自动刷新。常用选项：
+
+```bash
+pnpm teamagent dashboard --watch --port=0 --interval=5s  # 随机空闲端口，5 秒刷新
+pnpm teamagent dashboard --once                          # 只生成 docs/dashboard.html，不启动服务
+```
+
+---
+
 ## 自动更新（用户零操作）
 
 装完之后**完全不用管**。每次开 Claude Code 时 SessionStart hook 在后台静默：

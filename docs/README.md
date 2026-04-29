@@ -11,7 +11,8 @@ the indexes below to choose what to read first.
 | Understand the product quickly | [系统展示.md](系统展示.md) |
 | Understand the architecture shape | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Look up implementation details | [SYSTEM.md](SYSTEM.md) |
-| Verify or test a feature/fix | [feature-verification.md](feature-verification.md) |
+| Launch the real-time dashboard | Run `pnpm teamagent dashboard --watch --open` |
+| Verify or test a feature/fix, including PR review gates | [feature-verification.md](feature-verification.md) |
 | Check PR #14 status | [pr-14-status.md](pr-14-status.md) |
 | Find foundational specs | [specs/README.md](specs/README.md) |
 | Find later milestone specs and plans | [superpowers/README.md](superpowers/README.md) |
@@ -35,7 +36,7 @@ the indexes below to choose what to read first.
 
 1. [feature-verification.md](feature-verification.md) for the required
    feature/fix verification gate: `claudefast`, `codex`, JSON hard-match, tmux
-   `/export`, and commit/PR evidence.
+   `/export`, PR review gate, and commit/PR evidence.
 2. [pr-14-status.md](pr-14-status.md) for the current PR #14 local status
    index when GitHub access is blocked.
 

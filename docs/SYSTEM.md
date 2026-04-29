@@ -40,6 +40,12 @@ Technical entry point for TeamAgent architecture, runtime flow, hooks, storage, 
 - Local run path: install dependencies with `pnpm install`, then run
   `pnpm test`, `pnpm typecheck`, and `pnpm teamagent skeleton-demo` or another
   `pnpm teamagent <cmd>`.
+- Real-time dashboard launch path: run
+  `pnpm teamagent dashboard --watch --open` from the repo root. This generates
+  `docs/dashboard.html`, serves it at `http://127.0.0.1:8787/dashboard.html`,
+  rereads the real project/global knowledge DBs plus `~/.teamagent/events.db`
+  every 2 seconds, and auto-refreshes the browser. Use
+  `pnpm teamagent dashboard --once` for a one-shot static HTML refresh.
 
 ## Verification Queries
 
@@ -47,6 +53,7 @@ Technical entry point for TeamAgent architecture, runtime flow, hooks, storage, 
 - `claudefast -p "where are TeamAgent knowledge databases stored?"`
 - `claudefast -p "what hooks does TeamAgent register?"`
 - `claudefast -p "how do I run TeamAgent locally?"`
+- `claudefast -p "how do I launch a real time TeamAgent dashboard?"`
 
 ## Original Context
 
