@@ -67,6 +67,7 @@ import {
   executeReviewCandidates,
   parseReviewCandidatesArgs,
 } from "./commands/review-candidates.js";
+import { executePrCycle, parsePrCycleArgs } from "./commands/pr-cycle.js";
 import {
   executePairAccept,
   executePairCapsule,
@@ -445,6 +446,24 @@ async function main(): Promise<void> {
       if (output) process.stdout.write(output);
       return;
     }
+    case "pr-cycle": {
+      let opts;
+      try {
+        opts = parsePrCycleArgs(rest);
+      } catch (err) {
+        process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+        process.exit(1);
+        return;
+      }
+      const result = await executePrCycle(opts);
+      if (result.blocked) {
+        process.stderr.write(result.output);
+        process.exit(2);
+        return;
+      }
+      process.stdout.write(result.output);
+      return;
+    }
     case "doctor": {
       const opts = parseDoctorArgs(rest);
       const result = await executeDoctor({ ...opts, cwd: process.cwd() });
@@ -617,6 +636,8 @@ async function main(): Promise<void> {
           "                                   自动采集错误信号 → 提取候选规则 → 写入候选队列",
           "  teamagent review-candidates [--limit=N]",
           "                                   交互式审核候选规则：[a]批准 [r]拒绝 [s]跳过 [q]退出",
+          "  teamagent pr-cycle [--pr=N] [--wait-ms=300000] [--dry-run]",
+          "                                   创建/定位 PR，等待后检查 review；有反馈时要求先更新文档/规则并用 claudefast/codexfastg 验证答案",
           "  teamagent migrate-v6 [--dry-run] [--limit=N] [--db=<path>]",
           "                                   迁移旧规则（trigger_description 为空）通过 LLM 生成双描述，并写入 vec0 和 FTS5",
           "  teamagent migrate-v7 [--dry-run] [--limit=N] [--db=<path>]",
