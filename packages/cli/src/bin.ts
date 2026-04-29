@@ -52,6 +52,7 @@ import {
   renderDashboardLaunch,
 } from "./commands/dashboard.js";
 import { executeIngest, parseIngestArgs } from "./commands/ingest.js";
+import { executeRecordingCommand } from "./commands/recording.js";
 import {
   executeCompile,
   parseCompileArgs,
@@ -365,6 +366,15 @@ async function main(): Promise<void> {
       process.stdout.write(output);
       return;
     }
+    case "recording": {
+      try {
+        process.stdout.write(await executeRecordingCommand(rest, { cwd: process.cwd() }));
+      } catch (err) {
+        process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+        process.exit(2);
+      }
+      return;
+    }
     case "dogfood-report": {
       const opts = parseDogfoodReportArgs(rest);
       const r = await executeDogfoodReport(opts);
@@ -647,6 +657,8 @@ async function main(): Promise<void> {
           "                                   跑 5 个验证场景（踩坑→学习→避坑），输出 PRR/KP 指标",
           "  teamagent e2e-evaluate [--json] [--keep-temp]",
           "                                   真实 SQLite + analyze + compile + PreToolUse 测评学习、触发、误触发和新成员可见性",
+          "  teamagent recording --help",
+          "                                   Recording Memory 导入、检索、注入、指标和 golden benchmark",
           "  teamagent dogfood-report [--output=path]",
           "                                   扫 events.jsonl + knowledge.jsonl + git log，自动生成自举报告",
           "  teamagent dashboard --watch [--open] [--port=8787] [--interval=2s]",

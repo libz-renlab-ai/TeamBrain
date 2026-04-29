@@ -26,6 +26,10 @@ import {
   buildTerminalSummary,
 } from "./user-prompt-rule-retriever.js";
 import {
+  formatRecordingMemoryInjection,
+  retrieveRecordingMemoriesForPrompt,
+} from "./commands/recording.js";
+import {
   isFirstPrompt,
   appendSessionInjected,
   readSessionInjected,
@@ -149,6 +153,30 @@ async function main(): Promise<void> {
     }
   } catch {
     // rule retrieval is best-effort — never block user input
+  }
+
+  // Recording Memory retrieval: inject short, source-backed hints only.
+  try {
+    const sessionId = input.session_id ?? "";
+    if (sessionId && prompt) {
+      const sessionsDir = path.join(os.homedir(), ".teamagent", "sessions");
+      const seenIds = readSessionInjected(sessionsDir, sessionId);
+      const recordingResult = await Promise.race([
+        retrieveRecordingMemoriesForPrompt({
+          userMessage: prompt,
+          cwd,
+          homeDir: os.homedir(),
+          sessionSeenIds: seenIds,
+        }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), HOOK_TIMEOUT_MS)),
+      ]);
+      if (recordingResult && recordingResult.matches.length > 0) {
+        blocks.push(formatRecordingMemoryInjection(recordingResult.matches));
+        appendSessionInjected(sessionsDir, sessionId, recordingResult.injectedIds);
+      }
+    }
+  } catch {
+    // recording memory retrieval is best-effort — never block user input
   }
 
   if (blocks.length > 0) {
