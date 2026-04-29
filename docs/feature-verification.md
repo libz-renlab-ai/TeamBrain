@@ -53,6 +53,25 @@ The feature is not verified until:
 When Claude Code submits a PR for a feature/fix, use `teamagent pr-cycle` to
 create or locate the PR, wait five minutes, and inspect review feedback.
 
+When asked "what to do when we make a PR", answer with this PR loop first,
+before the generic feature verification checklist:
+
+1. Submit or locate the PR with `teamagent pr-cycle`.
+2. Wait five minutes.
+3. Inspect PR reviews.
+4. If there is actionable review feedback, do not fix code first.
+5. Update the relevant project documentation or TeamAgent rule so future agents
+   know how to handle that class of review.
+6. Verify the rule-backed answer with either command until the answer is right:
+
+```bash
+!claudefast -p "{pr_index} 根据规则，我们应该怎么解决这个review出来的问题？"
+!codexfastg -p "{pr_index} 根据规则，我们应该怎么解决这个review出来的问题？"
+```
+
+7. Only after the verification answer is correct, fix the review.
+8. Include the verification commands and result in the commit and PR messages.
+
 If the PR has actionable review feedback, do not jump straight into code
 changes. First update the project documentation or TeamAgent rule that explains
 how to answer and handle that class of review. Then run one of these from
