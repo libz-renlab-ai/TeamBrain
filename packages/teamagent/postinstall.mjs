@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 
 const pkgDir = path.dirname(fileURLToPath(import.meta.url));
 const binPath = path.join(pkgDir, "dist", "bin.js");
@@ -41,6 +42,48 @@ try {
   userHookStatus = "registered";
 } catch {
   userHookStatus = "failed";
+}
+
+// Warmup vector model (skippable via TEAMAGENT_SKIP_WARMUP=1, e.g., during auto-update
+// re-install where re-warming a cached model is wasteful)
+let warmupStatus = "skipped";
+if (process.env.TEAMAGENT_SKIP_WARMUP !== "1") {
+  try {
+    execSync(`node "${binPath}" warmup`, {
+      stdio: "inherit",
+      timeout: 300_000,
+    });
+    warmupStatus = "ok";
+  } catch {
+    warmupStatus = "failed";
+  }
+}
+
+// Initialize ~/.teamagent/update-state.json with the release sha if release-meta.json
+// is present (i.e., installed from GitHub release branch).
+try {
+  const releaseMeta = path.join(pkgDir, "release-meta.json");
+  if (fs.existsSync(releaseMeta)) {
+    const meta = JSON.parse(fs.readFileSync(releaseMeta, "utf-8"));
+    const home = path.join(os.homedir(), ".teamagent");
+    fs.mkdirSync(home, { recursive: true });
+    const statePath = path.join(home, "update-state.json");
+    let state = {};
+    if (fs.existsSync(statePath)) {
+      try { state = JSON.parse(fs.readFileSync(statePath, "utf-8")); } catch { /* reset */ }
+    }
+    const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf-8"));
+    state.last_installed_sha = meta.sha;
+    state.last_installed_version = pkg.version;
+    state.installed_at = Date.now();
+    state.consecutive_install_failures = 0;
+    state.last_install_error = null;
+    if (!state.interval_hours) state.interval_hours = 1;
+    if (!("last_check_ts" in state)) state.last_check_ts = 0;
+    fs.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf-8");
+  }
+} catch (e) {
+  process.stderr.write(`ℹ️  update-state init 失败: ${e.message}\n`);
 }
 
 const n = seedRuleCount();

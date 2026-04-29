@@ -11,6 +11,7 @@ const ENTRIES = {
   "bin-session-start":      "../cli/src/bin-session-start.ts",
   "bin-pre-compact":        "../cli/src/bin-pre-compact.ts",
   "bin-user-prompt-submit": "../cli/src/bin-user-prompt-submit.ts",
+  "bin-updater":            "../cli/src/bin-updater.ts",
 };
 
 const NATIVE_EXTERNAL = [
@@ -68,6 +69,7 @@ export default defineConfig([
       "bin-session-start":      ENTRIES["bin-session-start"],
       "bin-pre-compact":        ENTRIES["bin-pre-compact"],
       "bin-user-prompt-submit": ENTRIES["bin-user-prompt-submit"],
+      "bin-updater":            ENTRIES["bin-updater"],
     },
     format: ["cjs"],
     platform: "node",

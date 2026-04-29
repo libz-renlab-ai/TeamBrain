@@ -87,6 +87,25 @@ describe("ClaudeSessionSource", () => {
         src.loadById(path.join(tmp.dir, "nonexistent.jsonl")),
       ).rejects.toThrow();
     });
+
+    // B-089: when caller passes a path-shaped argument that doesn't exist,
+    // loadById must NOT fall back to resolveSessionFile (which treats the
+    // argument as a session UUID and produces a confusing "Session not found:
+    // <full-path>" error). Path-shaped inputs should surface a clear
+    // "transcript file" error instead.
+    it("path-shaped input that doesn't exist throws transcript-file error, not session-id error", async () => {
+      const src = new ClaudeSessionSource(tmp.dir);
+      const ghostAbs = path.join(tmp.dir, "ghost-dir", "abc-123.jsonl");
+      await expect(src.loadById(ghostAbs)).rejects.toThrow(/transcript file/i);
+      await expect(src.loadById(ghostAbs)).rejects.not.toThrow(/Session not found:/);
+    });
+
+    it("bare session-id (not path-shaped) without match goes through resolveSessionFile", async () => {
+      const src = new ClaudeSessionSource(tmp.dir);
+      await expect(src.loadById("uuid-without-path-shape")).rejects.toThrow(
+        /Session not found:/,
+      );
+    });
   });
 
   describe("listRecent (scans ~/.claude/projects/...)", () => {

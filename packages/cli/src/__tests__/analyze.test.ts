@@ -82,6 +82,36 @@ describe("executeAnalyze", () => {
     expect(out).toContain("未写入知识库");
   });
 
+  // B-045: when transcript file is non-empty but contains no valid JSONL
+  // messages (corrupted file, wrong format, etc.), analyze must surface
+  // "transcript parse failed" instead of silently reporting "回合数: 0",
+  // which is indistinguishable from a legitimately empty session.
+  it("malformed transcript → reports parse failure, not '回合数: 0'", async () => {
+    const garbagePath = path.join(tmp.dir, "garbage.jsonl");
+    nodeFs.writeFileSync(
+      garbagePath,
+      "this is not jsonl at all\n!!! definitely not json\n<html>nope</html>\n".repeat(5),
+      "utf-8",
+    );
+    const out = await executeAnalyze({
+      session: garbagePath,
+      homeDir: tmp.dir,
+    });
+    expect(out).toMatch(/transcript parse failed/i);
+    expect(out).not.toContain("回合数: 0");
+  });
+
+  it("empty transcript file (legitimately empty session) → reports 回合数: 0 (not parse failure)", async () => {
+    const emptyPath = path.join(tmp.dir, "empty.jsonl");
+    nodeFs.writeFileSync(emptyPath, "", "utf-8");
+    const out = await executeAnalyze({
+      session: emptyPath,
+      homeDir: tmp.dir,
+    });
+    expect(out).toContain("回合数: 0");
+    expect(out).not.toMatch(/transcript parse failed/i);
+  });
+
   describe("--commit mode", () => {
     const stubLLM = (response: string): LLMClient => ({
       complete: async () => response,

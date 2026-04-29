@@ -121,6 +121,45 @@ describe("executePitfall", () => {
     expect(out).toContain("dayjs");
   });
 
+  // B-065: avoidance pitfall 实际写入 CLAUDE.md 知识块；归因消息以前
+  // 硬编码 count: 0 → 显示 "第 0 行"，让用户怀疑规则没生效。修复后
+  // count 应反映实际写入的块行数 ≥ 1。
+  it("avoidance pitfall: 传播到 显示真实的 CLAUDE.md 行数 (>0, 不再是 '第 0 行')", async () => {
+    const out = await executePitfall(
+      {
+        trigger: "moment 用法",
+        wrong: "moment().format()",
+        correct: "dayjs().format()",
+        reason: "moment 体积大 + 不再维护",
+      },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+    );
+    // 显示到 CLAUDE.md
+    expect(out).toMatch(/传播到:.*CLAUDE\.md/);
+    // 不再显示 "第 0 行"
+    expect(out).not.toMatch(/CLAUDE\.md\s*第\s*0\s*行/);
+    // 真实写入的块至少 1 行
+    expect(out).toMatch(/CLAUDE\.md\s*第\s*[1-9]\d*\s*行/);
+  });
+
+  // B-065: practice pitfall (无 wrong_pattern) 不进 CLAUDE.md，只
+  // 进 ~/.claude/skills/teamagent/<id>/SKILL.md。归因应该指向
+  // SKILL.md，避免误导用户以为规则在 CLAUDE.md 生效。
+  it("practice pitfall: 传播到 应指向 SKILL.md (不在 CLAUDE.md)", async () => {
+    const out = await executePitfall(
+      {
+        trigger: "完成开发分支后",
+        wrong: "", // practice 类
+        correct: "调用 finishing-a-development-branch skill 跑完整流程",
+        reason: "skill 流程是验证的",
+      },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+    );
+    expect(out).toContain("传播到:");
+    // practice 类规则总是写入 skill 路径
+    expect(out).toMatch(/SKILL\.md/);
+  });
+
   it("silent mode returns empty output", async () => {
     const out = await executePitfall(
       { trigger: "t", wrong: "w", correct: "c", reason: "r" },
@@ -336,5 +375,70 @@ describe("parsePitfallArgs", () => {
         "--reason=r",
       ]),
     ).toThrow(/缺少必填字段.*--trigger/);
+  });
+
+  // B-067: pitfall 字段无长度上限会让 10000 字符的 trigger 入库 + 向量化 +
+  // 编译进 CLAUDE.md 的 3000 token 预算，造成知识被一条恶性条目占满。
+  describe("B-067 length validation", () => {
+    it("rejects trigger over 1000 chars", () => {
+      const longText = "a".repeat(1001);
+      expect(() =>
+        parsePitfallArgs([
+          "--non-interactive",
+          `--trigger=${longText}`,
+          "--correct=c",
+          "--reason=r",
+        ]),
+      ).toThrow(/超长|过长|长度|too long|length/i);
+    });
+
+    it("rejects wrong over 1000 chars", () => {
+      const longText = "x".repeat(1500);
+      expect(() =>
+        parsePitfallArgs([
+          "--non-interactive",
+          "--trigger=t",
+          `--wrong=${longText}`,
+          "--correct=c",
+          "--reason=r",
+        ]),
+      ).toThrow(/超长|过长|长度|too long|length/i);
+    });
+
+    it("rejects correct over 1000 chars", () => {
+      const longText = "y".repeat(2000);
+      expect(() =>
+        parsePitfallArgs([
+          "--non-interactive",
+          "--trigger=t",
+          `--correct=${longText}`,
+          "--reason=r",
+        ]),
+      ).toThrow(/超长|过长|长度|too long|length/i);
+    });
+
+    it("rejects reason over 1000 chars", () => {
+      const longText = "z".repeat(1001);
+      expect(() =>
+        parsePitfallArgs([
+          "--non-interactive",
+          "--trigger=t",
+          "--correct=c",
+          `--reason=${longText}`,
+        ]),
+      ).toThrow(/超长|过长|长度|too long|length/i);
+    });
+
+    it("accepts fields exactly at 1000-char boundary", () => {
+      const exact = "a".repeat(1000);
+      const input = parsePitfallArgs([
+        "--non-interactive",
+        `--trigger=${exact}`,
+        "--correct=c",
+        "--reason=r",
+      ]);
+      expect(input).not.toBeNull();
+      expect(input!.trigger.length).toBe(1000);
+    });
   });
 });

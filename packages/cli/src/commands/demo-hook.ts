@@ -36,6 +36,13 @@ function formatWarnMessage(rule: KnowledgeEntry): string {
  * 用真实的知识库（personal/global SQLite）做匹配，但不需要 Claude Code。
  *
  * 返回归因式 stdout 文本（人类可读），而不是 hook JSON——便于命令行查看。
+ *
+ * B-066 — IRON LAW: demo-hook 是离线诊断命令，**严禁**写入 events.db、
+ * 触发 store.update / hit_count / success_count 增量、或向 attribution
+ * bus emit 任何被下游 calibrate 视为真实证据的事件。校准管线靠 events.db
+ * 推断置信度，demo 一次会导致规则在没有任何真实触发的情况下置信度漂移
+ * （历史上实测 0.70 → 0.83）。任何修改本函数的人都必须保持这个不变量；
+ * `__tests__/demo-hook.test.ts` 里有 lock 这条约束的两条单元测试。
  */
 export function executeDemoHook(opts: DemoHookOptions): string {
   const cwd = normalizeCwd(opts.cwd ?? process.cwd());

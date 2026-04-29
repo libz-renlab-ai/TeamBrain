@@ -456,6 +456,24 @@ async function main(): Promise<void> {
       if (!result.ok) process.exit(1);
       return;
     }
+    case "warmup": {
+      const { runWarmup } = await import("./commands/warmup.js");
+      const result = await runWarmup();
+      process.exit(result.ok ? 0 : 1);
+    }
+    case "migrate-auto": {
+      const { runMigrateAuto } = await import("./commands/migrate-auto.js");
+      const r = await runMigrateAuto();
+      process.stderr.write(JSON.stringify(r, null, 2) + "\n");
+      process.exit(r.ok ? 0 : 1);
+    }
+    case "update": {
+      const { runUpdateCommand, parseUpdateArgs } = await import("./commands/update.js");
+      const { sub, rest: subRest } = parseUpdateArgs(rest);
+      const r = await runUpdateCommand(sub, subRest);
+      process.stdout.write(r.output);
+      process.exit(r.ok ? 0 : 1);
+    }
     case "pair": {
       const parsed = parsePairArgs(rest);
       if (parsed.subcommand === "capsule") {

@@ -1,0 +1,49 @@
+name: Publish release branch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter teamagent build
+
+      - name: Stage release artifacts
+        run: |
+          rm -rf /tmp/release-stage
+          mkdir -p /tmp/release-stage
+          cp -r packages/teamagent/dist /tmp/release-stage/dist
+          cp packages/teamagent/package.json /tmp/release-stage/package.json
+          cp packages/teamagent/postinstall.mjs /tmp/release-stage/postinstall.mjs
+          printf '{"sha":"%s","built_at":"%s"}\n' \
+            "$GITHUB_SHA" "$(date -u +%FT%TZ)" \
+            > /tmp/release-stage/release-meta.json
+
+      - name: Force-push release branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd /tmp/release-stage
+          git init -q -b release
+          git config user.name "TeamAgent Release Bot"
+          git config user.email "bot@teamagent.local"
+          git add -A
+          git commit -q -m "release: $GITHUB_SHA"
+          git push -q --force \
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" \
+            release

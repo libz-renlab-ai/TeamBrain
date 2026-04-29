@@ -251,4 +251,75 @@ describe("ruleBasedCorrectionDetector", () => {
       }
     });
   });
+
+  // B-064: rule-based detector must ignore system-injected user messages
+  // (skill loader output, system reminders, local-command-caveat blocks)
+  // and polite "能…吗？" queries — those are not corrections. Previously
+  // analyze --commit on a QA session falsely extracted 3 rules from such
+  // turns, polluting the global rule library.
+  describe("B-064 noise filtering", () => {
+    function makeSession(turns: Array<{ user: string; assistant: string }>) {
+      return {
+        sessionId: "noise-test",
+        startTime: "2026-04-28T00:00:00Z",
+        endTime: "2026-04-28T00:01:00Z",
+        turns: turns.map((t, i) => ({
+          turnIndex: i,
+          userMessage: t.user,
+          assistantText: t.assistant,
+          toolCalls: [],
+          timestamp: `2026-04-28T00:00:${String(i).padStart(2, "0")}Z`,
+        })),
+      };
+    }
+
+    it("ignores skill loader system message ('Base directory for this skill:...')", () => {
+      const session = makeSession([
+        { user: "请帮我跑测试", assistant: "好的" },
+        { user: "Base directory for this skill: C:\\Users\\x\\.claude\\skills\\foo\n# foo skill\nUse when ... not ... never ... don't ...", assistant: "我看了 skill" },
+      ]);
+      const corrections = ruleBasedCorrectionDetector.detect(session as never);
+      const denial = corrections.find((c) => c.turnIndex === 1 && c.signal === "explicit_denial");
+      expect(denial).toBeUndefined();
+    });
+
+    it("ignores <system-reminder> wrapped messages", () => {
+      const session = makeSession([
+        { user: "做点事", assistant: "ok" },
+        { user: "<system-reminder>\nDo not use X. Don't break things. Never commit secrets.\n</system-reminder>", assistant: "懂了" },
+      ]);
+      const corrections = ruleBasedCorrectionDetector.detect(session as never);
+      expect(corrections.find((c) => c.turnIndex === 1 && c.signal === "explicit_denial")).toBeUndefined();
+    });
+
+    it("ignores <local-command-caveat> wrapped messages", () => {
+      const session = makeSession([
+        { user: "做点事", assistant: "ok" },
+        { user: "<local-command-caveat>这个命令的输出 don't be alarmed: not what I asked</local-command-caveat>", assistant: "懂了" },
+      ]);
+      const corrections = ruleBasedCorrectionDetector.detect(session as never);
+      expect(corrections.find((c) => c.turnIndex === 1 && c.signal === "explicit_denial")).toBeUndefined();
+    });
+
+    it("ignores polite '能…吗？' query (not a correction)", () => {
+      const session = makeSession([
+        { user: "做点事", assistant: "ok" },
+        { user: "能不要在这里换行吗？", assistant: "好的" },
+      ]);
+      const corrections = ruleBasedCorrectionDetector.detect(session as never);
+      // 这条用户消息含 "不要" 但语义是请求/疑问，不应识别为纠正
+      expect(corrections.find((c) => c.turnIndex === 1 && c.signal === "explicit_denial")).toBeUndefined();
+    });
+
+    it("still catches genuine '不对' even when previous turn was system-injected", () => {
+      const session = makeSession([
+        { user: "<system-reminder>noise</system-reminder>", assistant: "noise" },
+        { user: "做点事", assistant: "我用 axios" },
+        { user: "不对，应该用 fetch", assistant: "好" },
+      ]);
+      const corrections = ruleBasedCorrectionDetector.detect(session as never);
+      const hit = corrections.find((c) => c.turnIndex === 2 && c.signal === "explicit_denial");
+      expect(hit).toBeDefined();
+    });
+  });
 });

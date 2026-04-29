@@ -77,9 +77,27 @@ export class ClaudeSessionSource implements SessionSource {
   }
 
   async loadById(sessionIdOrPath: string): Promise<ParsedSession> {
-    const filePath = fsSync.existsSync(sessionIdOrPath)
-      ? sessionIdOrPath
-      : await this.resolveSessionFile(sessionIdOrPath);
+    // B-089: distinguish "path-shaped" input from "bare session UUID" so that a
+    // path that doesn't exist surfaces a clear file-existence error instead of
+    // silently falling back to resolveSessionFile (which would then complain
+    // "Session not found: <full-path>" by treating the path as a UUID — both
+    // misleading and a path-leak).
+    const looksLikePath =
+      path.isAbsolute(sessionIdOrPath) ||
+      sessionIdOrPath.includes(path.sep) ||
+      sessionIdOrPath.endsWith(".jsonl");
+
+    let filePath: string;
+    if (looksLikePath) {
+      if (!fsSync.existsSync(sessionIdOrPath)) {
+        throw new Error(`Transcript file does not exist: ${sessionIdOrPath}`);
+      }
+      filePath = sessionIdOrPath;
+    } else {
+      filePath = fsSync.existsSync(sessionIdOrPath)
+        ? sessionIdOrPath
+        : await this.resolveSessionFile(sessionIdOrPath);
+    }
 
     const raw = await fsPromises.readFile(filePath, "utf-8");
     return parseSessionFile(raw);

@@ -17,6 +17,7 @@ export default defineConfig({
     "bin-stop":               "src/bin-stop.ts",
     "bin-session-end":        "src/bin-session-end.ts",
     "bin-pre-compact":        "src/bin-pre-compact.ts",
+    "bin-updater":            "src/bin-updater.ts",
   },
   format: ["cjs"],
   platform: "node",

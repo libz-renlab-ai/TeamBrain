@@ -443,9 +443,21 @@ export async function runFullRescanPipeline(input: StopHookInput): Promise<void>
   }
 }
 
+/**
+ * B-085: tests must be able to redirect TeamAgent state writes (logError,
+ * main-crash log) to a tmp dir without monkey-patching `os.homedir()`. Honor
+ * `TEAMAGENT_HOME` env var when set, fall back to `os.homedir()` otherwise.
+ * In production this env is unset and behavior is unchanged.
+ */
+function teamagentHomeDir(): string {
+  return process.env.TEAMAGENT_HOME ?? os.homedir();
+}
+
 function logError(cwd: string, step: string, err: unknown): void {
   try {
-    const logPath = path.join(os.homedir(), ".teamagent", "stop-errors.log");
+    const teamagentDir = path.join(teamagentHomeDir(), ".teamagent");
+    mkdirSync(teamagentDir, { recursive: true });
+    const logPath = path.join(teamagentDir, "stop-errors.log");
     const stack = err instanceof Error && err.stack ? `\n  stack: ${err.stack.split("\n").slice(1, 3).join(" | ")}` : "";
     const msg = `[${new Date().toISOString()}] step=${step} cwd=${cwd} err=${String(err)}${stack}\n`;
     appendFileSync(logPath, msg, "utf-8");
@@ -592,7 +604,8 @@ async function main(): Promise<void> {
 if (path.basename(process.argv[1] ?? "").startsWith("bin-stop")) {
   main().catch((e) => {
     try {
-      const logPath = path.join(os.homedir(), ".teamagent", "stop-errors.log");
+      // B-085: honor TEAMAGENT_HOME (matches logError/teamagentHomeDir).
+      const logPath = path.join(teamagentHomeDir(), ".teamagent", "stop-errors.log");
       appendFileSync(
         logPath,
         `[${new Date().toISOString()}] main-crash err=${String(e)}\n`,

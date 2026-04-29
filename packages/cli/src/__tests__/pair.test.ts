@@ -93,7 +93,11 @@ describe("teamagent pair accept", () => {
     });
     const after = countFiles(home);
 
-    expect(result.changed.map((p) => path.relative(home, p)).sort()).toEqual([
+    // Windows: path.relative returns '\\'-separated; normalize to '/' so
+    // expectations stay POSIX-readable across platforms.
+    expect(
+      result.changed.map((p) => path.relative(home, p).replace(/\\/g, "/")).sort(),
+    ).toEqual([
       ".ssh/config",
       ".teamagent/pairing/peers.json",
       ".teamagent/pairing/receipts/macmini.json",

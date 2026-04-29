@@ -83,6 +83,25 @@ export interface AnalyzeMeta {
   newEntries: Array<{ trigger: string; correct_pattern: string; confidence: number }>;
 }
 
+/**
+ * B-045: detect whether a transcript-like raw string contains at least one
+ * line that is parseable as JSON. Used to distinguish malformed transcript
+ * files (no parseable lines) from legitimately empty sessions.
+ */
+function hasAnyValidJsonlLine(raw: string): boolean {
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      JSON.parse(trimmed);
+      return true;
+    } catch {
+      /* keep looking */
+    }
+  }
+  return false;
+}
+
 export async function executeAnalyze(opts: AnalyzeOptions = {}): Promise<string> {
   const home = opts.homeDir ?? os.homedir();
   const projectsRoot = opts.projectsRoot ?? path.join(home, ".claude", "projects");
@@ -93,6 +112,21 @@ export async function executeAnalyze(opts: AnalyzeOptions = {}): Promise<string>
   if (opts.session) {
     if (fs.existsSync(opts.session)) {
       const raw = fs.readFileSync(opts.session, "utf-8");
+      // B-045: distinguish malformed transcript (non-empty file with no valid
+      // JSONL lines) from a legitimately empty session. Without this guard,
+      // a corrupted file silently parses into 0 turns and analyze reports
+      // "回合数: 0" — same output as an empty session, hiding the failure.
+      if (raw.trim().length > 0 && !hasAnyValidJsonlLine(raw)) {
+        return [
+          `# transcript parse failed`,
+          ``,
+          `路径: ${opts.session}`,
+          `症状: 文件非空（${raw.length} 字节）但未发现可解析的 JSONL 消息。`,
+          `常见原因: 文件被外部工具截断/损坏，或不是 Claude Code 会话日志格式。`,
+          `操作: 检查文件首行是否为合法 JSON（应有 {"type":"user"...} 等结构）。`,
+          ``,
+        ].join("\n");
+      }
       session = parseSessionFile(raw);
       sourceDesc = opts.session;
     } else {

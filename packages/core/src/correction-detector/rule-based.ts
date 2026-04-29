@@ -45,6 +45,46 @@ function hasMultipleFailures(turn: SessionTurn): boolean {
 }
 
 /**
+ * B-064: 系统注入的"伪用户消息"应跳过整个 turn 的 signal 检测。
+ *
+ * Claude Code 把以下内容作为 type=user 的消息塞进会话日志，但语义上不是
+ * 用户的纠正：
+ * - skill 加载器输出（含 "Base directory for this skill:"）
+ * - <system-reminder>...</system-reminder> 包裹的提醒
+ * - <local-command-caveat>...</local-command-caveat> 包裹的本地命令输出
+ * - <command-name>/<command-message>/<command-args> 标签
+ *
+ * 这些消息常包含 "not"/"don't"/"never"/"不要"/"不对" 等关键词,会被
+ * DENIAL_PATTERNS 命中,导致 analyze --commit 把系统噪声当用户纠正
+ * 提取并入库,污染知识库。
+ */
+function isSystemInjectedMessage(text: string): boolean {
+  if (!text) return false;
+  if (/Base directory for this skill:/i.test(text)) return true;
+  if (/<system-reminder>/i.test(text)) return true;
+  if (/<local-command-caveat>/i.test(text)) return true;
+  if (/<command-(name|message|args)>/i.test(text)) return true;
+  return false;
+}
+
+/**
+ * B-064: 礼貌请求/建议（"能…吗？" / "可以…吗？"）不算 explicit_denial。
+ *
+ * 这类句式即使含 "不要"/"不用" 等词，语义是用户在询问/请求而非否定上文。
+ * 项目决定：把礼貌 query 与真·纠正区分开，前者交给后续 LLM 二次判断或
+ * 完全忽略，避免规则化提取虚假 denial。
+ */
+function isPoliteQuery(text: string): boolean {
+  if (!text) return false;
+  // 短消息（≤80 字）以 "?" / "？" 收尾，且以"能"/"可以"开头
+  const trimmed = text.trim();
+  if (trimmed.length > 80) return false;
+  if (!/[?？]\s*$/.test(trimmed)) return false;
+  if (!/^(能|可以)/.test(trimmed)) return false;
+  return true;
+}
+
+/**
  * 规则版纠正时刻识别器（纯函数）。
  * 仅用关键词 + 工具调用统计，不依赖 LLM。
  */
@@ -56,8 +96,16 @@ export const ruleBasedCorrectionDetector: CorrectionDetector = {
       const turn = session.turns[i]!;
       const prevTurn = i > 0 ? session.turns[i - 1] : undefined;
 
+      // B-064: skip entire turn detection if user message is actually a
+      // system-injected pseudo-message (skill loader, system-reminder, etc.).
+      // These commonly contain DENIAL keywords but are not user corrections.
+      if (isSystemInjectedMessage(turn.userMessage)) continue;
+
       // Signal A: 用户 message 里含显式否定词
-      const denial = matchDenial(turn.userMessage);
+      // B-064: polite "能…吗？" queries are requests, not corrections — skip.
+      const denial = !isPoliteQuery(turn.userMessage)
+        ? matchDenial(turn.userMessage)
+        : null;
       if (denial && prevTurn) {
         out.push(buildMoment(turn, prevTurn, "explicit_denial", denial.weight));
       }

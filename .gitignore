@@ -29,3 +29,7 @@ CLAUDE.md.tmp-*
 # Machine-local Claude Code settings (contains absolute hook paths specific to each dev's machine).
 # Each developer runs `teamagent install-hook` after clone to generate their own.
 .claude/settings.local.json
+# Xenova / Hugging Face model caches (downloaded on first embedder run; per-package).
+packages/*/.cache/
+# Chaos QA verification scratch scripts (paired with BUGS.md, not formal tests).
+chaos-verify*.mjs

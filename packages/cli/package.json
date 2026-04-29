@@ -7,6 +7,7 @@
     "teamagent": "./src/bin.ts"
   },
   "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsup src/bin.ts --format esm && pnpm build:hook",
     "build:hook": "tsup --config tsup.hook.config.ts",
     "test": "vitest run",

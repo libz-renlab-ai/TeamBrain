@@ -78,7 +78,7 @@ Self-tests cover synthetic data only — they miss everything below.
 | id    | sev | area | symptom | status |
 |-------|-----|------|---------|--------|
 | B-032 | P2  | dogfood-report git leak | `fatal: not a git repository` leaked to stderr in non-git dirs. | **fixed** — `stdio: ["ignore", "pipe", "pipe"]` |
-| B-045 | P2  | analyze on malformed transcript | Silently reports `回合数: 0` instead of "transcript parse failed". | open — low priority; user can verify via file content |
+| B-045 | P2  | analyze on malformed transcript | Silently reports `回合数: 0` instead of "transcript parse failed". | **fixed (wave9)** — analyze 加 hasAnyValidJsonlLine() guard，garbage 文件直接返回 "transcript parse failed" 报告 (commit 3afe408) |
 
 ---
 
@@ -135,10 +135,10 @@ Approach: full white-box read of 215 source files, then logic attacks on all pur
 | B-061 | P3 | `calibrator/v2/demerit.ts:computeDemerit future timestamp` | `last_updated` 为未来时间时，`daysSince = (now - future) < 0`，`if (daysSince > 0)` 跳过衰减，demerit 永久停留在当前值无法衰减。系统时钟向前跳（NTP 调整、跨时区切换）或脚本设置了未来时间戳时触发。 | **fixed** — `Math.max(0, daysSince)` clamp (commit 6ed76ce) |
 | B-062 | P1 | `compiler/markdown.ts:injectBlockIntoDoc` | 若知识条目任意文本字段（trigger、correct_pattern、reasoning 等）包含 `<!-- TEAMAGENT:END -->`，编译后 CLAUDE.md 中会存在 2 个 END 标记。下次 compile 时 `existing.match(endTagRegex)` 匹配到条目内部的 END 而非真正的结束标记，导致 `before+block+after` 中 `after` 包含漏出的条目内容，CLAUDE.md 结构永久损坏。经 `chaos-verify-injection.mjs` 实测确认。 | **fixed** — `sanitizeBlockMarkers()` with U+200B zero-width space (commit 46f0070) |
 | B-063 | P2 | `adapters/storage/sqlite/dual-layer-store.ts` | `DualLayerStore` 缺少 `update()` / `findByScopeLevel()` / `delete()` / `count()` 等方法，不满足 `KnowledgeStore` port 接口的完整契约。若 `runCalibrationPipeline` 被直接传入 `DualLayerStore`（而非各层 `SqliteKnowledgeStore`），将在运行时抛 `TypeError: store.update is not a function`。 | **fixed** — added all 4 missing methods with layer routing (commit 44e257c) |
-| B-064 | P1 | `correction-detector/rule-based.ts` | `analyze` 把提问（含"能…吗？"）和 skill 系统消息（"Base directory for this skill:..."）均识别为 `explicit_denial` 纠正时刻（权重 0.90/0.95），导致 `analyze --commit` 从本次 QA 测试会话提取了 3 条虚假知识入库（知识库从 57 → 61），污染全局规则库。实测：session `6d8d49f5` 中 turn4（测试请求）和 turn5（skill 加载消息）均被误判。 | open |
-| B-065 | P2 | `commands/pitfall.ts` 归因消息 | pitfall 录入规则后，归因显示"传播到: `<project>/CLAUDE.md` **第 0 行**"，但实际写入路径是 `~/.claude/skills/teamagent/<id>/SKILL.md`；CLAUDE.md 文本中完全不包含该规则。"第 0 行"是 bug 的残留痕迹。用户误认为规则已在 CLAUDE.md 生效。实测 0 条命中。 | open |
-| B-066 | P2 | `commands/demo-hook.ts` 事件污染 | `teamagent demo hook Bash 'command=npm install moment'` 写入了被 `calibrate` 视为真实用户接受的事件，导致刚录入的规则（无任何真实触发历史）在下次 `calibrate --dry-run` 中置信度从 0.70 → 0.83（+0.13）。`demo hook` 是离线测试命令，不应产生影响校准管线的事件记录。 | open |
-| B-067 | P3 | `commands/pitfall.ts` 输入校验 | `pitfall --non-interactive` 对 `--trigger`/`--wrong`/`--correct`/`--reason` 字段无长度上限，接受并存储 10000 字符的 trigger（exit 0）。超长字段被完整向量化并写入 DB，在编译时可能撑爆 3000 token 预算。 | open |
+| B-064 | P1 | `correction-detector/rule-based.ts` | `analyze` 把提问（含"能…吗？"）和 skill 系统消息（"Base directory for this skill:..."）均识别为 `explicit_denial` 纠正时刻（权重 0.90/0.95），导致 `analyze --commit` 从本次 QA 测试会话提取了 3 条虚假知识入库（知识库从 57 → 61），污染全局规则库。实测：session `6d8d49f5` 中 turn4（测试请求）和 turn5（skill 加载消息）均被误判。 | **fixed (wave9)** — 加 isSystemInjectedMessage() (skill loader / `<system-reminder>` / `<local-command-caveat>` / `<command-*>` 标签) + isPoliteQuery() (短礼貌 "能/可以…吗?")；命中即跳过 explicit_denial signal (commit 468932d) |
+| B-065 | P2 | `commands/pitfall.ts` 归因消息 | pitfall 录入规则后，归因显示"传播到: `<project>/CLAUDE.md` **第 0 行**"，但实际写入路径是 `~/.claude/skills/teamagent/<id>/SKILL.md`；CLAUDE.md 文本中完全不包含该规则。"第 0 行"是 bug 的残留痕迹。用户误认为规则已在 CLAUDE.md 生效。实测 0 条命中。 | **fixed (wave9)** — emit 事件按 entry.type 分流：avoidance → CLAUDE.md + 真实 blockLineCount；practice → ~/.claude/skills/teamagent/<id>/SKILL.md (commit d7f3ab9) |
+| B-066 | P2 | `commands/demo-hook.ts` 事件污染 | `teamagent demo hook Bash 'command=npm install moment'` 写入了被 `calibrate` 视为真实用户接受的事件，导致刚录入的规则（无任何真实触发历史）在下次 `calibrate --dry-run` 中置信度从 0.70 → 0.83（+0.13）。`demo hook` 是离线测试命令，不应产生影响校准管线的事件记录。 | **fixed (wave9)** — 当前 demo-hook 已是只读（事件不写、hit_count 不变）；本次加 IRON LAW 注释 + 2 条防御测试 lock 该约束以防回退 (commit ea7ac55) |
+| B-067 | P3 | `commands/pitfall.ts` 输入校验 | `pitfall --non-interactive` 对 `--trigger`/`--wrong`/`--correct`/`--reason` 字段无长度上限，接受并存储 10000 字符的 trigger（exit 0）。超长字段被完整向量化并写入 DB，在编译时可能撑爆 3000 token 预算。 | **fixed (wave9)** — parsePitfallArgs 加每字段 1000 字符上限，超过抛 PitfallValidationError exit 2 (commit 5523bb3) |
 | B-068 | P0 | `bin-stop.ts:main` async / TEAMAGENT_STOP_PIPELINE env 泄漏 | 复诊更新根因：原假设「Windows spawn 转义反斜杠 JSON」**已排除**——bundle 早改成传 tmpFile 路径。真根因：`TEAMAGENT_STOP_PIPELINE=1` 环境变量泄漏进 hook 进程 env，前台 hook 误入 detached 分支读 argv[2]=undefined 立即退出。复现：`TEAMAGENT_STOP_PIPELINE=1 node bin-stop.cjs` 字节级一致。 | **fixed** — 抽出 `isDetachedPipelineInvocation(env, argv, envKey)`：env=1 AND argv[2] 存在且为可读文件 才走 detached，否则降级到前台 stdin（env 污染无影响）。bin-stop + bin-session-end 同步修。6 条 unit test 覆盖各种泄漏组合。 |
 | B-069 | P1 | `bin-stop.ts:semantic-scan` `onnxruntime-node` | Stop hook 语义扫描崩溃：`Cannot find module 'onnxruntime-node'`。 | **fixed** — 当前 bundle (04-28 16:00) 之后 0 次错误（之前 73 次/24h）。修复路径：catch-up 向量化已包在 fire-and-forget 模式 + 依赖到位。 |
 | B-070 | P2 | `bin-stop.ts:analyze` subagent transcript 重试浪费 + 日志噪音 | Stop hook 对子任务 / vitest session 重试 4 次（9s）查找不存在的 transcript jsonl，每次写一条 stop-errors.log。 | **fixed** — analyze 第一步加 `existsSync(transcript_path)` fast-path：缺失则 stderr info-level 退出，不写 errors.log，calibrate/compile 仍正常跑。2 条新 unit test。|
@@ -181,3 +181,44 @@ Approach: full white-box read of 215 source files, then logic attacks on all pur
 
 **综合估计覆盖率**: ~90%
 **Wave 8 新发现 Bug 数**: 13 (P1: 4, P2: 3, P3: 6)
+
+---
+
+## Wave 9 — chaos-qa-hunter 日志驱动 + Wiki 移除 delta 复诊 (2026-04-28)
+
+**测试方法**: 读取 `~/.teamagent/stop-errors.log` (610KB / 3471 行) + `~/.teamagent/wiki-refresh-errors.log`
++ 实测 `pnpm vitest packages/cli/src/__tests__/bin-stop.test.ts` 前后行数 delta + 直接调用 `node dist/bin-wiki-refresh.cjs` 看 wiki
+被移除后 dist 是否仍可执行 + 复现 B-070 fast-skip 是否覆盖到 ClaudeSessionSource 内层。
+**Wave 范围**: 仅日志驱动线索 + 自 Wave 8 以来的代码 delta（Stop hook 修复 ca29231/cb36a84 + Wiki 全量移除 280e4e8）。
+Wave 7 遗留 open（B-045 / B-064 / B-065 / B-066 / B-067）本轮**未**复测。
+**测试版本**: 0.10.1，git HEAD = 0ccfec4。
+
+| id    | sev | area | symptom | status |
+|-------|-----|------|---------|--------|
+| B-085 | **P1** | `bin-stop.test.ts` 污染用户 prod 日志 | `runStopPipeline` 内部 `logError(cwd, step, err)` 写入 `path.join(os.homedir(), ".teamagent", "stop-errors.log")`（`bin-stop.ts:446-455`）。`bin-stop.test.ts` 用 `vi.mocked(executeAnalyze/executeCalibrate/executeCompile).mockRejectedValueOnce(new Error(...))` 触发 catch 路径，未 mock/重定向 logError 目的地，每次运行 `vitest run bin-stop.test.ts` 向用户家目录追加 16 条 `step=analyze/calibrate/compile cwd=C:\bzli\teamagent err=...` 记录（实测：3455 → 3471 +16 行）。日志文件已积累 610KB，任何真实 prod 错误被 80%+ 测试噪声淹没。复现：`wc -l ~/.teamagent/stop-errors.log; pnpm vitest run packages/cli/src/__tests__/bin-stop.test.ts; wc -l ~/.teamagent/stop-errors.log` | **fixed** — `teamagentHomeDir()` helper 优先读 `TEAMAGENT_HOME` env, logError + main-crash 走 helper；测试 beforeEach 设临时 home。实测前后 3479→3479 零增长 (commit b496b05) |
+| B-086 | **P1** | `commands/install-user-hook.ts:109-126` 未基于 command path 去重 | `installUserHook` 仅按 `_teamagentTag === "teamagent-session-start"` 检测重复（line 110），不检查 `command` 字段。任何在 `_teamagentTag` 字段加入之前用 npm tarball 或旧版 monorepo 安装的条目（无 tag）会绕过去重，再次安装将创建新条目，旧条目作为孤儿永久驻留。`uninstallUserHook` 同样只过滤 tag-matching 条目（line 145-147），untagged 条目无法卸载。证据：用户 `~/.claude/settings.json` 当前有 3 条 SessionStart：(a) `tmp.2SNAVjvQ4J/.../bin-session-start.cjs`（无 tag, mtime Apr 22 17:12, 仍 spawn 旧 dist）+ (b) 当前 monorepo 路径无 tag + (c) 同路径有 tag。每次 SessionStart 多 spawn 2 次旧版 hook，潜在 split-brain。复现：在加 tag 前的版本 `install-user-hook` 一次，重启时手动改 settings.json 删 `_teamagentTag` 字段，再 `install-user-hook` 一次。 | **fixed** — 抽出 `isTeamagentSessionStartEntry()` 双信号判定（tag OR command 含 `bin-session-start.cjs`），install/uninstall 都按此 filter (commit f3dd455) |
+| B-087 | P3 | `packages/cli/tsup.hook.config.ts: clean: false` 累积孤儿 dist | Wiki 子系统在 280e4e8 全量移除（35 文件 + 源代码 + tsup entries），但 `packages/cli/dist/` 中 `bin-wiki-inject.cjs (Apr 16)`、`bin-wiki-refresh.cjs (Apr 28 16:00)`、`wiki-{HGXWC4MJ,KPLYPVNO,WX5QRXFU}.js`、`wiki-harvest-writer-GCGV6G6W.js`、`wiki-refresh-{CQ3WV3JH,V3D6UGE2}.js` 仍在。tsup config 用 `clean: false`（其它 entry 增量构建保留），从 entry list 移除的 entry 对应的旧 .cjs 永不清理。仅本机 dev 残留：`packages/teamagent/package.json files: ["dist/", "postinstall.mjs"]` 仅 ship `packages/teamagent/dist/`（已确认无 wiki 文件），不 ship `packages/cli/dist/`。复现：`ls packages/cli/dist/bin-wiki*.cjs packages/cli/dist/wiki*.js`。 | **fixed** — `packages/cli/package.json` 加 `prebuild: rmSync('dist')`，对齐 packages/teamagent 已有模式；同时手工清残留 (commit cea88d2) |
+| B-088 | P2 | `packages/cli/dist/bin-wiki-refresh.cjs` 仍可执行 | B-087 的具体后果：被回收的 wiki refresh bundle 仍是有效 self-contained CJS，能读 `~/.teamagent/events.db` 中 wiki state、向 attribution bus emit `source: "wiki-refresh"` 事件、并写 `<cwd>/.teamagent/last-wiki-pull.md`。复现：`echo '{}' \| node packages/cli/dist/bin-wiki-refresh.cjs` 输出 "started → skipped: wiki 24h 内刚刷过，跳过"，`.teamagent/last-wiki-pull.md` mtime 更新到调用时刻。任何在 wiki 移除前注册了该 hook 路径的用户（cron / 旧 install-hook 残留），下次构建覆盖前会继续生成 fake "wiki-refresh" 事件入 events.db，扰乱 calibrate（因为下游 `success-detector` 不知道 `wiki-refresh` 已下线）。实测：用户 `~/.claude/settings.json` 当前未注册 wiki-refresh hook，但发布前没人保证下游用户的 settings 不带。 | **fixed** — 与 B-087 同 commit；删除 dist/bin-wiki-refresh.cjs 后再次 `echo '{}' \| node ...` 报 MODULE_NOT_FOUND，确认失活 (commit cea88d2) |
+| B-089 | **P1** | `adapters/session-source/claude-session-source.ts:79-98` loadById API 重载导致 TOCTOU 错误信息 | `loadById(sessionIdOrPath)` 同时接受 sessionId 或绝对路径：`existsSync(sessionIdOrPath)` true → 直读，false → 调 `resolveSessionFile` 把参数当 session UUID 在 `projectsRoot/<pd>/<sessionId>.jsonl` 列表里找。若调用方传的是绝对路径但文件已被 Claude Code rotate/clean（TOCTOU 与 `bin-stop.ts:182` 外层 existsSync 之间），fallback 会把绝对路径塞进 `path.join`，构造形如 `<root>/<pd>/C:\Users\...\<sid>.jsonl` 的不存在路径，全部 existsSync 失败，最终 `throw Error("Session not found: " + 完整路径)`。证据：`stop-errors.log` 2026-04-28T08:30:18.033Z 起每次 detached-spawn 失败都伴随一条 `step=analyze err=Error: Session not found: C:\Users\tianhaoxuan\.claude\projects\C--bzli-teamagent\<uuid>.jsonl`（注意路径已是完整路径而非裸 UUID）。修复方向：API 拆成 `loadByPath` / `loadById` 两个签名，或在 `resolveSessionFile` 入口判断如果参数像绝对路径就直接抛"file no longer exists"而不再当 session ID 去查。 | **fixed** — `loadById` 入口判定 `looksLikePath`（`isAbsolute` OR 含 sep OR `.jsonl`），路径不存在直接抛 "Transcript file does not exist: ..."，bare UUID 仍走原 fallback (commit e6b8da5) |
+| B-090 | P3 | `~/.teamagent/wiki-refresh-errors.log` 移除后未清理 | 该日志由前 wiki pipeline 写入（`stage: pipeline:github_release / pipeline:rss / pipeline:arxiv / pipeline-run`），最近一条 2026-04-28T02:58:14（Wiki 移除 commit 280e4e8 时间 17:56 之前）。Wiki 移除 commit 删了源代码但未清理产物日志。普通 dev 重新 grep `wiki` 关键字仍会查到该文件，造成误以为 wiki 还在跑的假象。低危。 | **fixed** — 新增 `wiki-residue-cleanup.ts:cleanupWikiResidue()`，bin-session-start.ts main() 顶部 best-effort 调用 (commit b59790a) |
+
+---
+
+**Wave 9 覆盖率快照**
+
+| 维度 | 已覆盖 | 总量 | 百分比 |
+|------|--------|------|--------|
+| 自 Wave 8 以来 commit delta | 3 | 3 | 100% |
+| Stop hook 错误日志线索 | 4 | 4 | 100% |
+| Wiki 移除产物清理审计 | 4 | 4 | 100% |
+| Wave 7 遗留 open 复测 | 0 | 5 | 0%（本轮未测） |
+
+**Wave 9 新发现 Bug 数**: 6 (P1: 3, P2: 1, P3: 2)
+**Wave 9 修复状态**: 6/6 全部 fixed，1207/1207 测试绿，typecheck 干净；
+实测 `pnpm test` 前后 `wc -l ~/.teamagent/stop-errors.log` 不增长。
+
+**Wave 9 续修复 — Wave 7 遗留 5 条 open 全部清零**：
+B-045 / B-064 / B-065 / B-066 / B-067 一并 fixed；累计 1223/1223 测试绿，
+typecheck 干净。BUGS.md 全部条目（B-001 ~ B-090）状态：fixed (75) /
+withdrawn (8) / wontfix-merged (1) /  open (0)。
+

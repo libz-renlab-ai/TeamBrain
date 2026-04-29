@@ -153,4 +153,90 @@ describe("executeDemoHook", () => {
     expect(out).toContain("决策: deny");
     expect(out).toContain("git clean");
   });
+
+  // B-066: demo hook is an offline diagnostic command and MUST NOT write
+  // anything that calibrate later treats as real user evidence. Specifically
+  // it must not create / mutate ~/.teamagent/events.db (where success/failure
+  // observations live). Without this guard, calibrate would inflate
+  // confidence (実測 0.70 → 0.83) on rules that have no real production hits.
+  it("does not create or mutate events.db (no calibration pollution)", () => {
+    const projectDbPath = path.join(tmp.cwd, ".teamagent", "knowledge.db");
+    const userGlobalDbPath = path.join(tmp.home, ".teamagent", "global.db");
+    const eventsDbPath = path.join(tmp.home, ".teamagent", "events.db");
+    fs.mkdirSync(path.dirname(eventsDbPath), { recursive: true });
+    expect(fs.existsSync(eventsDbPath)).toBe(false);
+
+    executeDemoHook({
+      toolName: "Bash",
+      toolInput: { command: "npm install moment" },
+      cwd: tmp.cwd,
+      homeDir: tmp.home,
+      projectDbPath,
+      userGlobalDbPath,
+    });
+
+    // events.db must not be created by demo hook — that's a real-PreToolUse
+    // responsibility, not the offline simulator.
+    expect(fs.existsSync(eventsDbPath)).toBe(false);
+  });
+
+  // B-066: even when demo hook matches a real rule, it must not mutate
+  // hit_count / success_count on the matched entry (that would leak into
+  // calibrator scoring on the next run).
+  it("does not mutate hit_count or success_count on matched rule", async () => {
+    const projectDbPath = path.join(tmp.cwd, ".teamagent", "knowledge.db");
+    const userGlobalDbPath = path.join(tmp.home, ".teamagent", "global.db");
+    fs.mkdirSync(path.dirname(projectDbPath), { recursive: true });
+    fs.mkdirSync(path.dirname(userGlobalDbPath), { recursive: true });
+    const entry: KnowledgeEntry = {
+      id: "no-mutate-test",
+      scope: { level: "personal" },
+      category: "C",
+      tags: [],
+      type: "avoidance",
+      nature: "objective",
+      trigger: "moment",
+      wrong_pattern: "moment",
+      correct_pattern: "dayjs",
+      reasoning: "moment is heavy",
+      confidence: 0.7,
+      enforcement: "warn",
+      status: "active",
+      hit_count: 5,
+      success_count: 2,
+      override_count: 1,
+      evidence: { success_sessions: 0, success_users: 0, correction_sessions: 0 },
+      created_at: fixedNow,
+      last_hit_at: "",
+      last_validated_at: fixedNow,
+      source: "accumulated",
+      conflict_with: [],
+      current_tier: "experimental" as const,
+      max_tier_ever: "experimental" as const,
+      tier_entered_at: "",
+      demerit: 0,
+      demerit_last_updated: "",
+      resurrect_count: 0,
+    };
+    let store = new DualLayerStore({ projectDbPath, userGlobalDbPath });
+    store.add(entry);
+    store.close();
+
+    executeDemoHook({
+      toolName: "Bash",
+      toolInput: { command: "npm install moment" },
+      cwd: tmp.cwd,
+      homeDir: tmp.home,
+      projectDbPath,
+      userGlobalDbPath,
+    });
+
+    store = new DualLayerStore({ projectDbPath, userGlobalDbPath });
+    const after = store.findActive().find((r) => r.id === "no-mutate-test");
+    store.close();
+    expect(after).toBeDefined();
+    expect(after!.hit_count).toBe(5);
+    expect(after!.success_count).toBe(2);
+    expect(after!.override_count).toBe(1);
+  });
 });

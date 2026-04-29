@@ -106,27 +106,49 @@ export function installUserHook(
   if (!settings.hooks) settings.hooks = {};
   if (!settings.hooks.SessionStart) settings.hooks.SessionStart = [];
 
-  const existing = settings.hooks.SessionStart.find(
-    (h) => h._teamagentTag === SESSION_START_TAG,
+  // B-086: legacy entries written before _teamagentTag was added (npm
+  // tarball install pre-tag, or different install path) appear as untagged
+  // hook entries pointing at some `bin-session-start.cjs`. Plain tag-only
+  // dedup misses them and they accumulate across reinstalls. Also strip
+  // them here so a re-install consolidates back to a single tagged entry.
+  const before = settings.hooks.SessionStart.length;
+  settings.hooks.SessionStart = settings.hooks.SessionStart.filter(
+    (h) => !isTeamagentSessionStartEntry(h),
   );
-  let alreadyInstalled = false;
-  if (existing) {
-    alreadyInstalled = true;
-  } else {
-    settings.hooks.SessionStart.push({
-      _teamagentTag: SESSION_START_TAG,
-      hooks: [
-        {
-          type: "command",
-          command: `node ${shellQuote(toForwardSlash(hookEntry))}`,
-          timeout: 10,
-        },
-      ],
-    });
-  }
+  const removedLegacy = before - settings.hooks.SessionStart.length;
+
+  // After cleanup we always append a fresh tagged entry pointing at the
+  // current bundle path. `alreadyInstalled` reflects whether the same
+  // tagged entry was already present BEFORE cleanup, so callers can
+  // distinguish first-install from re-install for messaging.
+  const alreadyInstalled = removedLegacy > 0;
+  settings.hooks.SessionStart.push({
+    _teamagentTag: SESSION_START_TAG,
+    hooks: [
+      {
+        type: "command",
+        command: `node ${shellQuote(toForwardSlash(hookEntry))}`,
+        timeout: 10,
+      },
+    ],
+  });
 
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf-8");
   return { settingsPath, backupPath, hookEntry, alreadyInstalled };
+}
+
+/**
+ * 判定一条 SessionStart hook 是否属于 teamagent。
+ *
+ * 双重信号：
+ * - 显式 `_teamagentTag === SESSION_START_TAG`（强信号）
+ * - command 字符串包含 `bin-session-start.cjs`（启发式，覆盖加 tag 之前的旧
+ *   安装；该 binary 名字是 teamagent 独占的，与外部 hook 几乎不会冲突）
+ */
+function isTeamagentSessionStartEntry(entry: HookEntry): boolean {
+  if (entry._teamagentTag === SESSION_START_TAG) return true;
+  const cmds = entry.hooks?.map((c) => c.command ?? "") ?? [];
+  return cmds.some((c) => c.includes("bin-session-start.cjs"));
 }
 
 export function uninstallUserHook(
@@ -142,8 +164,10 @@ export function uninstallUserHook(
   if (!settings.hooks?.SessionStart) return { settingsPath, removed: false };
 
   const before = settings.hooks.SessionStart.length;
+  // B-086: also remove untagged legacy entries pointing at any
+  // bin-session-start.cjs — they're orphans from pre-tag installs.
   settings.hooks.SessionStart = settings.hooks.SessionStart.filter(
-    (h) => h._teamagentTag !== SESSION_START_TAG,
+    (h) => !isTeamagentSessionStartEntry(h),
   );
   const changed = settings.hooks.SessionStart.length !== before;
   if (settings.hooks.SessionStart.length === 0) delete settings.hooks.SessionStart;

@@ -45,13 +45,24 @@ describe("runStopPipeline", () => {
   // B-070: analyze is now skipped when transcript_path doesn't exist on disk.
   // Tests that need analyze to run use this real (empty) transcript file.
   let transcriptPath: string;
+  // B-085: redirect logError destination to a tmp dir so test runs don't
+  // append to the developer's real ~/.teamagent/stop-errors.log.
+  let testTeamagentHome: string;
+  let originalTeamagentHome: string | undefined;
+
   beforeEach(() => {
     vi.clearAllMocks();
     transcriptPath = path.join(os.tmpdir(), `bin-stop-test-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`);
     fs.writeFileSync(transcriptPath, "", "utf-8");
+    testTeamagentHome = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-home-"));
+    originalTeamagentHome = process.env.TEAMAGENT_HOME;
+    process.env.TEAMAGENT_HOME = testTeamagentHome;
   });
   afterEach(() => {
     try { fs.unlinkSync(transcriptPath); } catch { /* ignore */ }
+    if (originalTeamagentHome === undefined) delete process.env.TEAMAGENT_HOME;
+    else process.env.TEAMAGENT_HOME = originalTeamagentHome;
+    fs.rmSync(testTeamagentHome, { recursive: true, force: true });
   });
 
   it("calls analyze with transcript_path and commit=true", async () => {
@@ -94,6 +105,26 @@ describe("runStopPipeline", () => {
     await expect(runStopPipeline(input)).resolves.not.toThrow();
     expect(executeCalibrate).toHaveBeenCalled();
     expect(executeCompile).toHaveBeenCalled();
+  });
+
+  // B-085: logError must respect TEAMAGENT_HOME so that test runs don't
+  // pollute the developer's real ~/.teamagent/stop-errors.log. Failing this
+  // test means the production log file accumulates ~16 fake entries per
+  // bin-stop test run.
+  it("logError writes to TEAMAGENT_HOME, not real ~/.teamagent/", async () => {
+    vi.mocked(executeAnalyze).mockRejectedValueOnce(new Error("isolated-analyze-fail"));
+    const input: StopHookInput = {
+      session_id: "iso-1",
+      transcript_path: transcriptPath,
+      cwd: process.cwd(),
+      hook_event_name: "Stop",
+    };
+    await runStopPipeline(input);
+    const isolatedLog = path.join(testTeamagentHome, ".teamagent", "stop-errors.log");
+    expect(fs.existsSync(isolatedLog)).toBe(true);
+    const content = fs.readFileSync(isolatedLog, "utf-8");
+    expect(content).toContain("step=analyze");
+    expect(content).toContain("isolated-analyze-fail");
   });
 
   it("resolves even if all steps throw", async () => {
@@ -289,6 +320,9 @@ describe("isDetachedPipelineInvocation (B-068 env-leak resilience)", () => {
 describe("runStopPipeline lock file", () => {
   let tmpCwd: string;
   let lockTranscriptPath: string;
+  // B-085: redirect logError destination away from real ~/.teamagent.
+  let lockTestTeamagentHome: string;
+  let lockOriginalTeamagentHome: string | undefined;
   beforeEach(() => {
     vi.clearAllMocks();
     // Restore baseline resolving mocks (earlier describe's mockRejectedValueOnce
@@ -303,9 +337,15 @@ describe("runStopPipeline lock file", () => {
     // B-070: analyze fast-skips when transcript missing; create a real one.
     lockTranscriptPath = path.join(tmpCwd, "transcript.jsonl");
     fs.writeFileSync(lockTranscriptPath, "", "utf-8");
+    lockTestTeamagentHome = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-home-"));
+    lockOriginalTeamagentHome = process.env.TEAMAGENT_HOME;
+    process.env.TEAMAGENT_HOME = lockTestTeamagentHome;
   });
   afterEach(() => {
     fs.rmSync(tmpCwd, { recursive: true, force: true });
+    if (lockOriginalTeamagentHome === undefined) delete process.env.TEAMAGENT_HOME;
+    else process.env.TEAMAGENT_HOME = lockOriginalTeamagentHome;
+    fs.rmSync(lockTestTeamagentHome, { recursive: true, force: true });
   });
 
   it("writes and deletes lock file during pipeline run", async () => {
