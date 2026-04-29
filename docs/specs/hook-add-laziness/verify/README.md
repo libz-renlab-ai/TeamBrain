@@ -29,19 +29,22 @@ jq . .claude/settings.json   → PASS
 bash -n .claude/hooks/laziness-self-report.sh → PASS
 ```
 
-### L2 — direct shell unit tests (3 cases, paired hard-match)
+### L2 — direct shell unit tests (5 cases, paired hard-match)
 
-For each of A/B/C, build a synthetic JSONL transcript, feed Claude Code's hook
+For each case, build a synthetic JSONL transcript, feed Claude Code's hook
 input shape on stdin, capture stdout, and `jq -e` deep-equal against the expected
 shape:
 
 | case | input | expected stdout |
 |------|-------|-----------------|
-| A    | transcript whose last assistant text has **no `<laziness-self-report>` block** | `{decision:"block", reason: "...missing or malformed...", systemMessage:"[laziness-guard] BLOCKED: missing..."}` |
-| B    | block present with `permission_seeking: true` | `{decision:"block", reason: "...permission_seeking...", systemMessage:"[laziness-guard] BLOCKED: self-confessed..."}` |
+| A    | transcript whose last assistant text has **no `<laziness-self-report>` block** | `{decision:"block", systemMessage:"[laziness-guard] BLOCKED: missing..."}` |
+| B    | block present with `permission_seeking: true` | `{decision:"block", systemMessage:"[laziness-guard] BLOCKED: self-confessed..."}` |
 | C    | block present, all 6 fields = `false` | `{continue:true, suppressOutput:true}` |
+| D    | assistant first quotes the template (`<true\|false>` placeholders), THEN appends a real all-false block at the end | `{continue:true, suppressOutput:true}` (must use the LAST block, not the first) |
+| E    | assistant pastes the script source — lines containing the literal tag substring inside awk regex syntax, no real block on its own line | `{decision:"block", systemMessage:"[laziness-guard] BLOCKED: missing..."}` (strict tag-on-own-line regex must reject) |
 
-Artifacts: `L2-A-missing-block.json`, `L2-B-lazy-true.json`, `L2-C-all-false.json`.
+Artifacts: `L2-{A,B,C,D,E}-*.json`. D and E are regression tests for the
+P1 finding raised by Codex on PR #15.
 
 ### L3a — `!claudefast -p` (Claude Code non-interactive runtime)
 

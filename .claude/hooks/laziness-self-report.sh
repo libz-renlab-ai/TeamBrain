@@ -131,8 +131,9 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
   candidate=$(extract_last_text || echo "")
   if [[ -n "$candidate" ]]; then
     last_text="$candidate"
-    # Stop early once the tag has landed — final block flushed.
-    if echo "$candidate" | grep -q '<laziness-self-report>'; then
+    # Stop early once the close tag has landed on its own line (= a real
+    # block, not a tag mention inside code/prose) — final block flushed.
+    if echo "$candidate" | grep -qE '^[[:space:]]*</laziness-self-report>[[:space:]]*$'; then
       break
     fi
   fi
@@ -144,11 +145,21 @@ if [[ -z "$last_text" ]]; then
 fi
 
 # --- Find the self-report block ---
-# Capture between tags. Use awk so multi-line works without GNU-only flags.
+# Strict matching:
+#   * Open / close tags MUST be on a line of their own (optional surrounding
+#     whitespace allowed). This prevents accidental matches when the assistant
+#     quotes the tag inside source code, regex patterns, or markdown prose.
+#   * If multiple blocks exist (e.g. the assistant first quoted the template
+#     for explanation, then appended its real report at the end), keep the
+#     LAST complete block — that is the model's actual answer.
 report_body=$(echo "$last_text" | awk '
-  /<laziness-self-report>/ { found=1; next }
-  /<\/laziness-self-report>/ { found=0; exit }
-  found { print }
+  /^[[:space:]]*<laziness-self-report>[[:space:]]*$/  { state=1; buf=""; next }
+  /^[[:space:]]*<\/laziness-self-report>[[:space:]]*$/ {
+    if (state==1) { last_buf=buf; have=1 }
+    state=0; next
+  }
+  state==1 { buf = buf $0 "\n" }
+  END { if (have) printf "%s", last_buf }
 ')
 
 if [[ -z "$report_body" ]]; then
