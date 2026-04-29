@@ -1,0 +1,5 @@
+{
+  "decision": "block",
+  "reason": "Your self-report admits laziness in: permission_seeking. Reject your last message — continue the work in the same turn. Do not ask permission. Investigate root cause before disclaiming ownership. Finish the task or name a hard, specific blocker. Re-emit with the self-report set to all-false (which requires actually fixing the lazy behavior, not just flipping bools).",
+  "systemMessage": "[laziness-guard] BLOCKED: self-confessed laziness (permission_seeking)"
+}

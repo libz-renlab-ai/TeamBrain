@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["hook_stdout_path", "hook_exit_code"],
+  "properties": {
+    "hook_stdout_path": { "type": "string" },
+    "hook_exit_code":   { "type": "integer" }
+  }
+}
