@@ -175,8 +175,11 @@ export async function executePitfall(
     }
   } catch { /* 向量同步失败不阻断 pitfall */ }
 
-  // 异步生成 tool_context_description（不阻塞，后台写入）
-  generateToolContextAsync(entry, paths.projectDbPath).catch(() => {/* best-effort */});
+  // 异步生成 tool_context_description（不阻塞，后台写入）。
+  // When tests inject an embedder, avoid starting hidden real LLM/native ML work.
+  if (!opts.embedder) {
+    generateToolContextAsync(entry, paths.projectDbPath).catch(() => {/* best-effort */});
+  }
 
   const bus = new InMemoryAttributionBus();
   bus.emit({
