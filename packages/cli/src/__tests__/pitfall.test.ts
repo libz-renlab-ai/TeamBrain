@@ -132,7 +132,7 @@ describe("executePitfall", () => {
         correct: "dayjs().format()",
         reason: "moment 体积大 + 不再维护",
       },
-      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {}, embedder: stubEmbedder },
     );
     // 显示到 CLAUDE.md
     expect(out).toMatch(/传播到:.*CLAUDE\.md/);
@@ -153,7 +153,7 @@ describe("executePitfall", () => {
         correct: "调用 finishing-a-development-branch skill 跑完整流程",
         reason: "skill 流程是验证的",
       },
-      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {}, embedder: stubEmbedder },
     );
     expect(out).toContain("传播到:");
     // practice 类规则总是写入 skill 路径
