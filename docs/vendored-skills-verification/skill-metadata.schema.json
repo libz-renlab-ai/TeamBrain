@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "version",
+    "preamble_tier",
+    "trigger_count",
+    "allowed_tool_count",
+    "first_trigger",
+    "first_allowed_tool"
+  ],
+  "properties": {
+    "name": {"type": "string"},
+    "version": {"type": "string"},
+    "preamble_tier": {"type": "integer"},
+    "trigger_count": {"type": "integer"},
+    "allowed_tool_count": {"type": "integer"},
+    "first_trigger": {"type": "string"},
+    "first_allowed_tool": {"type": "string"}
+  }
+}

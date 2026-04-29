@@ -1,0 +1,9 @@
+{
+  "allowed_tool_count": 6,
+  "first_allowed_tool": "Bash",
+  "first_trigger": "explore design variants",
+  "name": "design-shotgun",
+  "preamble_tier": 2,
+  "trigger_count": 3,
+  "version": "1.0.0"
+}

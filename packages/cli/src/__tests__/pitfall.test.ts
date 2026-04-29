@@ -5,22 +5,7 @@ import os from "node:os";
 import { executePitfall, parsePitfallArgs } from "../commands/pitfall.js";
 import { DualLayerStore, openDb } from "@teamagent/adapters";
 
-function mkTmp(): { cwd: string; home: string; cleanup: () => void } {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pitfall-cwd-"));
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "pitfall-home-"));
-  return {
-    cwd,
-    home,
-    cleanup: () => {
-      fs.rmSync(cwd, { recursive: true, force: true });
-      fs.rmSync(home, { recursive: true, force: true });
-    },
-  };
-}
-
-// 384-dim stub embedder, deterministic and independent of Xenova/native ML.
-// The real Xenova adapter has focused tests; command behavior tests should not
-// load the model in every case, especially on Windows CI.
+// 384-dim stub embedder，无 Xenova native 依赖，行为确定。
 const stubEmbedder = {
   async embed(texts: string[]): Promise<number[][]> {
     return texts.map((t) => {
@@ -33,6 +18,19 @@ const stubEmbedder = {
     });
   },
 };
+
+function mkTmp(): { cwd: string; home: string; cleanup: () => void } {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pitfall-cwd-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "pitfall-home-"));
+  return {
+    cwd,
+    home,
+    cleanup: () => {
+      fs.rmSync(cwd, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    },
+  };
+}
 
 describe("executePitfall", () => {
   let tmp: ReturnType<typeof mkTmp>;
@@ -301,6 +299,19 @@ describe("executePitfall: 自动向量同步", () => {
       ),
     ).resolves.not.toThrow();
   });
+
+  it.skipIf(process.platform === "win32" && process.env.CI === "true")(
+    "不提供 embedder 时也不崩溃（embedder 是 best-effort）",
+    async () => {
+      // 不注入 embedder，默认会尝试 XenovaRuleEmbedder；超时或失败都不应该抛出
+      await expect(
+        executePitfall(
+          { trigger: "t", wrong: "w", correct: "c", reason: "r" },
+          { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+        ),
+      ).resolves.not.toThrow();
+    },
+  );
 
   it("异步生成不阻塞 pitfall：录入后函数正常返回", async () => {
     // 只验证 pitfall 本身不因 generateToolContextAsync 失败而崩溃

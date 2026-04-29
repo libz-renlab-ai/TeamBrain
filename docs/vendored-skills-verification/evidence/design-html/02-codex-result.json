@@ -1,0 +1,9 @@
+{
+  "allowed_tool_count": 8,
+  "first_allowed_tool": "Bash",
+  "first_trigger": "build the design",
+  "name": "design-html",
+  "preamble_tier": 2,
+  "trigger_count": 3,
+  "version": "1.0.0"
+}

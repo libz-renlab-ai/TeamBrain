@@ -128,9 +128,8 @@ export async function executePitfall(
 ): Promise<string> {
   const paths = resolvePaths(opts);
   const now = (opts.now ?? (() => new Date().toISOString()))();
-  const mode = parseVisibilityMode(
-    (opts.env ?? process.env).TEAMAGENT_VISIBILITY,
-  );
+  const env = opts.env ?? process.env;
+  const mode = parseVisibilityMode(env.TEAMAGENT_VISIBILITY);
 
   fs.mkdirSync(path.dirname(paths.projectDbPath), { recursive: true });
   fs.mkdirSync(path.dirname(paths.userGlobalDbPath), { recursive: true });
@@ -176,8 +175,8 @@ export async function executePitfall(
   } catch { /* 向量同步失败不阻断 pitfall */ }
 
   // 异步生成 tool_context_description（不阻塞，后台写入）。
-  // When tests inject an embedder, avoid starting hidden real LLM/native ML work.
-  if (!opts.embedder) {
+  // 测试注入 embedder 时避免启动隐藏的真实 LLM/native embedder 后台工作。
+  if (!opts.embedder && process.env.VITEST !== "true" && env.TEAMAGENT_DISABLE_TOOL_CONTEXT !== "1") {
     generateToolContextAsync(entry, paths.projectDbPath).catch(() => {/* best-effort */});
   }
 

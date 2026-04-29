@@ -1,0 +1,63 @@
+# Feature Verification
+
+Use this rule when asked "how do we verify/test a feature?" or before shipping
+any feature/fix.
+
+TL;DR: you need to verify and add how to verify to the commit message and PR
+message. 1. verify with `!claudefast -p`; 2. verify with `!codex exec`; both
+must run `{MODULE} --help` first, use JSON format, and hard-match the paired
+canonical JSON contents; 3. use interactive `claudefast` with tmux and finally
+submit `/export <path>`. Add the `/export` files to PR contents to convince
+readers. Keep updating code/docs until 1+2+3 match.
+
+## Required Record
+
+Every feature/fix must include a verification summary in both places:
+
+- Commit message: include what was verified, not only what changed.
+- PR message: include exact commands, output files, and any known caveats.
+
+## Required 1+2+3 Flow
+
+Keep updating the code/docs until all three paths agree.
+
+1. Verify with `!claudefast -p`.
+   - It must run `{MODULE} --help` first, or the module's equivalent help /
+     metadata entry point.
+   - It must emit JSON using a declared schema or stable JSON format.
+2. Verify with `!codex exec`.
+   - It must run the same `{MODULE} --help` first.
+   - It must emit JSON using the same schema or stable JSON fields.
+   - Hard-match the paired JSON contents from steps 1 and 2.
+   - Canonicalize both outputs, for example `jq -S .`.
+   - The hard match must be byte-identical, with no semantic-only pass.
+3. Verify interactive mode with tmux.
+   - Start `claudefast` without `-p` inside tmux.
+   - Run the same feature verification prompt.
+   - Finally submit `/export <path>`.
+   - Add the `/export` file(s) to the PR contents so reviewers can inspect the
+     live interactive evidence.
+
+## Pass Condition
+
+The feature is not verified until:
+
+- `claudefast -p` JSON passes.
+- `codex exec` JSON passes.
+- The two canonical JSON files hard-match.
+- The tmux interactive `/export` file exists and supports the same conclusion.
+- Commit and PR messages both explain how to reproduce the verification.
+
+## Example Shape
+
+```bash
+claudefast -p --output-format json --json-schema schema.json \
+  "Run {MODULE} --help and return only the required JSON."
+
+codex exec --output-schema schema.json -o codex.json \
+  "Run {MODULE} --help and return only the required JSON."
+
+jq -S . claudefast.json > claudefast.sorted.json
+jq -S . codex.json > codex.sorted.json
+diff -u claudefast.sorted.json codex.sorted.json
+```
