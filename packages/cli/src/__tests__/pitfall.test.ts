@@ -18,6 +18,22 @@ function mkTmp(): { cwd: string; home: string; cleanup: () => void } {
   };
 }
 
+// 384-dim stub embedder, deterministic and independent of Xenova/native ML.
+// The real Xenova adapter has focused tests; command behavior tests should not
+// load the model in every case, especially on Windows CI.
+const stubEmbedder = {
+  async embed(texts: string[]): Promise<number[][]> {
+    return texts.map((t) => {
+      const v = new Array(384).fill(0.5);
+      let h = 0;
+      for (let i = 0; i < t.length; i++) h = ((h * 31 + t.charCodeAt(i)) & 0xffff);
+      v[h % 384] += 0.5;
+      const n = Math.sqrt(v.reduce((s: number, x: number) => s + x * x, 0));
+      return v.map((x: number) => x / n);
+    });
+  },
+};
+
 describe("executePitfall", () => {
   let tmp: ReturnType<typeof mkTmp>;
   const fixedNow = "2026-04-14T10:00:00Z";
@@ -38,7 +54,7 @@ describe("executePitfall", () => {
         correct: "dayjs",
         reason: "moment 已停止维护",
       },
-      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {}, embedder: stubEmbedder },
     );
 
     const dbPath = path.join(tmp.cwd, ".teamagent", "knowledge.db");
@@ -62,7 +78,7 @@ describe("executePitfall", () => {
         correct: "c",
         reason: "r",
       },
-      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {}, embedder: stubEmbedder },
     );
 
     const mdPath = path.join(tmp.cwd, "CLAUDE.md");
@@ -78,7 +94,7 @@ describe("executePitfall", () => {
 
     await executePitfall(
       { trigger: "t", wrong: "w", correct: "c", reason: "r" },
-      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {}, embedder: stubEmbedder },
     );
 
     const content = fs.readFileSync(mdPath, "utf-8");
@@ -95,7 +111,7 @@ describe("executePitfall", () => {
         correct: "dayjs",
         reason: "r",
       },
-      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {}, embedder: stubEmbedder },
     );
     expect(out).toContain("✨ TeamAgent");
     expect(out).toContain("添加知识条目");
@@ -113,6 +129,7 @@ describe("executePitfall", () => {
         homeDir: tmp.home,
         now: () => fixedNow,
         env: { TEAMAGENT_VISIBILITY: "silent" },
+        embedder: stubEmbedder,
       },
     );
     expect(out).toBe("");
@@ -126,6 +143,7 @@ describe("executePitfall", () => {
         homeDir: tmp.home,
         now: () => fixedNow,
         env: { TEAMAGENT_VISIBILITY: "verbose" },
+        embedder: stubEmbedder,
       },
     );
     expect(out).toContain("如果没有 TeamAgent");
@@ -139,7 +157,7 @@ describe("executePitfall", () => {
         correct: "运行完整测试套件确认零破坏",
         reason: "改了再测是敏捷核心",
       },
-      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {}, embedder: stubEmbedder },
     );
     const dbPath = path.join(tmp.cwd, ".teamagent", "knowledge.db");
     const globalDbPath = path.join(tmp.home, ".teamagent", "global.db");
@@ -158,7 +176,7 @@ describe("executePitfall", () => {
         reason: "r",
         level: "team",
       },
-      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {}, embedder: stubEmbedder },
     );
 
     const dbPath = path.join(tmp.cwd, ".teamagent", "knowledge.db");
@@ -179,7 +197,7 @@ describe("executePitfall", () => {
         reason: "r",
         nature: "subjective",
       },
-      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+      { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {}, embedder: stubEmbedder },
     );
     const dbPath = path.join(tmp.cwd, ".teamagent", "knowledge.db");
     const globalDbPath = path.join(tmp.home, ".teamagent", "global.db");
@@ -193,20 +211,6 @@ describe("executePitfall", () => {
 describe("executePitfall: 自动向量同步", () => {
   let tmp: ReturnType<typeof mkTmp>;
   const fixedNow = "2026-04-27T10:00:00Z";
-
-  // 384-dim stub embedder，无 Xenova 依赖，行为确定
-  const stubEmbedder = {
-    async embed(texts: string[]): Promise<number[][]> {
-      return texts.map((t) => {
-        const v = new Array(384).fill(0.5);
-        let h = 0;
-        for (let i = 0; i < t.length; i++) h = ((h * 31 + t.charCodeAt(i)) & 0xffff);
-        v[h % 384] += 0.5;
-        const n = Math.sqrt(v.reduce((s: number, x: number) => s + x * x, 0));
-        return v.map((x: number) => x / n);
-      });
-    },
-  };
 
   beforeEach(() => { tmp = mkTmp(); });
   afterEach(() => { tmp.cleanup(); });
@@ -239,12 +243,22 @@ describe("executePitfall: 自动向量同步", () => {
     expect(vecCount.n).toBe(1);
   });
 
-  it("不提供 embedder 时也不崩溃（embedder 是 best-effort）", async () => {
-    // 不注入 embedder，默认会尝试 XenovaRuleEmbedder；超时或失败都不应该抛出
+  it("embedder 失败时也不崩溃（embedder 是 best-effort）", async () => {
+    const failingEmbedder = {
+      async embed(): Promise<number[][]> {
+        throw new Error("embedding unavailable");
+      },
+    };
     await expect(
       executePitfall(
         { trigger: "t", wrong: "w", correct: "c", reason: "r" },
-        { cwd: tmp.cwd, homeDir: tmp.home, now: () => fixedNow, env: {} },
+        {
+          cwd: tmp.cwd,
+          homeDir: tmp.home,
+          now: () => fixedNow,
+          env: {},
+          embedder: failingEmbedder,
+        },
       ),
     ).resolves.not.toThrow();
   });
