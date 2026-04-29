@@ -31,9 +31,9 @@ bash -n .claude/hooks/laziness-self-report.sh → PASS
 
 ### L2 — direct shell unit tests (5 cases, paired hard-match)
 
-For each case, build a synthetic JSONL transcript, feed Claude Code's hook
-input shape on stdin, capture stdout, and `jq -e` deep-equal against the expected
-shape:
+For each case, feed Claude Code's Stop-hook input shape on stdin, capture
+stdout, and `jq -e` deep-equal against the expected shape. Current runtime
+paths use `last_assistant_message`; transcript input is only a legacy fallback.
 
 | case | input | expected stdout |
 |------|-------|-----------------|
@@ -85,8 +85,11 @@ codex exec --json --skip-git-repo-check \
   -C "$PWD" "$PROMPT" </dev/null
 ```
 
-The prompt instructs codex to invoke the hook script with synthetic stdin and
-write the script's stdout to `L3b-hook-stdout.json`. After the run:
+The prompt instructs codex to invoke the hook script with synthetic Stop payload
+stdin (`last_assistant_message`) and write the script's stdout to
+`L3b-hook-stdout.json`. Hook logging is best-effort and writes to the
+project-local `.claude/laziness/log.jsonl` path by default, so a read-only
+`$HOME` cannot create hook stderr. After the run:
 
 ```
 jq -e -n --slurpfile a L2-A-missing-block.json --slurpfile b L3b-hook-stdout.json '$a[0] == $b[0]'
@@ -122,8 +125,8 @@ All four layers can be re-run from the worktree root:
 jq . .claude/settings.json > /dev/null
 bash -n .claude/hooks/laziness-self-report.sh
 
-# L2 (3 cases)
-bash docs/specs/hook-add-laziness/verify/run-l2.sh   # see L3a script-block in L3a-stream.jsonl
+# L2 (5 cases)
+bash docs/specs/hook-add-laziness/verify/run-l2.sh
 
 # L3a
 timeout 90 claudefast -p --output-format stream-json --include-hook-events \

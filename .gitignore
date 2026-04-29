@@ -17,6 +17,7 @@ packages/benchmark/bench-report.md
 packages/benchmark/bench-*.json
 packages/benchmark/bench-*.md
 .claude/scheduled_tasks.lock
+.claude/laziness/
 # pnpm pack build artifacts
 packages/*/*.tgz
 # reclassify command outputs (timestamped, regenerated per run)

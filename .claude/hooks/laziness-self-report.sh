@@ -7,14 +7,10 @@
 #   C) Block parses cleanly, any of the 6 bools = true                    → block + list signals
 #   D) Block parses cleanly, all 6 = false                                → approve (silent)
 #
-# Side effects: appends one JSON line to ~/.claude/laziness/log.jsonl per Stop event.
+# Side effects: best-effort append of one JSON line per Stop event.
 # Inspired by: https://github.com/anthropics/claude-code/issues/42796
 
 set -uo pipefail
-
-LOG_DIR="$HOME/.claude/laziness"
-LOG_FILE="$LOG_DIR/log.jsonl"
-mkdir -p "$LOG_DIR"
 
 # Read hook input from stdin (Claude Code feeds JSON here)
 input=$(cat)
@@ -22,6 +18,26 @@ input=$(cat)
 transcript_path=$(echo "$input" | jq -r '.transcript_path // empty')
 session_id=$(echo "$input" | jq -r '.session_id // "unknown"')
 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# Logging must never break hook enforcement. Use an explicit override when
+# provided; otherwise keep logs project-local instead of under user-global $HOME.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+LOG_FILE="${CLAUDE_LAZINESS_LOG_FILE:-}"
+if [[ -z "$LOG_FILE" ]]; then
+  LOG_DIR="$PROJECT_DIR/.claude/laziness"
+  LOG_FILE="$LOG_DIR/log.jsonl"
+else
+  LOG_DIR="$(dirname "$LOG_FILE")"
+fi
+if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
+  LOG_FILE=""
+fi
+
+write_log() {
+  [[ -n "$LOG_FILE" ]] || return 0
+  cat >> "$LOG_FILE" 2>/dev/null || true
+}
 
 # Required template — emitted verbatim in block reasons so Claude can self-correct.
 read -r -d '' TEMPLATE <<'EOF' || true
@@ -41,7 +57,7 @@ emit_block_missing() {
     --arg ts "$ts" --arg sid "$session_id" \
     --arg detail "$detail" \
     '{ts:$ts, session_id:$sid, report_present:false, action:"block_missing_report", detail:$detail}' \
-    >> "$LOG_FILE"
+    | write_log
 
   jq -n \
     --arg reason "Your last message is missing (or has a malformed) <laziness-self-report> block ($detail). Append this exact block to the END of every message before stopping:
@@ -70,7 +86,7 @@ emit_block_lazy() {
     --argjson sig "$signals_jq" \
     --arg signals "$signals_csv" \
     '{ts:$ts, session_id:$sid, report_present:true, lazy_signals:$sig, any_lazy:true, action:"block_lazy", true_signals:$signals}' \
-    >> "$LOG_FILE"
+    | write_log
 
   jq -n \
     --arg reason "Your self-report admits laziness in: $signals_csv. Reject your last message — continue the work in the same turn. Do not ask permission. Investigate root cause before disclaiming ownership. Finish the task or name a hard, specific blocker. Re-emit with the self-report set to all-false (which requires actually fixing the lazy behavior, not just flipping bools)." \
@@ -85,60 +101,53 @@ emit_approve() {
     --arg ts "$ts" --arg sid "$session_id" \
     --argjson sig "$signals_jq" \
     '{ts:$ts, session_id:$sid, report_present:true, lazy_signals:$sig, any_lazy:false, action:"approve"}' \
-    >> "$LOG_FILE"
+    | write_log
 
   printf '{"continue": true, "suppressOutput": true}\n'
   exit 0
 }
 
 # --- Extract last assistant message text ---
-# Try fallback if transcript_path is empty
-if [[ -z "$transcript_path" || ! -f "$transcript_path" ]]; then
-  if [[ -n "${CLAUDE_TRANSCRIPT:-}" && -f "${CLAUDE_TRANSCRIPT}" ]]; then
-    transcript_path="${CLAUDE_TRANSCRIPT}"
-  fi
-fi
-if [[ -z "$transcript_path" || ! -f "$transcript_path" ]]; then
-  emit_block_missing "transcript_path missing or unreadable"
-fi
+extract_payload_text() {
+  echo "$input" | jq -r '
+    def content_text:
+      if type == "string" then .
+      elif type == "array" then
+        map(if type == "string" then .
+            elif type == "object" and .type == "text" then (.text // "")
+            else "" end) | join("\n")
+      elif type == "object" then
+        if (.content? | type) == "array" then
+          (.content | map(select(.type == "text") | .text) | join("\n"))
+        elif (.message?.content? | type) == "array" then
+          (.message.content | map(select(.type == "text") | .text) | join("\n"))
+        elif (.text? | type) == "string" then .text
+        else "" end
+      else "" end;
+    (.last_assistant_message // empty) | content_text
+  ' 2>/dev/null
+}
 
-# Race-condition guard: Stop hook fires BEFORE the final assistant text block is
-# flushed to the transcript file. We retry the extraction up to ~3s, returning
-# early as soon as the last assistant text contains the <laziness-self-report>
-# tag (which is the only signal that the final block has landed). Each retry is
-# cheap (one jq pass over the transcript). Worst case ~3s, well under the 10s
-# hook timeout.
-#
-# Claude Code splits a single turn into multiple JSONL entries (one per content
-# block: thinking / text / tool_use), and after the assistant text the transcript
-# often appends user/attachment/system/last-prompt/permission-mode metadata.
-# So we cannot just `last`. Instead, find the LAST assistant entry whose content
-# array contains at least one text block, and concatenate its text.
-extract_last_text() {
-  jq -rs '
-    [.[] | select(.type == "assistant")
-          | select((.message.content // []) | any(.type == "text"))]
-    | last
+extract_transcript_text_once() {
+  [[ -n "$transcript_path" && -f "$transcript_path" ]] || return 0
+  tail -n 200 "$transcript_path" 2>/dev/null | jq -cr '
+    select(.type == "assistant")
+    | select((.message.content // []) | any(.type == "text"))
     | (.message.content // [])
     | map(select(.type == "text") | .text)
     | join("\n")
-  ' "$transcript_path" 2>/dev/null
+  ' 2>/dev/null | tail -n 1
 }
 
-last_text=""
-sleep 0.3   # short initial grace
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  candidate=$(extract_last_text || echo "")
-  if [[ -n "$candidate" ]]; then
-    last_text="$candidate"
-    # Stop early once the close tag has landed on its own line (= a real
-    # block, not a tag mention inside code/prose) — final block flushed.
-    if echo "$candidate" | grep -qE '^[[:space:]]*</laziness-self-report>[[:space:]]*$'; then
-      break
+last_text="$(extract_payload_text || echo "")"
+if [[ -z "$last_text" ]]; then
+  if [[ -z "$transcript_path" || ! -f "$transcript_path" ]]; then
+    if [[ -n "${CLAUDE_TRANSCRIPT:-}" && -f "${CLAUDE_TRANSCRIPT}" ]]; then
+      transcript_path="${CLAUDE_TRANSCRIPT}"
     fi
   fi
-  sleep 0.3
-done
+  last_text="$(extract_transcript_text_once || echo "")"
+fi
 
 if [[ -z "$last_text" ]]; then
   emit_block_missing "no text content in last assistant message"
