@@ -132,11 +132,14 @@ conflict_with: []
   2. 自动: hit_count 高者胜 (二级排序)
   3. 人工: 都不能决出 → 标记 `status: contested`，compile 跳过该条，提示 tech lead
 
-### 4.5 隐私 / 噪声控制
+### 4.5 隐私 / 噪声控制（暂时归档）
 
-- `scope.level: personal` 规则**不进** `.teamagent/rules/` 目录 → 不走 git → 不同步
-- commit 前 hook 扫 rule body，检查是否含 email / token / 内部 URL
-- `teamagent export-team` 命令：从 `knowledge.db` 按 tier ≥ enforced + scope.level = project/team 挑出，写成 YAML 文件供 PR
+> 2026-04-30 决议：隐私守门方案先归档，不作为当前里程碑交付项。
+> 当前目标先做出可演示 demo，隐私拦截/脱敏能力后置。
+
+- `scope.level: personal` 规则不进 `.teamagent/rules/`、commit 前敏感信息扫描、`teamagent export-team` 等机制全部延后。
+- 当前阶段允许先走最小可用同步链路，优先验证端到端体验与演示稳定性。
+- 隐私相关需求保留在本节，待 demo 完成后再恢复排期。
 
 ---
 
