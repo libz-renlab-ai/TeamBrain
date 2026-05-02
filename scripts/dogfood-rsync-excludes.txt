@@ -1,0 +1,14 @@
+# Shared rsync exclude patterns for DOGFOOD LEFT->SANDBOX sync.
+# Sourced by both scripts/dogfood.sh (initial seed) and
+# scripts/dogfood-sync.sh (manual resync). Edit here, both scripts pick it up.
+.git
+node_modules
+dist
+.fastprobe
+.judge
+.codex/worktrees
+.claude/worktrees
+.dogfood
+*.tsbuildinfo
+packages/*/.cache
+packages/*/.teamagent

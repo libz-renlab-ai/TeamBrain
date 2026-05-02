@@ -1,0 +1,5 @@
+# Keep the docker build context tight: only the Dockerfile is needed.
+# Anything else added to docker/dogfood/ later (notes, READMEs, fixtures)
+# will be ignored unless explicitly added with `!pattern`.
+*
+!Dockerfile

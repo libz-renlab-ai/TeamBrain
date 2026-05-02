@@ -13,6 +13,8 @@ the indexes below to choose what to read first.
 | Look up implementation details | [SYSTEM.md](SYSTEM.md) |
 | Launch the real-time dashboard | Run `pnpm teamagent dashboard --watch --open` |
 | Verify or test a feature/fix, including PR review gates | [feature-verification.md](feature-verification.md) |
+| Live-preview / dogfood agent edits in two tmux panes | [DOGFOOD.md](DOGFOOD.md) |
+| Report a bug — system info + repro + raw logs to GitHub | [BUGREPORT.md](BUGREPORT.md) |
 | Check PR #14 status | [pr-14-status.md](pr-14-status.md) |
 | Find foundational specs | [specs/README.md](specs/README.md) |
 | Find later milestone specs and plans | [superpowers/README.md](superpowers/README.md) |

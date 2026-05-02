@@ -37,7 +37,15 @@ packages/*/.cache/
 chaos-verify*.mjs
 # FASTPROBE timestamped scratch dirs (raw .result/.jsonl from claudefast probes; regenerated per run).
 .fastprobe/
+# DOGFOOD verify capture (regenerated each `bash docs/dogfood/verify-canned-answer.sh` run).
+docs/dogfood/.last-verify.out
+# DOGFOOD active-sandbox state file (written by scripts/dogfood.sh; per-machine).
+.dogfood/
 # VERIFY judge-harness raw stdout/stderr/coverage/judge.json (transient evidence; bundle into PR if needed).
 .judge/
 .gstack/
+<<<<<<< HEAD
 .sandbox/
+=======
+docs/bugreport/.last-verify.out
+>>>>>>> 6977921 (feat(dogfood): live-preview agent dev loop + tiered isolation + bugreport flow)

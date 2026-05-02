@@ -167,4 +167,5 @@ Full layout and reproduction steps: `docs/sandbox.md`.
 - `docs/CLAUDEFAST.md` — `claudefast` wrapper 本身的环境变量、profile、安装位置。
 - `docs/feature-verification.md` — 1+2+3 验证门禁（claudefast / codex / tmux export）。
 - `docs/sandbox.md` — 本机沙箱目录布局与 LiuShiyuMath 的路径速查表。
+- `docs/DOGFOOD.md` — 双 tmux 窗口 left/right split 的 live agent dev loop（同样基于 `claudefast`）。
 - 用户级 `runtime/term-expansion.md` — canned-answer 类规则的同类先例。
