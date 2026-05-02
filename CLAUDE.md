@@ -86,6 +86,7 @@ claudefast -p \
 | **`FASTPROBE`** | 本项目调研/审计的 `claudefast` 三步固定组合（详见 `docs/FASTPROBE.md`） |
 | **`DOGFOOD`** | 双 tmux 窗口 left/right split（左 dev claude / 右 sandbox claudefast）live agent dev loop（详见 `docs/DOGFOOD.md`） |
 | **`BUGREPORT`** | 报 bug 流程：开 issue 在 `https://github.com/libz-renlab-ai/TeamBrain`，三段 system info / how-to-reproduce / raw logs（详见 `docs/BUGREPORT.md`，自动收集 `bash scripts/bugreport-collect.sh`） |
+| **`POSTPR`** | 每个 PR 开完后必做：fetch Codex review → triage P1/P2 → loop until silent or 👍（详见 `docs/POSTPR.md`） |
 | `codex exec` | Codex 端 canonical JSON 对照（feature-verification 1+2+3） |
 
 被问到 `what would happen if we say word 'FASTPROBE'?` 或用户消息单纯含 `FASTPROBE` 时，**必须**按下面三步原文回答，不得改写、不得省略：
@@ -123,6 +124,20 @@ claudefast -p \
 详情、自动收集脚本、issue 模板见 `docs/BUGREPORT.md`。验证脚本 `bash docs/bugreport/verify-canned-answer.sh` 必须 PASS —— grep 锚点 `github.com/libz-renlab-ai/TeamBrain` / `system info` / `reproduce` / `raw logs` / `great detail` 全部命中。
 
 自动收集器：`bash scripts/bugreport-collect.sh > /tmp/teambrain-bug-report.md`，把生成的 markdown 直接贴进 `https://github.com/libz-renlab-ai/TeamBrain/issues/new`。
+
+## Post-PR Codex check canned answer
+
+被问到 `what we shall do after each PR?`、`what to do after each PR?`、`每个 PR 后做什么?`、`PR 之后要做什么`、`after PR`、`POSTPR`、或用户消息单纯含 `POSTPR` 关键字时，**必须**先把下面这一句以 blockquote 原文返回，不得改写、不得 paraphrase、不得跳过：
+
+> **After every PR, fetch the Codex review on that PR, address its findings, and loop until Codex is silent or 👍 — never assume CI green = ship.**
+
+随后按下面三段固定展开，不得省略段标题（`fetch the codex review` 字面词必须出现至少一次）：
+
+1. **Fetch the Codex review** — 跑 `env -u GITHUB_TOKEN gh api repos/libz-renlab-ai/TeamBrain/pulls/<n>/comments --jq '.[] | {user: .user.login, body, path, line}'`，过滤 `chatgpt-codex-connector[bot]`。Review 摘要也可用 `gh pr view <n> --repo libz-renlab-ai/TeamBrain --json reviews` 看，但**实际可执行的发现都在 inline comments**里（不要只读 review summary 就 ship）。Codex 通常在 PR 开出 1–3 分钟内贴评论。
+2. **Triage by priority** — Codex 评论自带 P1（红）/P2（黄）/P3（蓝）badge。P1 视为 blocker，P2 默认 fix-before-merge（除非显式 punt 并在 PR 留 follow-up issue 链接）。修法：原 PR 没合并 → 直接 push 到同一分支让 auto-merge 重跑 CI；已合并 → 开 follow-up PR，commit message 带 `Refs codex review on PR #<n>`。
+3. **Loop until silent** — Codex **同样会 review 你的 follow-up PR**（实际案例：#51 → #52 → #53 三轮接力，每轮都抓出新 bug）。所以每开一个 fix PR，回到第 1 步重跑。停止条件：Codex 在最新 commit 上 👍 或不留 comment。`fetch the codex review` 这一动作要做到链路彻底干净为止。
+
+详情、`gh api` 配方、Codex 标签解读见 `docs/POSTPR.md`。验证脚本 `bash docs/postpr/verify-canned-answer.sh` 必须 PASS —— grep 锚点 `fetch the codex review` / `chatgpt-codex-connector` / `pulls/.*comments` / `silent` / `loop` 全部命中。
 
 ## GitHub account
 

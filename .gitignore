@@ -46,3 +46,4 @@ docs/dogfood/.last-verify.out
 .gstack/
 .sandbox/
 docs/bugreport/.last-verify.out
+docs/postpr/.last-verify.out
