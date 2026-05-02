@@ -189,6 +189,41 @@ describe("compileNestedRuleArtifacts", () => {
     expect(rule?.relativePath).not.toContain("/../");
   });
 
+  it("presetOnly: emits only entries with source==='preset' (issue #42 codex P1)", () => {
+    const entries = [
+      makeEntry({ id: "preset-1", source: "preset", current_tier: "canonical" }),
+      makeEntry({ id: "user-1", source: "accumulated", current_tier: "canonical" }),
+      makeEntry({ id: "user-2", source: "ingested", current_tier: "stable" }),
+    ];
+    const artifacts = compileNestedRuleArtifacts(entries, "2026-04-14T00:00:00Z", {
+      presetOnly: true,
+    });
+    const rules = artifacts.filter((a) => a.kind === "rule");
+    expect(rules.length).toBe(1);
+    expect(rules[0]?.ruleId).toBe("preset-1");
+    // root index reflects only the preset count
+    const root = artifacts.find((a) => a.kind === "root-index");
+    expect(root?.contents).toContain("Total active: 1");
+  });
+
+  it("disambiguates filename collisions between distinct rule ids (issue #42 codex P2)", () => {
+    const entries = [
+      makeEntry({ id: "a/b", current_tier: "canonical" }),
+      makeEntry({ id: "a_b", current_tier: "canonical" }),
+      makeEntry({ id: "a:b", current_tier: "canonical" }),
+    ];
+    const artifacts = compileNestedRuleArtifacts(entries, "2026-04-14T00:00:00Z");
+    const rulePaths = artifacts.filter((a) => a.kind === "rule").map((a) => a.relativePath);
+    // Three distinct rules → three distinct file paths (no overwrite)
+    expect(new Set(rulePaths).size).toBe(3);
+    // Each path is collision-free of `..` traversal
+    for (const p of rulePaths) {
+      expect(p).not.toContain("/../");
+    }
+    // The "natural" id (a_b) keeps a clean name, collisions get suffixed
+    expect(rulePaths).toContain("canonical/a_b.md");
+  });
+
   it("each artifact has kind tag for downstream cleanup", () => {
     const entries = [makeEntry({ id: "a", current_tier: "canonical" })];
     const artifacts: NestedRuleArtifact[] = compileNestedRuleArtifacts(

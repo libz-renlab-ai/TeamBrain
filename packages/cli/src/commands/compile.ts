@@ -134,7 +134,10 @@ function chooseMarkdownCompiler(
       opts.presetOnly ? { compileOptions: { presetOnly: true } } : undefined,
     );
   }
-  return new NestedRuleStoreCompiler({ rulesDir: paths.userRulesDir });
+  return new NestedRuleStoreCompiler({
+    rulesDir: paths.userRulesDir,
+    compileOptions: opts.presetOnly ? { presetOnly: true } : undefined,
+  });
 }
 
 export async function executeCompile(opts: CompileOptions = {}): Promise<CompileCommandResult> {

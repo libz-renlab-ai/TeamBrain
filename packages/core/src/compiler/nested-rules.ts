@@ -139,18 +139,33 @@ export function formatRootIndex(entries: KnowledgeEntry[], now: string): string 
   return lines.join("\n");
 }
 
+/** Options for `compileNestedRuleArtifacts`. */
+export interface CompileNestedRuleOptions {
+  /**
+   * 元原则模式：只编译 source==='preset' 的条目。
+   * 与旧 `MarkdownCompiler` 的 `--preset-only` 行为对齐（issue #42 codex P1）。
+   */
+  presetOnly?: boolean;
+}
+
 /**
  * 把 entries 编译成 nested rule store artifacts。纯函数。
  *
  * - 跳过 archived
  * - 同名 rule id 取第一条（DualLayerStore 已做 dedup，此处只是兜底）
  * - 每个 tier 不论是否有规则都会出现 INDEX.md（让 adapter 能稳定地清理孤儿）
+ * - 不同 rule id 编码后落到同一文件名时（例：`a/b` vs `a_b`），后到的会附加
+ *   稳定哈希后缀，避免互相覆盖（issue #42 codex P2）
  */
 export function compileNestedRuleArtifacts(
   entries: KnowledgeEntry[],
   now: string,
+  options: CompileNestedRuleOptions = {},
 ): NestedRuleArtifact[] {
-  const active = entries.filter((e) => e.status === "active");
+  let active = entries.filter((e) => e.status === "active");
+  if (options.presetOnly) {
+    active = active.filter((e) => e.source === "preset");
+  }
 
   const byId = new Map<string, KnowledgeEntry>();
   for (const e of active) if (!byId.has(e.id)) byId.set(e.id, e);
@@ -173,10 +188,28 @@ export function compileNestedRuleArtifacts(
     });
   }
 
+  // 跨 tier 的 (tier, fileBasename) 唯一性追踪——两条不同 id 编码到同一文件名时，
+  // 第二条之后追加 ` -<hash>` 后缀。第一条保持干净文件名，避免无谓污染。
+  const usedFilenames = new Set<string>();
   for (const e of deduped) {
     const tier = e.current_tier;
     if (!tier) continue;
-    const safe = encodeRuleIdForPath(e.id);
+    const baseSafe = encodeRuleIdForPath(e.id);
+    let safe = baseSafe;
+    let key = `${tier}/${safe}`;
+    if (usedFilenames.has(key)) {
+      const disc = stableHashSuffix(e.id);
+      safe = `${baseSafe}-${disc}`;
+      key = `${tier}/${safe}`;
+      // 极端情况下哈希也碰撞，加序号兜底
+      let n = 2;
+      while (usedFilenames.has(key)) {
+        safe = `${baseSafe}-${disc}-${n}`;
+        key = `${tier}/${safe}`;
+        n++;
+      }
+    }
+    usedFilenames.add(key);
     artifacts.push({
       kind: "rule",
       relativePath: `${tier}/${safe}.md`,
@@ -204,6 +237,19 @@ function encodeRuleIdForPath(id: string): string {
   const safe = noTraversal.replace(/[^A-Za-z0-9._-]/g, "_");
   if (safe === "" || safe === ".") return "_";
   return safe;
+}
+
+/**
+ * 32-bit FNV-1a → 6 hex 字符。纯函数，给 path encode 做去歧义后缀。
+ * 不用于安全签名——只为让 `a/b`、`a_b`、`a:b` 经 `_` 归一化后仍能产生不同后缀。
+ */
+function stableHashSuffix(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0").slice(0, 6);
 }
 
 /** 单行 TLDR：取 reasoning 第一行截断。 */

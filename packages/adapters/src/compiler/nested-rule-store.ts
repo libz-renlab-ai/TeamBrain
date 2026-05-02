@@ -5,6 +5,7 @@ import {
   compileNestedRuleArtifacts,
   NESTED_TIERS,
   type NestedRuleArtifact,
+  type CompileNestedRuleOptions,
 } from "@teamagent/core";
 import type { Compiler } from "@teamagent/ports";
 import type { KnowledgeEntry } from "@teamagent/types";
@@ -23,6 +24,11 @@ export interface NestedRuleStoreCompilerOptions {
   /** 默认 `~/.claude/teamagent/rules`。可由 env `TEAMAGENT_RULES_DIR` 或显式参数覆盖。 */
   rulesDir?: string;
   now?: () => string;
+  /**
+   * 编译选项透传给 core——目前只有 `presetOnly`，与 `MarkdownCompiler` 行为对齐
+   * （issue #42 codex P1）。
+   */
+  compileOptions?: CompileNestedRuleOptions;
 }
 
 const DEFAULT_DIR = path.join(os.homedir(), ".claude", "teamagent", "rules");
@@ -46,16 +52,18 @@ const DEFAULT_DIR = path.join(os.homedir(), ".claude", "teamagent", "rules");
 export class NestedRuleStoreCompiler implements Compiler<string> {
   private readonly rulesDir: string;
   private readonly now: () => string;
+  private readonly compileOptions: CompileNestedRuleOptions;
 
   constructor(opts: NestedRuleStoreCompilerOptions = {}) {
     this.rulesDir =
       opts.rulesDir ?? process.env["TEAMAGENT_RULES_DIR"] ?? DEFAULT_DIR;
     this.now = opts.now ?? (() => new Date().toISOString());
+    this.compileOptions = opts.compileOptions ?? {};
   }
 
   /** 纯：返回一个简短摘要字符串（用于日志/兼容旧 Compiler<string> 接口）。 */
   compile(entries: KnowledgeEntry[]): string {
-    const artifacts = compileNestedRuleArtifacts(entries, this.now());
+    const artifacts = compileNestedRuleArtifacts(entries, this.now(), this.compileOptions);
     const ruleCount = artifacts.filter((a) => a.kind === "rule").length;
     return `nested-rule-store: ${ruleCount} rules @ ${this.rulesDir}`;
   }
@@ -64,7 +72,7 @@ export class NestedRuleStoreCompiler implements Compiler<string> {
    * 写入 nested rules，并清理孤儿。返回 MarkdownCompilerLike 兼容信息。
    */
   writeToFile(entries: KnowledgeEntry[]): NestedRuleStoreWriteInfo {
-    const artifacts = compileNestedRuleArtifacts(entries, this.now());
+    const artifacts = compileNestedRuleArtifacts(entries, this.now(), this.compileOptions);
 
     fs.mkdirSync(this.rulesDir, { recursive: true });
     for (const tier of NESTED_TIERS) {

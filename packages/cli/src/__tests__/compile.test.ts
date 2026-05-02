@@ -240,6 +240,22 @@ describe("executeCompile", () => {
     }
   });
 
+  it("--preset-only filters to source==='preset' in nested mode (issue #42 codex P1)", async () => {
+    seedEntry(
+      tmp.projectDbPath,
+      entry({ id: "preset-rule", source: "preset", current_tier: "canonical" }),
+    );
+    seedEntry(
+      tmp.projectDbPath,
+      entry({ id: "user-rule", source: "accumulated", current_tier: "canonical" }),
+    );
+    await executeCompile({ ...opts, presetOnly: true });
+    const presetMd = path.join(tmp.userRulesDir, "canonical", "preset-rule.md");
+    const userMd = path.join(tmp.userRulesDir, "canonical", "user-rule.md");
+    expect(nodeFs.existsSync(presetMd)).toBe(true);
+    expect(nodeFs.existsSync(userMd)).toBe(false);
+  });
+
   it("empty store: no errors, zero skills written", async () => {
     const result = await executeCompile(opts);
     expect(result.skills.written).toHaveLength(0);

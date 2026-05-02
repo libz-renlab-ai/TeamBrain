@@ -13,6 +13,7 @@ export {
   formatRootIndex,
   NESTED_TIERS,
   type NestedRuleArtifact,
+  type CompileNestedRuleOptions,
 } from "./compiler/nested-rules.js";
 export {
   matchRules,
