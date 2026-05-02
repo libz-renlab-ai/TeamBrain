@@ -224,6 +224,29 @@ describe("compileNestedRuleArtifacts", () => {
     expect(rulePaths).toContain("canonical/a_b.md");
   });
 
+  it("tier index links match collision-disambiguated filenames (issue #42 codex follow-up)", () => {
+    const entries = [
+      makeEntry({ id: "a/b", current_tier: "canonical" }),
+      makeEntry({ id: "a_b", current_tier: "canonical" }),
+    ];
+    const artifacts = compileNestedRuleArtifacts(entries, "2026-04-14T00:00:00Z");
+    const tierIndex = artifacts.find(
+      (a) => a.kind === "tier-index" && a.relativePath === "canonical/INDEX.md",
+    );
+    expect(tierIndex).toBeDefined();
+    const rulePaths = artifacts
+      .filter((a) => a.kind === "rule")
+      .map((a) => a.relativePath.replace(/^canonical\//, "./"));
+    // Every rule file must be reachable from the tier INDEX
+    for (const expectedRel of rulePaths) {
+      expect(tierIndex!.contents).toContain(`(${expectedRel})`);
+    }
+    // No two link targets duplicate (the bug Codex flagged)
+    const linkTargets =
+      tierIndex!.contents.match(/\((\.\/[^)]+\.md)\)/g) ?? [];
+    expect(new Set(linkTargets).size).toBe(linkTargets.length);
+  });
+
   it("each artifact has kind tag for downstream cleanup", () => {
     const entries = [makeEntry({ id: "a", current_tier: "canonical" })];
     const artifacts: NestedRuleArtifact[] = compileNestedRuleArtifacts(

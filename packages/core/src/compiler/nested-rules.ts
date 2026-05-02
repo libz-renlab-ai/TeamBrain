@@ -76,11 +76,19 @@ export function formatRuleAsMarkdown(entry: KnowledgeEntry): string {
 
 /**
  * 渲染单 tier 的 INDEX.md。纯函数。entries 内部按 score 降序。
+ *
+ * `filenameById` 是“rule id → 实际写入的不带 .md 文件名”映射。当上层
+ * `compileNestedRuleArtifacts` 已经做了碰撞去歧义时，必须把这张表传进来，否则
+ * INDEX 链接还会用未去歧义的文件名，导致两条不同 id 链到同一个 .md，后写入的
+ * rule 文件变得不可达（issue #42 codex follow-up）。
+ *
+ * 缺省时退回到 `encodeRuleIdForPath(e.id)`——独立调用、无碰撞场景下行为不变。
  */
 export function formatTierIndex(
   tier: NonNullable<KnowledgeEntry["current_tier"]>,
   entries: KnowledgeEntry[],
   now: string,
+  filenameById?: ReadonlyMap<string, string>,
 ): string {
   const active = entries.filter((e) => e.status === "active" && e.current_tier === tier);
   const maxHit = Math.max(1, ...active.map((e) => e.hit_count));
@@ -99,7 +107,7 @@ export function formatTierIndex(
   }
   for (const e of sorted) {
     const tldr = oneLineTldr(e);
-    const safe = encodeRuleIdForPath(e.id);
+    const safe = filenameById?.get(e.id) ?? encodeRuleIdForPath(e.id);
     lines.push(
       `- [${e.id}](./${safe}.md) — ${tldr} [${e.confidence.toFixed(2)}, ${e.hit_count}hit]`,
     );
@@ -171,25 +179,10 @@ export function compileNestedRuleArtifacts(
   for (const e of active) if (!byId.has(e.id)) byId.set(e.id, e);
   const deduped = [...byId.values()];
 
-  const artifacts: NestedRuleArtifact[] = [];
-
-  artifacts.push({
-    kind: "root-index",
-    relativePath: "INDEX.md",
-    contents: formatRootIndex(deduped, now),
-  });
-
-  for (const tier of NESTED_TIERS) {
-    artifacts.push({
-      kind: "tier-index",
-      relativePath: `${tier}/INDEX.md`,
-      contents: formatTierIndex(tier, deduped, now),
-      tier,
-    });
-  }
-
-  // 跨 tier 的 (tier, fileBasename) 唯一性追踪——两条不同 id 编码到同一文件名时，
-  // 第二条之后追加 ` -<hash>` 后缀。第一条保持干净文件名，避免无谓污染。
+  // 先一次性算出 (tier, fileBasename) 的去歧义结果，写入 `filenameById`。
+  // 后续 tier-index 渲染和 rule artifact 都从这张表读取，确保 INDEX 里的链接和
+  // 真实文件名严格一致（issue #42 codex follow-up）。
+  const filenameById = new Map<string, string>();
   const usedFilenames = new Set<string>();
   for (const e of deduped) {
     const tier = e.current_tier;
@@ -210,6 +203,31 @@ export function compileNestedRuleArtifacts(
       }
     }
     usedFilenames.add(key);
+    filenameById.set(e.id, safe);
+  }
+
+  const artifacts: NestedRuleArtifact[] = [];
+
+  artifacts.push({
+    kind: "root-index",
+    relativePath: "INDEX.md",
+    contents: formatRootIndex(deduped, now),
+  });
+
+  for (const tier of NESTED_TIERS) {
+    artifacts.push({
+      kind: "tier-index",
+      relativePath: `${tier}/INDEX.md`,
+      contents: formatTierIndex(tier, deduped, now, filenameById),
+      tier,
+    });
+  }
+
+  for (const e of deduped) {
+    const tier = e.current_tier;
+    if (!tier) continue;
+    const safe = filenameById.get(e.id);
+    if (!safe) continue;
     artifacts.push({
       kind: "rule",
       relativePath: `${tier}/${safe}.md`,
