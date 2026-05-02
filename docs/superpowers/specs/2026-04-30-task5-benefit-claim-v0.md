@@ -16,7 +16,11 @@
   - 分母：当前周期内可计入统计的总错误次数
 - 计算：`repeat_mistake_rate = repeated_errors / total_errors`
 - 比较方式：`relative_drop = (baseline_rate - current_rate) / baseline_rate`
-- 成功阈值（仅用于未来验证阶段）：`relative_drop >= 0.30`
+- **零基线边界**：当 `baseline_rate == 0`（基线窗口未观测到重复错误）时，`relative_drop` 数学上未定义，**不得**输出 `NaN` / `Inf`。规则：
+  - 若 `current_rate == 0`：判定 `relative_drop = 0`（绝对达标但不可外推），并在报告里标注 `baseline_zero=true, status=insufficient_baseline`。
+  - 若 `current_rate > 0`：判定 `relative_drop = -∞` 的等价标记 `regression_from_zero_baseline=true`，并将该周期标记为 `claim_status=undetermined`，等待基线扩窗后再评估，**不得**进入"两个连续周期"反证计数。
+  - harness 的 raw JSON 必须显式输出 `baseline_rate`、`current_rate`、`baseline_zero` 三个字段，由 LLM judge 读 raw JSON 决定下游处置。
+- 成功阈值（仅用于未来验证阶段）：`relative_drop >= 0.30`（仅在 `baseline_zero=false` 且样本量达标时生效）
 
 ## 3) 假设（Assumptions）
 
@@ -35,7 +39,7 @@
 
 出现以下任一情况，Claim 判定为“不成立/需修订”：
 
-1. 两个连续评估周期 `relative_drop < 0.30`。
+1. 两个连续评估周期 `relative_drop < 0.30`（`baseline_zero=true` 的周期不计入此计数）。
 2. 指标口径无法稳定复现（同一数据重跑结果偏差超过预设容差）。
 3. 复核显示“重复错误”识别误差超阈值（建议 > 10%）。
 4. 样本量未达标或分母口径异常波动导致结论不可比。
