@@ -29,6 +29,7 @@ export interface CalibrationV2Record {
   knowledge_id: string;
   confidence_before: number;
   confidence_after: number;
+  status_after?: KnowledgeEntry["status"];
   demerit_before: number;
   demerit_after: number;
   tier_before: string;
@@ -233,6 +234,7 @@ export async function runCalibrationPipelineV2(
       knowledge_id: entry.id,
       confidence_before: entry.confidence,
       confidence_after: result.confidence,
+      status_after: result.status,
       demerit_before: entry.demerit,
       demerit_after: result.demerit,
       tier_before: result.tier_before,

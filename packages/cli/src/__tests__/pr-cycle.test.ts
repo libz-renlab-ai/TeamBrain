@@ -15,7 +15,6 @@ describe("parsePrCycleArgs", () => {
       "--body=Verification included",
       "--base", "main",
       "--head=feature/pr-cycle",
-      "--draft",
       "--repo", "LiuShiyuMath/TeamBrain",
       "--claudefast-bin", "claudefast",
       "--codexfastg-bin=codexfastg",
@@ -24,11 +23,14 @@ describe("parsePrCycleArgs", () => {
       body: "Verification included",
       base: "main",
       head: "feature/pr-cycle",
-      draft: true,
       repo: "LiuShiyuMath/TeamBrain",
       claudefastBin: "claudefast",
       codexfastgBin: "codexfastg",
     });
+  });
+
+  it("rejects draft PR creation", () => {
+    expect(() => parsePrCycleArgs(["--draft"])).toThrow(/normal PRs/);
   });
 
   it("rejects invalid numeric args", () => {

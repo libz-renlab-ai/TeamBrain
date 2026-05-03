@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { rmSync } from "node:fs";
 import { openDb, syncRuleVectors, SqliteSemanticRetriever } from "@teamagent/adapters";
-import { semanticMatch } from "@teamagent/core";
+import { matchRulesAsync, semanticMatch } from "@teamagent/core";
 import type { RuleEmbedder } from "@teamagent/ports";
 import type { KnowledgeEntry } from "@teamagent/types";
 
@@ -26,6 +26,36 @@ const e2eEmbedder: RuleEmbedder = {
       }
       v[hash % 384] += 0.5;
       const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+      return v.map((x) => x / n);
+    });
+  },
+};
+
+// Stable proof embedder: real RuleEmbedder/SemanticRetriever plumbing, but no
+// external model download. Synonymous phrases intentionally collapse to the
+// same concept dimensions so the test proves vector matching, not substring.
+const semanticProofEmbedder: RuleEmbedder = {
+  modelId: "semantic-proof-test",
+  dim: 384,
+  async embed(texts: string[]) {
+    return texts.map((text) => {
+      const lower = text.toLowerCase();
+      const v = new Array(384).fill(0);
+
+      if (/\b(http|api|network|request|requests|fetch|fetching)\b/.test(lower)) {
+        v[0] += 1;
+      }
+      if (
+        lower.includes("axios") ||
+        lower.includes("third-party request package") ||
+        lower.includes("external http client") ||
+        lower.includes("web calls")
+      ) {
+        v[1] += 1;
+      }
+
+      const n = Math.sqrt(v.reduce((sum, x) => sum + x * x, 0));
+      if (n === 0) return v;
       return v.map((x) => x / n);
     });
   },
@@ -81,6 +111,7 @@ function mkRule(overrides: Partial<KnowledgeEntry>): KnowledgeEntry {
 async function seedRule(
   db: ReturnType<typeof openDb>,
   rule: KnowledgeEntry,
+  embedder: RuleEmbedder = e2eEmbedder,
 ) {
   db.prepare(`
     INSERT OR REPLACE INTO knowledge (
@@ -134,7 +165,7 @@ async function seedRule(
 
   // 写入 vec0（如果可用）
   try {
-    const [tvec, pvec] = await e2eEmbedder.embed([
+    const [tvec, pvec] = await embedder.embed([
       rule.trigger_description ?? "",
       rule.pattern_description ?? "",
     ]);
@@ -155,6 +186,51 @@ async function seedRule(
 }
 
 describe("M4-B end-to-end", () => {
+  describe("Semantic paraphrase proof", () => {
+    it("fires through semantic vectors when the legacy substring matcher misses", async () => {
+      const tmpObj = tempDb();
+      try {
+        const rule = mkRule({
+          id: "semantic-paraphrase-http-client",
+          wrong_pattern: "axios",
+          trigger_description: "making HTTP requests in application code",
+          pattern_description: "using axios as the HTTP client dependency",
+          correct_pattern: "Use built-in fetch instead.",
+          fire_threshold: 0.4,
+          embedder_model_id: semanticProofEmbedder.modelId,
+        });
+        await seedRule(tmpObj.db, rule, semanticProofEmbedder);
+
+        const toolInput = {
+          command: "npm install a third-party request package for web calls",
+        };
+        const legacyResult = await matchRulesAsync(
+          toolInput,
+          [rule],
+          {},
+        );
+        expect(legacyResult.matched.map((m) => m.id)).not.toContain(rule.id);
+
+        const retriever = new SqliteSemanticRetriever(tmpObj.db);
+        const semanticResult = await semanticMatch({
+          contextText: "Add API fetching for user data",
+          actionText: toolInput.command,
+          embedder: semanticProofEmbedder,
+          retriever,
+          scope: { level: "global" },
+        });
+
+        const semanticHit = semanticResult.find((m) => m.rule.id === rule.id);
+        expect(semanticHit).toBeDefined();
+        expect(semanticHit!.triggerSim).toBeGreaterThan(0.9);
+        expect(semanticHit!.patternSim).toBeGreaterThan(0.9);
+      } finally {
+        tmpObj.db.close?.();
+        rmSync(tmpObj.dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("Scenario 1: semantic match fires on semantically similar query", () => {
     it("finds rule when query is semantically similar to trigger_description", async () => {
       const tmpObj = tempDb();

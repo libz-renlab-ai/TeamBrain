@@ -55,7 +55,8 @@ eval/<run_id>/
 # Canned-answer probe (claudefast streamjson)
 zsh -ic 'claudefast -p \
   --output-format stream-json \
-  --include-hook-events --include-partial-messages --verbose \
+  ${CLAUDEFAST_STREAM_FLAGS:-"--include-partial-messages --verbose"} \
+  --debug hooks --debug-file "eval/<run_id>/streamjson/<feat>.hooks.debug.log" \
   --permission-mode acceptEdits \
   "<probe-input>"' \
   > eval/<run_id>/streamjson/<feat>.jsonl 2>&1
@@ -99,7 +100,8 @@ DOGFOOD_PROBE_DIR=eval/<run_id>/dogfood/probe-run \
 ```bash
 zsh -ic "claudefast -p \
   --output-format stream-json \
-  --include-hook-events --include-partial-messages --verbose \
+  \${CLAUDEFAST_STREAM_FLAGS:-\"--include-partial-messages --verbose\"} \
+  --debug hooks --debug-file eval/<run_id>/judge-hooks.debug.log \
   --add-dir eval/<run_id> \
   --permission-mode acceptEdits \
   \"\$(cat eval/<run_id>/judge-prompt.md)\"" \
@@ -139,8 +141,9 @@ zsh -ic "claudefast -p \
 | F8 | BUGREPORT canned answer | claudefast streamjson | "I found a bug, what should I do?" |
 | F-PROJECT-TOOLS | Tool discovery | claudefast streamjson | "what project tools we have?" |
 | F-WALKING-SKELETON | M0 vertical slice | CLI | `pnpm teamagent skeleton-demo` |
+| F11 | Dashboard health | CLI / HTTP | `pnpm teamagent dashboard --once`; watch-mode `/health.json` must return `service=teamagent-dashboard`, `status=ok`, `stableHealthSignal=teamagent-dashboard-health` |
 
-下一版补：F3 团队共享 / F6 语义匹配 / F7 自动升级 / F9 跨工具 / F10 信心评分 / F11 Dashboard / F12 配对胶囊。
+下一版补：F3 团队共享 / F6 语义匹配 / F7 自动升级 / F9 跨工具 / F10 信心评分 / F12 配对胶囊。
 
 ## 5) 复现命令
 
@@ -148,12 +151,17 @@ zsh -ic "claudefast -p \
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 EVAL_DIR="eval/${RUN_ID}"   # 或 /tmp/teambrain-eval-${RUN_ID}
 mkdir -p "${EVAL_DIR}"/{streamjson,dogfood,cli}
+claudefast -h > "${EVAL_DIR}/claudefast-help.txt" 2>&1 || true
+CLAUDEFAST_STREAM_FLAGS="--include-partial-messages --verbose"
+export CLAUDEFAST_STREAM_FLAGS
 
 # 跑 RUN 阶段（4 streamjson 并行 + 3 CLI inline + dogfood-probe 后台）
 # 见 docs/reports/2026-05-02-feature-eval-report.md 完整脚本
 
 # 跑 judge
 claudefast -p --output-format stream-json \
+  --include-partial-messages --verbose \
+  --debug hooks --debug-file "${EVAL_DIR}/judge-hooks.debug.log" \
   --add-dir "${EVAL_DIR}" \
   "$(cat ${EVAL_DIR}/judge-prompt.md)" \
   > "${EVAL_DIR}/verdict.jsonl"

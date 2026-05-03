@@ -15,6 +15,12 @@
 
 # Verification artifacts for project Stop hook `laziness-self-report.sh`
 
+Historical note: this directory records the original PR evidence. The commands
+below are not the current active claudefast recipe. New hook evidence should use
+`--debug hooks --debug-file <path>` together with
+`--output-format stream-json --include-partial-messages --verbose`, and
+`claudefast -p` must receive a prompt argument or stdin.
+
 This directory holds the evidence produced while wiring the hook. Every layer
 hard-matches a single canonical expected JSON object — `L2-A-missing-block.json` —
 so passing all three independent runtimes proves the hook behaves identically
@@ -48,16 +54,18 @@ P1 finding raised by Codex on PR #15.
 
 ### L3a — `!claudefast -p` (Claude Code non-interactive runtime)
 
-Help recon: `claudefast --help` (capture preserved in commit message).
+Help recon: `claudefast -h` (capture preserved in commit message).
 
 ```
 timeout 90 claudefast -p \
-  --output-format stream-json --include-hook-events \
+  --output-format stream-json \
+  --debug hooks \
+  --debug-file docs/specs/hook-add-laziness/verify/L3a-claude-hooks.debug.log \
   --include-partial-messages --verbose \
   --setting-sources project,local,user \
   --permission-mode acceptEdits \
   "Reply with exactly the single word OK and nothing else." \
-  > L3a-stream.jsonl
+  > docs/specs/hook-add-laziness/verify/L3a-stream.jsonl
 ```
 
 Then extract any Stop hook response whose `output | fromjson` has
@@ -65,7 +73,9 @@ Then extract any Stop hook response whose `output | fromjson` has
 and hard-match it to `L2-A-missing-block.json`:
 
 ```
-jq -e -n --slurpfile a L2-A-missing-block.json --slurpfile b L3a-block.json '$a[0] == $b[0]'
+jq -e -n --slurpfile a docs/specs/hook-add-laziness/verify/L2-A-missing-block.json \
+          --slurpfile b docs/specs/hook-add-laziness/verify/L3a-block.json \
+          '$a[0] == $b[0]'
 → true   ✓ L3a HARD-MATCH PASS
 ```
 
@@ -80,22 +90,27 @@ Help recon: `codex exec --help` (capture preserved in commit message).
 ```
 codex exec --json --skip-git-repo-check \
   --sandbox workspace-write --add-dir "$PWD" --ignore-rules \
-  --output-schema L3b-output-schema.json \
+  --output-schema docs/specs/hook-add-laziness/verify/L3b-output-schema.json \
   --output-last-message /tmp/L3b-codex.last \
-  -C "$PWD" "$PROMPT" </dev/null
+  -C "$PWD" "$PROMPT" </dev/null \
+  > docs/specs/hook-add-laziness/verify/L3b-stream.jsonl
 ```
 
 The prompt instructs codex to invoke the hook script with synthetic Stop payload
 stdin (`last_assistant_message`) and write the script's stdout to
-`L3b-hook-stdout.json`. Hook logging is best-effort and writes to the
-project-local `.claude/laziness/log.jsonl` path by default, so a read-only
-`$HOME` cannot create hook stderr. After the run:
+`docs/specs/hook-add-laziness/verify/L3b-hook-stdout.json`. Hook logging is
+best-effort and writes to the project-local `.claude/laziness/log.jsonl` path by
+default, so a read-only `$HOME` cannot create hook stderr. After the run:
 
 ```
-jq -e -n --slurpfile a L2-A-missing-block.json --slurpfile b L3b-hook-stdout.json '$a[0] == $b[0]'
+jq -e -n --slurpfile a docs/specs/hook-add-laziness/verify/L2-A-missing-block.json \
+          --slurpfile b docs/specs/hook-add-laziness/verify/L3b-hook-stdout.json \
+          '$a[0] == $b[0]'
 → true   ✓ L3b HARD-MATCH PASS
 
-jq -e -n --slurpfile a L3a-block.json --slurpfile b L3b-hook-stdout.json '$a[0] == $b[0]'
+jq -e -n --slurpfile a docs/specs/hook-add-laziness/verify/L3a-block.json \
+          --slurpfile b docs/specs/hook-add-laziness/verify/L3b-hook-stdout.json \
+          '$a[0] == $b[0]'
 → true   ✓ L3a ≡ L3b (claudefast ≡ codex)
 ```
 
@@ -129,8 +144,13 @@ bash -n .claude/hooks/laziness-self-report.sh
 bash docs/specs/hook-add-laziness/verify/run-l2.sh
 
 # L3a
-timeout 90 claudefast -p --output-format stream-json --include-hook-events \
-  --setting-sources project,local,user --permission-mode acceptEdits \
+timeout 90 claudefast -p \
+  --output-format stream-json \
+  --debug hooks \
+  --debug-file docs/specs/hook-add-laziness/verify/L3a-claude-hooks.debug.log \
+  --include-partial-messages --verbose \
+  --setting-sources project,local,user \
+  --permission-mode acceptEdits \
   "Reply with exactly the single word OK and nothing else." \
   > docs/specs/hook-add-laziness/verify/L3a-stream.jsonl
 

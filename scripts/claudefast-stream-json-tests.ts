@@ -13,7 +13,7 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,6 +54,10 @@ interface Options {
   outDir: string;
   dryRun: boolean;
   only: Set<string> | null;
+  streamJsonArgs: string[];
+  hookDebugSupported: boolean;
+  hookEvidenceMode: "debug-file" | "unsupported";
+  preferLocalBinForBrokenPnpmStub: boolean;
 }
 
 interface ParsedStream {
@@ -76,6 +80,7 @@ interface HookResponseSummary {
 interface CaseResult {
   id: string;
   feature: string;
+  status: "passed" | "failed" | "unsupported";
   ok: boolean;
   exitCode: number | null;
   timedOut: boolean;
@@ -85,7 +90,10 @@ interface CaseResult {
   summaryPath: string;
   passed: ExpectationKind[];
   failed: ExpectationKind[];
+  unsupported: ExpectationKind[];
   optionalMissing: ExpectationKind[];
+  hookCoverage: "stream-json" | "debug-file" | "unsupported";
+  hookDebugPath?: string;
   error?: string;
 }
 
@@ -96,17 +104,8 @@ const FIXTURE_BLOCK_RULE_ID = "teamagent-test-claudefast-block-deny";
 const FIXTURE_BLOCK_MARKER = "claudefast_batch_insert_deny";
 const require = createRequire(import.meta.url);
 
-const BASE_ARGS = [
-  "-p",
-  "--output-format",
-  "stream-json",
-  "--include-hook-events",
-  "--include-partial-messages",
-  "--verbose",
-  "--permission-mode",
-  "acceptEdits",
-  "--no-session-persistence",
-];
+const BASE_ARGS_PREFIX = ["-p"];
+const BASE_ARGS_SUFFIX = ["--permission-mode", "acceptEdits", "--no-session-persistence"];
 
 const JSON_SCHEMA = JSON.stringify({
   type: "object",
@@ -268,6 +267,10 @@ function parseArgs(argv: string[]): Options {
     outDir: DEFAULT_OUT_ROOT,
     dryRun: false,
     only: null,
+    streamJsonArgs: ["--output-format", "stream-json"],
+    hookDebugSupported: false,
+    hookEvidenceMode: "unsupported",
+    preferLocalBinForBrokenPnpmStub: false,
   };
 
   for (const arg of argv) {
@@ -322,7 +325,91 @@ function printHelp(): void {
   ].join("\n"));
 }
 
+function claudefastEnv(preferLocalBin = false): NodeJS.ProcessEnv {
+  const useLocalClaudefast = preferLocalBin && localClaudefastBin() !== null;
+  return {
+    ...process.env,
+    PATH: claudefastPath(process.env.PATH ?? "", osHome(), preferLocalBin, useLocalClaudefast),
+  };
+}
+
+function claudefastPath(
+  originalPath: string,
+  home: string,
+  preferLocalBin = false,
+  omitBrokenClaudePnpmStubs = false,
+): string {
+  let entries = originalPath.split(path.delimiter).filter(Boolean);
+  if (omitBrokenClaudePnpmStubs) {
+    entries = entries.filter((entry) => !isClaudeCodePnpmStubEntry(entry));
+  }
+  const localBin = home ? path.join(home, ".local", "bin") : "";
+  if (localBin && preferLocalBin) {
+    return [localBin, ...entries.filter((entry) => entry !== localBin)].join(path.delimiter);
+  }
+  if (localBin && !entries.includes(localBin)) {
+    entries.push(localBin);
+  }
+  return entries.join(path.delimiter);
+}
+
+function osHome(): string {
+  return process.env.HOME || process.env.USERPROFILE || "";
+}
+
+function localClaudefastBin(): string | null {
+  const home = osHome();
+  if (!home) return null;
+  const candidate = path.join(home, ".local", "bin", "claudefast");
+  return existsSync(candidate) ? candidate : null;
+}
+
+function isClaudeCodePnpmStubEntry(entry: string): boolean {
+  const candidate = path.join(entry, "claude");
+  if (!existsSync(candidate)) return false;
+  try {
+    const content = readFileSync(candidate, "utf-8");
+    return content.includes("@anthropic-ai/claude-code") && content.includes("bin/claude.exe");
+  } catch {
+    return false;
+  }
+}
+
+function runEnvSelfTest(): void {
+  const home = path.join(path.sep, "tmp", "teamagent-claudefast-home");
+  const projectBin = path.join(REPO_ROOT, "node_modules", ".bin");
+  const nestedProjectBin = path.join(REPO_ROOT, "packages", "cli", "node_modules", ".bin");
+  const systemBin = path.join(path.sep, "usr", "bin");
+  const originalPath = [projectBin, nestedProjectBin, systemBin].join(path.delimiter);
+  const actual = claudefastPath(originalPath, home).split(path.delimiter);
+
+  assertEqual(actual[0], projectBin, "keeps leading project node_modules/.bin entry");
+  assertEqual(actual[1], nestedProjectBin, "keeps nested node_modules/.bin entry");
+  assertEqual(actual[2], systemBin, "keeps original PATH order");
+  assertEqual(actual[3], path.join(home, ".local", "bin"), "adds local bin as fallback only");
+  assertEqual(actual.length, 4, "does not add extra PATH entries");
+
+  const fallback = claudefastPath(originalPath, home, true).split(path.delimiter);
+  assertEqual(fallback[0], path.join(home, ".local", "bin"), "narrow fallback can prefer local bin");
+  assertEqual(fallback[1], projectBin, "narrow fallback preserves project node_modules/.bin");
+  assertEqual(shouldRetryWithLocalBin("claudefast", "Error: claude native binary not installed."), true, "detects broken pnpm stub");
+  assertEqual(shouldRetryWithLocalBin("claude", "Error: claude native binary not installed."), false, "does not retry unrelated bins");
+
+  console.log("claudefast env self-test passed");
+}
+
+function assertEqual(actual: unknown, expected: unknown, message: string): void {
+  if (actual !== expected) {
+    throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
+  }
+}
+
 async function main(): Promise<number> {
+  if (process.argv.slice(2).includes("--self-test-env")) {
+    runEnvSelfTest();
+    return 0;
+  }
+
   const opts = parseArgs(process.argv.slice(2));
   const selected = opts.only ? CASES.filter((c) => opts.only?.has(c.id)) : CASES;
   if (selected.length === 0) {
@@ -332,6 +419,11 @@ async function main(): Promise<number> {
   const runId = new Date().toISOString().replace(/[:.]/g, "-");
   const runDir = path.join(opts.outDir, runId);
   mkdirSync(runDir, { recursive: true });
+  const capabilities = await detectClaudefastCapabilities(opts.bin, runDir);
+  opts.streamJsonArgs = capabilities.streamJsonArgs;
+  opts.hookDebugSupported = capabilities.hookDebugSupported;
+  opts.hookEvidenceMode = capabilities.hookEvidenceMode;
+  opts.preferLocalBinForBrokenPnpmStub = capabilities.preferLocalBinForBrokenPnpmStub;
 
   console.log("🧪 TeamAgent claudefast stream-json test pool");
   console.log(`  cases:       ${selected.length}`);
@@ -339,6 +431,8 @@ async function main(): Promise<number> {
   console.log(`  bin:         ${opts.bin}`);
   console.log(`  out:         ${runDir}`);
   console.log(`  timeout:     ${opts.timeoutMs}ms`);
+  console.log(`  flags:       ${opts.streamJsonArgs.join(" ")}`);
+  console.log(`  hook mode:   ${opts.hookEvidenceMode}`);
   console.log("");
 
   let fixtureInstalled = false;
@@ -453,8 +547,13 @@ async function runCase(testCase: TestCase, opts: Options, runDir: string): Promi
   const ctx: CaseContext = { runDir, caseDir, caseId: testCase.id };
   const prompt = testCase.prompt(ctx);
   const sessionId = randomUUID();
+  const hookDebugPath = opts.hookDebugSupported ? path.join(caseDir, "hooks.debug.log") : null;
+  const hookDebugArgs = hookDebugPath ? ["--debug", "hooks", "--debug-file", hookDebugPath] : [];
   const args = [
-    ...BASE_ARGS,
+    ...BASE_ARGS_PREFIX,
+    ...opts.streamJsonArgs,
+    ...hookDebugArgs,
+    ...BASE_ARGS_SUFFIX,
     "--session-id",
     sessionId,
     ...(testCase.extraArgs ?? []),
@@ -466,12 +565,39 @@ async function runCase(testCase: TestCase, opts: Options, runDir: string): Promi
   const commandPath = path.join(caseDir, "command.json");
   const summaryPath = path.join(caseDir, "summary.json");
   writeFileSync(commandPath, JSON.stringify({ bin: opts.bin, args, cwd: REPO_ROOT }, null, 2) + "\n", "utf-8");
+  const unsupported = unsupportedHookExpectations(testCase, opts);
+
+  if (unsupported.length > 0) {
+    const result: CaseResult = {
+      id: testCase.id,
+      feature: testCase.feature,
+      status: "unsupported",
+      ok: false,
+      exitCode: null,
+      timedOut: false,
+      durationMs: 0,
+      stdoutPath,
+      stderrPath,
+      summaryPath,
+      passed: [],
+      failed: [],
+      unsupported,
+      optionalMissing: testCase.optionalExpectations ?? [],
+      hookCoverage: hookCoverage(opts),
+      error: unsupportedHookEvidenceMessage(opts.bin),
+    };
+    writeFileSync(stdoutPath, "", "utf-8");
+    writeFileSync(stderrPath, "", "utf-8");
+    writeFileSync(summaryPath, JSON.stringify(result, null, 2) + "\n", "utf-8");
+    return result;
+  }
 
   if (opts.dryRun) {
     const passed = testCase.expectations;
     const summary: CaseResult = {
       id: testCase.id,
       feature: testCase.feature,
+      status: "passed",
       ok: true,
       exitCode: 0,
       timedOut: false,
@@ -481,7 +607,10 @@ async function runCase(testCase: TestCase, opts: Options, runDir: string): Promi
       summaryPath,
       passed,
       failed: [],
+      unsupported: [],
       optionalMissing: [],
+      hookCoverage: hookCoverage(opts),
+      ...(hookDebugPath ? { hookDebugPath } : {}),
     };
     writeFileSync(summaryPath, JSON.stringify(summary, null, 2) + "\n", "utf-8");
     return summary;
@@ -489,26 +618,32 @@ async function runCase(testCase: TestCase, opts: Options, runDir: string): Promi
 
   const started = Date.now();
   try {
-    const proc = await spawnCollect(opts.bin, args, opts.timeoutMs);
+    const proc = await spawnCollect(opts.bin, args, opts.timeoutMs, {
+      preferLocalBin: opts.preferLocalBinForBrokenPnpmStub,
+    });
     const durationMs = Date.now() - started;
     writeFileSync(stdoutPath, proc.stdout, "utf-8");
     writeFileSync(stderrPath, proc.stderr, "utf-8");
 
     const parsed = parseStream(proc.stdout);
+    const hookDebugText = hookDebugPath && existsSync(hookDebugPath) ? readFileSync(hookDebugPath, "utf-8") : "";
     const passed: ExpectationKind[] = [];
     const failed: ExpectationKind[] = [];
     const optionalMissing: ExpectationKind[] = [];
 
-    for (const expectation of testCase.expectations) {
-      if (checkExpectation(expectation, parsed)) {
+    const requiredExpectations = effectiveRequiredExpectations(testCase, opts);
+    const optionalExpectations = effectiveOptionalExpectations(testCase, opts);
+
+    for (const expectation of requiredExpectations) {
+      if (checkExpectation(expectation, parsed, hookDebugText)) {
         passed.push(expectation);
       } else {
         failed.push(expectation);
       }
     }
 
-    for (const expectation of testCase.optionalExpectations ?? []) {
-      if (checkExpectation(expectation, parsed)) {
+    for (const expectation of optionalExpectations) {
+      if (checkExpectation(expectation, parsed, hookDebugText)) {
         passed.push(expectation);
       } else {
         optionalMissing.push(expectation);
@@ -518,6 +653,7 @@ async function runCase(testCase: TestCase, opts: Options, runDir: string): Promi
     const result: CaseResult = {
       id: testCase.id,
       feature: testCase.feature,
+      status: proc.exitCode === 0 && failed.length === 0 ? "passed" : "failed",
       ok: proc.exitCode === 0 && failed.length === 0,
       exitCode: proc.exitCode,
       timedOut: proc.timedOut,
@@ -527,8 +663,11 @@ async function runCase(testCase: TestCase, opts: Options, runDir: string): Promi
       summaryPath,
       passed,
       failed,
+      unsupported: [],
       optionalMissing,
-      ...(proc.exitCode === 0 ? {} : { error: `claudefast exited ${proc.exitCode}` }),
+      hookCoverage: hookCoverage(opts),
+      ...(hookDebugPath ? { hookDebugPath } : {}),
+      ...(proc.exitCode === 0 ? {} : { error: claudefastFailureMessage(opts.bin, proc.exitCode) }),
     };
     writeFileSync(summaryPath, JSON.stringify({ ...result, parsed: summarizeParsed(parsed) }, null, 2) + "\n", "utf-8");
     return result;
@@ -537,6 +676,7 @@ async function runCase(testCase: TestCase, opts: Options, runDir: string): Promi
     const result: CaseResult = {
       id: testCase.id,
       feature: testCase.feature,
+      status: "failed",
       ok: false,
       exitCode: null,
       timedOut: String(err).includes("TIMEOUT"),
@@ -545,26 +685,103 @@ async function runCase(testCase: TestCase, opts: Options, runDir: string): Promi
       stderrPath,
       summaryPath,
       passed: [],
-      failed: testCase.expectations,
-      optionalMissing: testCase.optionalExpectations ?? [],
-      error: String(err),
+      failed: effectiveRequiredExpectations(testCase, opts),
+      unsupported: [],
+      optionalMissing: effectiveOptionalExpectations(testCase, opts),
+      hookCoverage: hookCoverage(opts),
+      ...(hookDebugPath ? { hookDebugPath } : {}),
+      error: `${String(err)}. ${claudefastPromptHint(opts.bin)}`,
     };
     writeFileSync(summaryPath, JSON.stringify(result, null, 2) + "\n", "utf-8");
     return result;
   }
 }
 
+async function detectClaudefastCapabilities(bin: string, runDir: string): Promise<{
+  streamJsonArgs: string[];
+  hookDebugSupported: boolean;
+  hookEvidenceMode: "debug-file" | "unsupported";
+  preferLocalBinForBrokenPnpmStub: boolean;
+}> {
+  let preferLocalBinForBrokenPnpmStub = false;
+  let proc = await spawnCollect(bin, ["-h"], 30_000);
+  if (proc.exitCode !== 0 && shouldRetryWithLocalBin(bin, proc.stderr)) {
+    const retry = await spawnCollect(bin, ["-h"], 30_000, { preferLocalBin: true });
+    if (retry.exitCode === 0) {
+      proc = retry;
+      preferLocalBinForBrokenPnpmStub = true;
+    }
+  }
+  writeFileSync(path.join(runDir, "claudefast-help.stdout.log"), proc.stdout, "utf-8");
+  writeFileSync(path.join(runDir, "claudefast-help.stderr.log"), proc.stderr, "utf-8");
+  if (proc.exitCode !== 0) {
+    throw new Error(`${bin} -h exited ${proc.exitCode}`);
+  }
+  const help = `${proc.stdout}\n${proc.stderr}`;
+  if (!help.includes("--output-format") || !help.includes("stream-json")) {
+    throw new Error(`${bin} -h did not advertise --output-format stream-json`);
+  }
+  const streamJsonArgs = ["--output-format", "stream-json"];
+  const hookDebugSupported = help.includes("--debug") && help.includes("--debug-file");
+  if (help.includes("--include-partial-messages")) streamJsonArgs.push("--include-partial-messages");
+  if (help.includes("--verbose")) streamJsonArgs.push("--verbose");
+  const hookEvidenceMode = hookDebugSupported ? "debug-file" : "unsupported";
+  writeFileSync(path.join(runDir, "claudefast-stream-json-flags.json"), JSON.stringify({
+    streamJsonArgs,
+    includeHookEventsSkipped: true,
+    includeHookEventsUsed: false,
+    hookDebugSupported,
+    hookEvidenceMode,
+    preferLocalBinForBrokenPnpmStub,
+  }, null, 2) + "\n", "utf-8");
+  return { streamJsonArgs, hookDebugSupported, hookEvidenceMode, preferLocalBinForBrokenPnpmStub };
+}
+
+function shouldRetryWithLocalBin(bin: string, stderr: string): boolean {
+  return bin === "claudefast" && stderr.includes("claude native binary not installed");
+}
+
+function isHookExpectation(expectation: ExpectationKind): boolean {
+  return expectation.endsWith("-hook");
+}
+
+function hookCoverage(opts: Options): "stream-json" | "debug-file" | "unsupported" {
+  return opts.hookEvidenceMode === "debug-file" ? "debug-file" : "unsupported";
+}
+
+function unsupportedHookExpectations(testCase: TestCase, opts: Options): ExpectationKind[] {
+  if (opts.hookDebugSupported) return [];
+  return testCase.expectations.filter(isHookExpectation);
+}
+
+function effectiveRequiredExpectations(testCase: TestCase, opts: Options): ExpectationKind[] {
+  if (opts.hookDebugSupported) return testCase.expectations;
+  return testCase.expectations.filter((expectation) => !isHookExpectation(expectation));
+}
+
+function effectiveOptionalExpectations(testCase: TestCase, opts: Options): ExpectationKind[] {
+  const optional = [...(testCase.optionalExpectations ?? [])];
+  if (!opts.hookDebugSupported) {
+    for (const expectation of testCase.expectations) {
+      if (isHookExpectation(expectation) && !optional.includes(expectation)) optional.push(expectation);
+    }
+  }
+  return optional;
+}
+
 function spawnCollect(
   bin: string,
   args: string[],
   timeoutMs: number,
+  opts: { preferLocalBin?: boolean } = {},
 ): Promise<{ stdout: string; stderr: string; exitCode: number | null; timedOut: boolean }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, {
+    const effectiveBin = opts.preferLocalBin && bin === "claudefast" ? (localClaudefastBin() ?? bin) : bin;
+    const child = spawn(effectiveBin, args, {
       cwd: REPO_ROOT,
       stdio: ["ignore", "pipe", "pipe"],
       shell: false,
-      env: process.env,
+      env: claudefastEnv(opts.preferLocalBin ?? false),
     });
 
     let stdout = "";
@@ -638,7 +855,7 @@ function parseStream(stdout: string): ParsedStream {
   return { jsonEvents, invalidLines, rawText: stdout, eventTypes, hookNames, hookResponses };
 }
 
-function checkExpectation(expectation: ExpectationKind, parsed: ParsedStream): boolean {
+function checkExpectation(expectation: ExpectationKind, parsed: ParsedStream, hookDebugText = ""): boolean {
   const text = parsed.rawText;
   switch (expectation) {
     case "stream-json":
@@ -648,15 +865,15 @@ function checkExpectation(expectation: ExpectationKind, parsed: ParsedStream): b
     case "final-result":
       return includesAny(text, ['"type":"result"', '"type": "result"', '"subtype":"success"', '"subtype": "success"']);
     case "session-start-hook":
-      return hasPassingHook(parsed, "SessionStart");
+      return hasPassingHook(parsed, "SessionStart", hookDebugText);
     case "user-prompt-submit-hook":
-      return hasPassingHook(parsed, "UserPromptSubmit");
+      return hasPassingHook(parsed, "UserPromptSubmit", hookDebugText);
     case "pre-tool-use-hook":
-      return hasPassingHook(parsed, "PreToolUse");
+      return hasPassingHook(parsed, "PreToolUse", hookDebugText);
     case "post-tool-use-hook":
-      return hasPassingHook(parsed, "PostToolUse");
+      return hasPassingHook(parsed, "PostToolUse", hookDebugText);
     case "stop-hook":
-      return hasPassingHook(parsed, "Stop");
+      return hasPassingHook(parsed, "Stop", hookDebugText);
     case "tool-use":
       return includesAny(text, ["tool_use", "tool_result", '"toolUse"', '"toolResult"']);
     case "teamagent-reason":
@@ -700,15 +917,31 @@ function normalizeHookName(hookName: string): string | null {
 }
 
 /**
- * Strong hook evidence: the expected hook must emit at least one hook_response,
- * and every response for that hook must report outcome=success and exit_code=0.
- * This prevents false positives where the stream merely mentions a hook name
- * while the hook command actually failed.
+ * Strong hook evidence comes from the dedicated --debug hooks file, never a
+ * casual mention in assistant text.
  */
-function hasPassingHook(parsed: ParsedStream, hook: string): boolean {
+function hasPassingHook(parsed: ParsedStream, hook: string, hookDebugText = ""): boolean {
   const responses = parsed.hookResponses.filter((r) => r.hook === hook);
-  if (responses.length === 0) return false;
-  return responses.every((r) => r.outcome === "success" && r.exitCode === 0);
+  if (responses.length > 0) return responses.every((r) => r.outcome === "success" && r.exitCode === 0);
+  return hasHookDebugEvidence(hookDebugText, hook);
+}
+
+function hasHookDebugEvidence(hookDebugText: string, hook: string): boolean {
+  if (!hookDebugText) return false;
+  if (!hookDebugText.includes(hook)) return false;
+  return !new RegExp(`${hook}[^\\n]*(failed|error)`, "i").test(hookDebugText);
+}
+
+function claudefastPromptHint(bin: string): string {
+  return `${bin} -p expects the prompt either as the final argv or on stdin; this harness passes the prompt as the final argv. If a local wrapper consumes argv, pipe the prompt into ${bin} -p or fix the wrapper to preserve argv prompts.`;
+}
+
+function unsupportedHookEvidenceMessage(bin: string): string {
+  return `${bin} -h did not advertise --debug hooks --debug-file, so required hook evidence is unsupported. This case is non-green instead of treating hook-specific expectations as passed.`;
+}
+
+function claudefastFailureMessage(bin: string, code: number | null): string {
+  return `${bin} exited ${code}. ${claudefastPromptHint(bin)}`;
 }
 
 function includesAny(text: string, needles: string[]): boolean {
@@ -757,6 +990,10 @@ function buildReport(results: CaseResult[]): object {
       features[expectation] ??= { passedBy: [], failedBy: [] };
       features[expectation].failedBy.push(result.id);
     }
+    for (const expectation of result.unsupported) {
+      features[expectation] ??= { passedBy: [], failedBy: [] };
+      features[expectation].failedBy.push(result.id);
+    }
   }
   return {
     generatedAt: new Date().toISOString(),
@@ -764,6 +1001,7 @@ function buildReport(results: CaseResult[]): object {
     total: results.length,
     passed: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok).length,
+    unsupported: results.filter((r) => r.status === "unsupported").length,
     features,
     results,
   };
@@ -773,10 +1011,13 @@ function renderReport(results: CaseResult[], reportPath: string): void {
   console.log("");
   console.log("结果:");
   for (const result of results) {
-    const marker = result.ok ? "✅" : "❌";
+    const marker = result.status === "unsupported" ? "⚠️" : result.ok ? "✅" : "❌";
     console.log(`${marker} ${result.id} — ${result.feature}`);
     if (result.failed.length > 0) {
       console.log(`   missing: ${result.failed.join(", ")}`);
+    }
+    if (result.unsupported.length > 0) {
+      console.log(`   unsupported: ${result.unsupported.join(", ")}`);
     }
     if (result.optionalMissing.length > 0) {
       console.log(`   optional missing: ${result.optionalMissing.join(", ")}`);

@@ -41,7 +41,7 @@ function makeEntry(overrides: Partial<KnowledgeEntry> = {}): KnowledgeEntry {
   };
 }
 
-describe("compileMarkdownBlock", () => {
+describe("compileMarkdownBlock (legacy/internal CLAUDE.md block)", () => {
   it("wraps output with START/END markers", () => {
     const out = compileMarkdownBlock([makeEntry()], "2026-04-14T00:00:00Z");
     expect(out).toContain(BLOCK_START);

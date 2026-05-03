@@ -54,10 +54,13 @@ Maximum 2 concurrent calls. Reduce results yourself; do not paste raw outputs ba
 
 ### Step 3 — Audit (stream-json)
 ```bash
-claudefast -p --output-format stream-json --include-hook-events \
+claudefast -h > .fastprobe/claudefast-help.txt
+claudefast -p --output-format stream-json \
+  --debug hooks --debug-file .fastprobe/hooks.debug.log \
   --include-partial-messages --verbose --permission-mode acceptEdits \
   "audit prompt" > .fastprobe/audit_$(date +%s).jsonl
 ```
+`claudefast -p` requires a prompt argument or stdin; do not pass only flags.
 **Forbidden:** `claudefast --bare` — skips hooks/plugin sync/CLAUDE.md.
 **Catch:** harness counts background `claudefast` PIDs; > 2 concurrent = fail.
 

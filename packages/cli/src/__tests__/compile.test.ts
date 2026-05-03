@@ -131,16 +131,14 @@ describe("executeCompile", () => {
     tmp.cleanup();
   });
 
-  it("default (issue #42): writes nested rules, NOT CLAUDE.md", async () => {
+  it("no flags: writes skills and leaves CLAUDE.md untouched", async () => {
     seedEntry(tmp.projectDbPath, entry({ current_tier: "canonical" }));
     const result = await executeCompile(opts);
-    // CLAUDE.md must NOT be touched in default mode
+    expect(result.markdown.path).toBe("(skipped)");
+    expect(result.markdown.blockLineCount).toBe(0);
     expect(nodeFs.existsSync(tmp.claudeMdPath)).toBe(false);
-    // Nested rules dir is populated
-    expect(nodeFs.existsSync(path.join(tmp.userRulesDir, "INDEX.md"))).toBe(true);
-    expect(nodeFs.existsSync(path.join(tmp.userRulesDir, "canonical", "rule-1.md"))).toBe(true);
-    expect(result.markdown.path).toBe(path.join(tmp.userRulesDir, "INDEX.md"));
-    // skill still written
+    expect(nodeFs.existsSync(path.join(tmp.userRulesDir, "INDEX.md"))).toBe(false);
+    // skill written
     expect(result.skills.written).toContain("rule-1");
     const skillFile = path.join(tmp.skillsDir, "rule-1", "SKILL.md");
     expect(nodeFs.existsSync(skillFile)).toBe(true);
@@ -164,16 +162,19 @@ describe("executeCompile", () => {
     const skillFile = path.join(tmp.skillsDir, "rule-1", "SKILL.md");
     expect(nodeFs.existsSync(skillFile)).toBe(false);
     // But result reflects what would have been done
+    expect(result.markdown.path).toBe("(skipped)");
     expect(result.skills.written).toContain("rule-1");
   });
 
-  it("--markdown-only: writes nested rules but no skills", async () => {
+  it("--markdown-only: legacy no-op; does not write CLAUDE.md or skills", async () => {
     seedEntry(tmp.projectDbPath, entry({ current_tier: "stable" }));
     const result = await executeCompile({ ...opts, markdownOnly: true });
+    expect(result.markdown.path).toBe("(skipped)");
+    expect(nodeFs.existsSync(tmp.claudeMdPath)).toBe(false);
     expect(result.skills.written).toHaveLength(0);
     const skillFile = path.join(tmp.skillsDir, "rule-1", "SKILL.md");
     expect(nodeFs.existsSync(skillFile)).toBe(false);
-    expect(nodeFs.existsSync(path.join(tmp.userRulesDir, "INDEX.md"))).toBe(true);
+    expect(nodeFs.existsSync(path.join(tmp.userRulesDir, "INDEX.md"))).toBe(false);
   });
 
   it("--skills-only: writes skills but skips markdown out", async () => {
@@ -186,10 +187,10 @@ describe("executeCompile", () => {
     expect(result.skills.written).toContain("rule-1");
   });
 
-  it("--target=codex (default nested): exposes compiled skills to Codex without AGENTS.md link", async () => {
+  it("--target=codex: exposes compiled skills to Codex without AGENTS.md link", async () => {
     seedEntry(tmp.projectDbPath, entry({ current_tier: "canonical" }));
     const result = await executeCompile({ ...opts, target: "codex" });
-    // Nested mode: AGENTS.md NOT linked (no CLAUDE.md to link to)
+    // Skills/docs propagation mode: AGENTS.md NOT linked (no CLAUDE.md to link to)
     expect(result.agentsMarkdown).toBeUndefined();
     expect(nodeFs.existsSync(tmp.agentsMdPath)).toBe(false);
     // But codex skills symlink still exists
@@ -240,7 +241,7 @@ describe("executeCompile", () => {
     }
   });
 
-  it("--preset-only filters to source==='preset' in nested mode (issue #42 codex P1)", async () => {
+  it("--preset-only is ignored by Skills output and does not create rule markdown", async () => {
     seedEntry(
       tmp.projectDbPath,
       entry({ id: "preset-rule", source: "preset", current_tier: "canonical" }),
@@ -250,10 +251,11 @@ describe("executeCompile", () => {
       entry({ id: "user-rule", source: "accumulated", current_tier: "canonical" }),
     );
     await executeCompile({ ...opts, presetOnly: true });
-    const presetMd = path.join(tmp.userRulesDir, "canonical", "preset-rule.md");
-    const userMd = path.join(tmp.userRulesDir, "canonical", "user-rule.md");
-    expect(nodeFs.existsSync(presetMd)).toBe(true);
-    expect(nodeFs.existsSync(userMd)).toBe(false);
+    const presetSkill = path.join(tmp.skillsDir, "preset-rule", "SKILL.md");
+    const userSkill = path.join(tmp.skillsDir, "user-rule", "SKILL.md");
+    expect(nodeFs.existsSync(presetSkill)).toBe(true);
+    expect(nodeFs.existsSync(userSkill)).toBe(true);
+    expect(nodeFs.existsSync(path.join(tmp.userRulesDir, "INDEX.md"))).toBe(false);
   });
 
   it("empty store: no errors, zero skills written", async () => {
@@ -266,20 +268,21 @@ describe("executeCompile", () => {
 describe("renderCompileResult", () => {
   it("dry-run mode shows dry-run tag", () => {
     const out = renderCompileResult(
-      { markdown: { path: "(dry-run)", blockLineCount: 0 }, skills: { written: ["a", "b"], removed: [] } },
+      { markdown: { path: "(skipped)", blockLineCount: 0 }, skills: { written: ["a", "b"], removed: [] } },
       true,
     );
     expect(out).toContain("dry-run");
     expect(out).toContain("2");
+    expect(out).toContain("disabled");
   });
 
-  it("normal mode shows paths and counts", () => {
+  it("normal mode shows skills and disabled CLAUDE.md output", () => {
     const out = renderCompileResult(
-      { markdown: { path: "/foo/CLAUDE.md", blockLineCount: 42 }, skills: { written: ["r1"], removed: ["r2"] } },
+      { markdown: { path: "(skipped)", blockLineCount: 0 }, skills: { written: ["r1"], removed: ["r2"] } },
       false,
     );
     expect(out).toContain("CLAUDE.md");
-    expect(out).toContain("42");
+    expect(out).toContain("disabled");
     expect(out).toContain("r1");
     expect(out).toContain("r2");
   });

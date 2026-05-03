@@ -98,4 +98,36 @@ describe("v2Calibrator integration", () => {
     expect(r.demerit).toBeGreaterThan(0);
     expect(r.demerit_delta).toBeGreaterThan(0);
   });
+
+  it("scores ignored-event demerit against pre-drop confidence", () => {
+    const events: PersistedEvent[] = [
+      {
+        id: "e-ignored",
+        kind: "ai.override.ignored",
+        knowledge_id: "r-int",
+        timestamp: now.toISOString(),
+        schema_version: 1,
+      },
+    ];
+    const observations: Observation[] = [
+      {
+        id: "synth-e-ignored",
+        knowledge_id: "r-int",
+        timestamp: now.toISOString(),
+        outcome: "failure",
+        source_event: "e-ignored",
+      },
+    ];
+    const highConfidenceEntry = {
+      ...entry,
+      current_tier: "stable" as const,
+      max_tier_ever: "stable" as const,
+      confidence: 0.95,
+    };
+
+    const r = v2Calibrator.calibrate(highConfidenceEntry, { events, observations, now });
+
+    expect(r.confidence).toBeLessThan(0.95);
+    expect(r.demerit).toBeGreaterThan(8);
+  });
 });

@@ -7,11 +7,11 @@ import {
   SqliteCandidateQueue,
   SqliteEventLog,
   openDb,
-  createRuleCompiler,
   makeSkillCompiler,
 } from "@teamagent/adapters";
 import { runCalibrationPipeline, defaultCalibrator, runCompile } from "@teamagent/core";
 import type { PersistedEvent } from "@teamagent/types";
+import { scheduleDocsPropagation } from "./docs-propagate.js";
 
 export interface ReviewCandidatesOptions {
   limit?: number;
@@ -21,8 +21,11 @@ export interface ReviewCandidatesOptions {
   projectDbPath?: string;
   userGlobalDbPath?: string;
   eventsDbPath?: string;
+  skillsDir?: string;
+  /** @deprecated 新规则路径不再写 CLAUDE.md；保留字段仅为兼容旧调用方。 */
   claudeMdPath?: string;
   now?: () => Date;
+  docsPropagationScheduler?: (ruleIds: string[]) => void | Promise<void>;
 }
 
 export async function executeReviewCandidates(
@@ -38,8 +41,7 @@ export async function executeReviewCandidates(
     opts.userGlobalDbPath ?? path.join(home, ".teamagent", "global.db");
   const eventsDbPath =
     opts.eventsDbPath ?? path.join(home, ".teamagent", "events.db");
-  const claudeMdPath = opts.claudeMdPath ?? path.join(cwd, "CLAUDE.md");
-  const userRulesDir = path.join(home, ".claude", "teamagent", "rules");
+  const skillsDir = opts.skillsDir ?? path.join(home, ".claude", "skills", "teamagent");
   const now = opts.now ?? (() => new Date());
 
   const emitEvent = (evt: Omit<PersistedEvent, "schema_version">): void => {
@@ -90,6 +92,7 @@ export async function executeReviewCandidates(
   let approved = 0;
   let rejected = 0;
   let skipped = 0;
+  const approvedRuleIds: string[] = [];
 
   for (let i = 0; i < pending.length; i++) {
     const candidate = pending[i]!;
@@ -116,6 +119,7 @@ export async function executeReviewCandidates(
         projectStore.add(e);
         queue.updateStatus(candidate.id, "approved");
         approved++;
+        approvedRuleIds.push(e.id);
         process.stdout.write(`✓ 已写入知识库 (id: ${e.id})\n`);
         emitEvent({
           id: `ev-cand-approved-${now().getTime()}-${candidate.id.slice(-6)}`,
@@ -145,7 +149,7 @@ export async function executeReviewCandidates(
   rl.close();
 
   if (approved > 0) {
-    process.stdout.write("\n重新校准 + 编译 CLAUDE.md…\n");
+    process.stdout.write("\n重新校准 + 更新 Skills + 调度 docs propagation…\n");
     try {
       await runCalibrationPipeline({
         calibrator: defaultCalibrator,
@@ -153,19 +157,18 @@ export async function executeReviewCandidates(
         events: [],
         now,
       });
-      const mdCompiler = createRuleCompiler({
-        claudeMdPath,
-        rulesDir: userRulesDir,
-        now: () => now().toISOString(),
-      });
       await runCompile({
         store,
-        markdownCompiler: mdCompiler,
-        skillCompiler: makeSkillCompiler(),
+        skillCompiler: makeSkillCompiler({ skillsDir }),
       });
-      process.stdout.write("✓ CLAUDE.md 已更新\n");
+      if (opts.docsPropagationScheduler) {
+        await opts.docsPropagationScheduler(approvedRuleIds);
+      } else {
+        scheduleDocsPropagation(approvedRuleIds, { cwd });
+      }
+      process.stdout.write("✓ Skills 已更新；docs propagation 已调度\n");
     } catch (err) {
-      process.stdout.write(`⚠ 校准/编译失败: ${String(err).slice(0, 100)}\n`);
+      process.stdout.write(`⚠ 校准/导出失败: ${String(err).slice(0, 100)}\n`);
     }
   }
 

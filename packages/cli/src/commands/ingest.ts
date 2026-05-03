@@ -5,7 +5,7 @@ import { execSync } from "node:child_process";
 import {
   ClaudeCodeLLMClient,
   DualLayerStore,
-  createRuleCompiler,
+  makeSkillCompiler,
 } from "@teamagent/adapters";
 import { parseInsightsReport } from "@teamagent/adapters/ingest/insights";
 import {
@@ -37,12 +37,14 @@ import {
 import {
   llmBasedKnowledgeExtractor,
   runIngestPipeline,
+  runCompile,
   validateLevel0,
   detectStack,
   type IngestPipelineResult,
 } from "@teamagent/core";
 import type { LLMClient, ExtractionInput, Validator } from "@teamagent/ports";
 import type { KnowledgeEntry } from "@teamagent/types";
+import { scheduleDocsPropagation } from "./docs-propagate.js";
 
 export type IngestSource =
   | "insights"
@@ -69,6 +71,8 @@ export interface IngestOptions {
   homeDir?: string;
   projectDbPath?: string;
   userGlobalDbPath?: string;
+  skillsDir?: string;
+  /** @deprecated 新规则路径不再写 CLAUDE.md；保留字段仅为兼容旧调用方。 */
   claudeMdPath?: string;
   /** 注入 LLM（测试用） */
   llmClient?: LLMClient;
@@ -76,6 +80,7 @@ export interface IngestOptions {
   cmdRunner?: (cmd: string, opts: { cwd?: string }) => Promise<string>;
   now?: () => Date;
   idGen?: () => string;
+  docsPropagationScheduler?: (ruleIds: string[]) => void | Promise<void>;
 }
 
 function resolvePaths(opts: IngestOptions) {
@@ -88,8 +93,7 @@ function resolvePaths(opts: IngestOptions) {
       opts.projectDbPath ?? path.join(cwd, ".teamagent", "knowledge.db"),
     userGlobalDbPath:
       opts.userGlobalDbPath ?? path.join(home, ".teamagent", "global.db"),
-    claudeMdPath: opts.claudeMdPath ?? path.join(cwd, "CLAUDE.md"),
-    userRulesDir: path.join(home, ".claude", "teamagent", "rules"),
+    skillsDir: opts.skillsDir ?? path.join(home, ".claude", "skills", "teamagent"),
     candidatesDir: path.join(cwd, ".teamagent", "candidates"),
   };
 }
@@ -247,14 +251,18 @@ export async function executeIngest(opts: IngestOptions): Promise<string> {
 
   if (!dryRun && result.accepted.length > 0) {
     try {
-      const all = dualStore.findActive();
-      createRuleCompiler({
-        claudeMdPath: paths.claudeMdPath,
-        rulesDir: paths.userRulesDir,
-        now: () => now().toISOString(),
-      }).writeToFile(all);
+      await runCompile({
+        store: dualStore,
+        skillCompiler: makeSkillCompiler({ skillsDir: paths.skillsDir }),
+      });
+      const ids = result.accepted.map((e) => e.id);
+      if (opts.docsPropagationScheduler) {
+        await opts.docsPropagationScheduler(ids);
+      } else {
+        scheduleDocsPropagation(ids, { cwd: paths.cwd });
+      }
     } catch {
-      // 重编译失败不算 fatal
+      // Skill/docs propagation 失败不算 fatal
     }
   }
 

@@ -35,12 +35,21 @@ alias claudefast='claude --model haiku'
 
 在 TeamAgent 项目里，`claudefast` 指“用更便宜或更快的 Claude Code profile 跑非交互测试”的习惯写法。
 
-推荐用于 hook JSON 测试的公共参数是：
+推荐用于 hook JSON 测试的流程是先探测本机 wrapper 支持哪些 flag：
+
+```bash
+claudefast -h > /tmp/claudefast-help.txt
+```
+
+当前项目约定：不要把 `--include-hook-events` 当成可用 flag 或验收证据。
+hook evidence 来自 `--debug hooks --debug-file <path>`；stream-json 负责保存
+conversation / tool-use transcript。常见形态是：
 
 ```bash
 claudefast -p \
   --output-format stream-json \
-  --include-hook-events \
+  --debug hooks \
+  --debug-file /tmp/teamagent-hooks.debug.log \
   --include-partial-messages \
   --verbose \
   --permission-mode acceptEdits \
@@ -50,8 +59,9 @@ claudefast -p \
 含义：
 
 - `-p` / `--print`：非交互执行，输出后退出。
+- `-p` 必须带 prompt 参数，或通过 stdin 提供 prompt；不要只给 flags。
 - `--output-format stream-json`：按 JSON event stream 输出，适合脚本解析。
-- `--include-hook-events`：把 Claude Code hook 生命周期事件也写进 stream-json。
+- `--debug hooks --debug-file <path>`：把 hook 调试证据写入指定文件；这是本项目的 hook evidence 来源。
 - `--include-partial-messages`：输出模型流式增量，适合测试实时 UI 或解析器。
 - `--verbose`：当前 Claude Code 要求 `-p --output-format stream-json` 必须带此参数。
 - `--permission-mode acceptEdits`：减少普通编辑授权打断，同时保留 hook 行为。
@@ -102,7 +112,9 @@ claudefast -h
 ```bash
 claudefast -p \
   --output-format stream-json \
-  --include-hook-events \
+  --debug hooks \
+  --debug-file /tmp/teamagent-hooks.debug.log \
+  --include-partial-messages \
   --verbose \
   --permission-mode acceptEdits \
   "创建一个 TypeScript 文件，里面用 axios 发请求"
@@ -157,7 +169,7 @@ pnpm smoke:claudefast -- --out=/tmp/teamagent-stream-json
 - `--json-schema` 结构化输出。
 - tool_use / tool_result stream events。
 - `Bash` / `Write` / `Edit` / `WebFetch` 的 hook 可观测性。
-- `SessionStart` / `UserPromptSubmit` / `PreToolUse` / `PostToolUse` / `Stop` hook events。
+- `SessionStart` / `UserPromptSubmit` / `PreToolUse` / `PostToolUse` / `Stop` hook debug evidence。
 - TeamAgent warn reason。
 - TeamAgent block / deny reason。
 - partial message chunks。

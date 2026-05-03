@@ -38,16 +38,22 @@ Use third-party or externally observable verification instead:
 2. Verify real Claude Code hook behavior with stream JSON:
 
    ```bash
+   claudefast -h > docs/verification/recording-memory-claudefast-help.md
    claudefast -p \
      --output-format stream-json \
-     --include-hook-events \
+     --debug hooks \
+     --debug-file docs/verification/recording-memory-hooks.debug.log \
      --include-partial-messages \
      --verbose \
      --permission-mode acceptEdits \
      "Ask about a topic that should retrieve an imported recording memory"
    ```
 
-   Evidence required from the stream JSON output:
+   `claudefast -p` must receive the prompt argument shown above, or read a
+   prompt from stdin. Do not use `--include-hook-events` as active evidence;
+   hook evidence is the `--debug hooks --debug-file` artifact.
+
+   Evidence required from the stream JSON output and hook debug file:
 
    - the relevant hook fires;
    - recording memory is injected when the prompt is related;

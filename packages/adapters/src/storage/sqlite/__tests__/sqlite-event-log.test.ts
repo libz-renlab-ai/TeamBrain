@@ -62,12 +62,20 @@ describe("SqliteEventLog", () => {
       tool_use_id: "tu-1",
       confidence_before: 0.5,
       confidence_after: 0.6,
+      demerit_before: 1,
+      demerit_after: 2,
+      tier_before: "experimental",
+      tier_after: "probation",
     } as any;
     log.append(e);
     const got = log.readAll()[0] as any;
     expect(got.tool_use_id).toBe("tu-1");
     expect(got.confidence_before).toBe(0.5);
     expect(got.confidence_after).toBe(0.6);
+    expect(got.demerit_before).toBe(1);
+    expect(got.demerit_after).toBe(2);
+    expect(got.tier_before).toBe("experimental");
+    expect(got.tier_after).toBe("probation");
   });
 
   it("B-056: readAll does not throw when one row has malformed JSON payload", () => {

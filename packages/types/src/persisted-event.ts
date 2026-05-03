@@ -67,6 +67,18 @@ export interface PersistedEvent {
   confidence_before?: number;
   /** Calibrator 调整后的 confidence（仅 calibrator.adjusted 用） */
   confidence_after?: number;
+  /** Calibrator v2 调整前的 demerit（仅 calibrator.adjusted 用） */
+  demerit_before?: number;
+  /** Calibrator v2 调整后的 demerit（仅 calibrator.adjusted 用） */
+  demerit_after?: number;
+  /** Calibrator v2 调整前的 tier（仅 calibrator.adjusted 用） */
+  tier_before?: string;
+  /** Calibrator v2 调整后的 tier（仅 calibrator.adjusted 用） */
+  tier_after?: string;
+  /** Calibrator v2 tier transition summary（仅 calibrator.adjusted 用） */
+  tier_transition?: unknown;
+  /** Calibrator v2 delta breakdown（仅 calibrator.adjusted 用） */
+  delta_breakdown?: unknown;
   /** Calibrator 调整后的 status（仅 calibrator.adjusted；可能 active→archived/dormant） */
   status_after?: "active" | "conflict" | "stale" | "archived" | "dormant";
   /** ISO 8601 */

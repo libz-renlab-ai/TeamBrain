@@ -2,6 +2,11 @@
 
 Date: 2026-04-29
 
+Historical note: this is retained as evidence from the 2026-04-29 run. Current
+active TeamBrain recipes do not use `--include-hook-events`; hook evidence is
+captured with `--debug hooks --debug-file <path>` plus stream-json transcript
+flags.
+
 Command:
 
 ```bash

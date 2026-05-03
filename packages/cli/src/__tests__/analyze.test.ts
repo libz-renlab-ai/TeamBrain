@@ -14,18 +14,6 @@ function mkTmp() {
   };
 }
 
-function collectMarkdownFiles(root: string): string[] {
-  const out: string[] = [];
-  if (!nodeFs.existsSync(root)) return out;
-  for (const name of nodeFs.readdirSync(root)) {
-    const full = path.join(root, name);
-    const stat = nodeFs.statSync(full);
-    if (stat.isDirectory()) out.push(...collectMarkdownFiles(full));
-    else if (full.endsWith(".md")) out.push(full);
-  }
-  return out;
-}
-
 const FIXTURE_ROOT = path.resolve(process.cwd(), "fixtures/sessions");
 
 describe("executeAnalyze", () => {
@@ -129,10 +117,11 @@ describe("executeAnalyze", () => {
       complete: async () => response,
     });
 
-    it("extracts corrections via LLM and writes to store + nested rule store (issue #42)", async () => {
+    it("extracts corrections via LLM, writes to store, exports Skills, and schedules docs propagation", async () => {
       const projectDbPath = path.join(tmp.dir, "knowledge.db");
       const userGlobalDbPath = path.join(tmp.dir, "global.db");
       const claudeMdPath = path.join(tmp.dir, "CLAUDE.md");
+      const scheduled: string[][] = [];
 
       const llm = stubLLM(
         "```json\n" +
@@ -161,6 +150,9 @@ describe("executeAnalyze", () => {
         idGen: () => "pers-test-0001",
         now: () => new Date("2026-04-14T12:00:00Z"),
         skipCalibrate: true,
+        docsPropagationScheduler: (ids) => {
+          scheduled.push(ids);
+        },
       });
 
       expect(out).toContain("--commit 模式");
@@ -176,19 +168,11 @@ describe("executeAnalyze", () => {
       expect(all[0]!.id).toBe("pers-test-0001");
       expect(all[0]!.wrong_pattern).toBe("axios");
 
-      // 默认走用户级 nested rule store——不再写 CLAUDE.md（issue #42）
       expect(nodeFs.existsSync(claudeMdPath)).toBe(false);
-      const indexPath = path.join(tmp.dir, ".claude", "teamagent", "rules", "INDEX.md");
-      expect(nodeFs.existsSync(indexPath)).toBe(true);
-      const indexContent = nodeFs.readFileSync(indexPath, "utf-8");
-      expect(indexContent).toContain("# TeamAgent Rules");
-      // 单条 rule 文件落地（任意 tier 子目录），并包含 correct_pattern
-      const rulesRoot = path.join(tmp.dir, ".claude", "teamagent", "rules");
-      const ruleFiles = collectMarkdownFiles(rulesRoot).filter(
-        (p) => p.endsWith("pers-test-0001.md"),
-      );
-      expect(ruleFiles.length).toBe(1);
-      expect(nodeFs.readFileSync(ruleFiles[0]!, "utf-8")).toContain("fetch");
+      const skillPath = path.join(tmp.dir, ".claude", "skills", "teamagent", "pers-test-0001", "SKILL.md");
+      expect(nodeFs.existsSync(skillPath)).toBe(true);
+      expect(nodeFs.readFileSync(skillPath, "utf-8")).toContain("fetch");
+      expect(scheduled).toEqual([["pers-test-0001"]]);
     });
 
     it("LLM returning null → skipped, nothing written", async () => {
@@ -263,6 +247,7 @@ describe("--commit mode: auto-vectorization", () => {
 
   // 384-dim deterministic stub embedder (no Xenova dependency)
   const stubEmbedder = {
+    modelId: "analyze-test-deterministic",
     async embed(texts: string[]): Promise<number[][]> {
       return texts.map((t) => {
         const v = new Array(384).fill(0.5);
@@ -315,10 +300,14 @@ describe("--commit mode: auto-vectorization", () => {
     const db = openDb(projectDbPath);
     const vecCount = db.prepare("SELECT COUNT(*) as n FROM knowledge_trigger_vec").get() as { n: number };
     const patVecCount = db.prepare("SELECT COUNT(*) as n FROM knowledge_pattern_vec").get() as { n: number };
+    const metadata = db.prepare("SELECT embedder_model_id FROM knowledge WHERE id = ?").get(
+      "pers-vec-test-0001",
+    ) as { embedder_model_id: string };
     db.close();
 
     expect(vecCount.n).toBe(1);
     expect(patVecCount.n).toBe(1);
+    expect(metadata.embedder_model_id).toBe(stubEmbedder.modelId);
   });
 });
 

@@ -62,7 +62,9 @@ export const v2Calibrator: CalibratorV2 = {
         current: entry.demerit,
         last_updated: entry.demerit_last_updated,
         current_tier: entry.current_tier as Tier,
-        confidence: newConfidence,
+        // Penalize surprise against the rule's confidence before this calibration.
+        // Synthetic ignored failures may drop Wilson confidence in the same pass.
+        confidence: entry.confidence,
       },
       demeritEvents,
       input.now,

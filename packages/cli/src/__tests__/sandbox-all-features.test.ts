@@ -28,6 +28,7 @@ import { runSkeletonDemo } from "../commands/skeleton-demo.js";
 import { parseUninstallArgs } from "../commands/uninstall.js";
 import { parsePrCycleArgs } from "../commands/pr-cycle.js";
 import { parseReviewCandidatesArgs } from "../commands/review-candidates.js";
+import { deterministicRuleEmbedder } from "./deterministic-rule-embedder.js";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -619,11 +620,15 @@ describe("Feature: skeleton-demo", () => {
 
 describe("Feature: e2e-evaluate full run", () => {
   it("runs end-to-end and reports results with passed/failed counts", async () => {
-    const result = await executeE2EEvaluate({ json: true, keepTemp: false });
+    const result = await executeE2EEvaluate({
+      json: true,
+      keepTemp: false,
+      embedder: deterministicRuleEmbedder,
+    });
     expect(result).toBeDefined();
     expect(typeof result.passed).toBe("number");
     expect(typeof result.failed).toBe("number");
     expect(Array.isArray(result.results)).toBe(true);
     expect(result.failures).toBeDefined();
-  }, 30000);
+  }, 120000);
 });

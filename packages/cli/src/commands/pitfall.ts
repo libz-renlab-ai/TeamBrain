@@ -4,7 +4,6 @@ import fs from "node:fs";
 import {
   DualLayerStore,
   InMemoryAttributionBus,
-  createRuleCompiler,
   StdoutRenderer,
   makeSkillCompiler,
   openDb,
@@ -19,6 +18,7 @@ import {
   type KnowledgeEntry,
 } from "@teamagent/types";
 import { buildFallbackDescriptions } from "./migrate-v6.js";
+import { scheduleDocsPropagation } from "./docs-propagate.js";
 
 /** pitfall 的非 IO 参数——便于测试 */
 export interface PitfallInput {
@@ -43,14 +43,17 @@ export interface PitfallOptions {
   projectDbPath?: string;
   /** global 知识 DB，默认 ~/.teamagent/global.db */
   userGlobalDbPath?: string;
-  /** CLAUDE.md 路径，默认 {cwd}/CLAUDE.md */
+  /** @deprecated 新规则路径不再写 CLAUDE.md；保留字段仅为兼容旧测试/调用方。 */
   claudeMdPath?: string;
+  skillsDir?: string;
   cwd?: string;
   homeDir?: string;
   now?: () => string;
   env?: Record<string, string | undefined>;
   /** 向量 embedder，可注入 stub（生产时默认 XenovaRuleEmbedder） */
   embedder?: { embed(texts: string[]): Promise<number[][]> };
+  /** 测试可注入；生产默认后台调度 docs-propagate。 */
+  docsPropagationScheduler?: (ruleIds: string[]) => void | Promise<void>;
 }
 
 function resolvePaths(opts: PitfallOptions) {
@@ -62,7 +65,7 @@ function resolvePaths(opts: PitfallOptions) {
     userGlobalDbPath:
       opts.userGlobalDbPath ?? path.join(home, ".teamagent", "global.db"),
     claudeMdPath: opts.claudeMdPath ?? path.join(cwd, "CLAUDE.md"),
-    userRulesDir: path.join(home, ".claude", "teamagent", "rules"),
+    skillsDir: opts.skillsDir ?? path.join(home, ".claude", "skills", "teamagent"),
   };
 }
 
@@ -120,7 +123,7 @@ function buildEntry(input: PitfallInput, now: string): KnowledgeEntry {
 }
 
 /**
- * 核心非 IO 函数：给定 input + paths，写盘 + 编译 CLAUDE.md + 返回归因文本。
+ * 核心非 IO 函数：给定 input + paths，写盘 + 导出 Skills + 返回归因文本。
  * 供交互模式和非交互模式共用。
  */
 export async function executePitfall(
@@ -145,15 +148,10 @@ export async function executePitfall(
   const entry = buildEntry(input, now);
   store.add(entry);
 
-  // 重新编译 CLAUDE.md + skills —— 合并所有 scope 的活跃条目
-  const compileResult = await runCompile({
+  // 重新编译 skills —— 合并所有 scope 的活跃条目。CLAUDE.md 规则块输出已禁用。
+  await runCompile({
     store,
-    markdownCompiler: createRuleCompiler({
-      claudeMdPath: paths.claudeMdPath,
-      rulesDir: paths.userRulesDir,
-      now: () => now,
-    }),
-    skillCompiler: makeSkillCompiler(),
+    skillCompiler: makeSkillCompiler({ skillsDir: paths.skillsDir }),
   });
 
   const after = store.getAll().length;
@@ -185,18 +183,17 @@ export async function executePitfall(
     generateToolContextAsync(entry, paths.projectDbPath).catch(() => {/* best-effort */});
   }
 
-  // B-065: 真实写入位置取决于 entry.type:
-  //   avoidance (有 wrong_pattern) → 进 CLAUDE.md 知识块 + skill 文件
-  //   practice  (无 wrong_pattern) → 仅 skill 文件，CLAUDE.md 不含此规则
-  // 之前 target 永远是 (CLAUDE.md, count=0)，渲染成"传播到 CLAUDE.md 第 0 行"，
-  // 让用户误以为 practice 类规则在 CLAUDE.md 生效（实际只在 SKILL.md）。
-  // 修复：根据类型选择正确文件，且 count 用真实 blockLineCount。
-  const home = opts.homeDir ?? os.homedir();
-  const skillMdPath = path.join(home, ".claude", "skills", "teamagent", entry.id, "SKILL.md");
-  const target: { file: string; count?: number } =
-    entry.type === "practice"
-      ? { file: skillMdPath }
-      : { file: compileResult.markdown.path, count: compileResult.markdown.blockLineCount };
+  try {
+    if (opts.docsPropagationScheduler) {
+      await opts.docsPropagationScheduler([entry.id]);
+    } else {
+      scheduleDocsPropagation([entry.id], { cwd: opts.cwd, env });
+    }
+  } catch {
+    // docs propagation is best-effort; DB/vector/Skill writes remain the source of truth.
+  }
+
+  const skillMdPath = path.join(paths.skillsDir, entry.id, "SKILL.md");
 
   const bus = new InMemoryAttributionBus();
   bus.emit({
@@ -204,7 +201,7 @@ export async function executePitfall(
     action: `添加知识条目 ${entry.id} (${entry.category}/${entry.tags[0]})`,
     severity: "highlight",
     timestamp: now,
-    target,
+    target: { file: skillMdPath },
     before: { knowledgeCount: before },
     after: {
       knowledgeCount: after,
@@ -212,8 +209,8 @@ export async function executePitfall(
     },
     userFacingValue:
       entry.type === "avoidance"
-        ? `AI 遇到 "${entry.wrong_pattern}" 时会改用 "${entry.correct_pattern}"`
-        : `AI 下次在 "${entry.trigger}" 场景会参考: ${entry.correct_pattern}`,
+        ? `AI 遇到 "${entry.wrong_pattern}" 时会改用 "${entry.correct_pattern}"；docs propagation 已调度`
+        : `AI 下次在 "${entry.trigger}" 场景会参考: ${entry.correct_pattern}；docs propagation 已调度`,
     counterfactual: "你会看到 AI 第二次再踩同一个坑",
   });
 
@@ -237,7 +234,7 @@ export async function runPitfallInteractive(
   };
 
   try {
-    stdout.write("\n记录一条踩坑经验——问答完成后会写入知识库 + 更新 CLAUDE.md\n\n");
+    stdout.write("\n记录一条踩坑经验——问答完成后会写入知识库 + 导出 Skill + 调度 docs propagation\n\n");
     const trigger = await ask("触发场景（什么情况下会踩到这个坑？）: ");
     const wrong = await ask("错误做法（留空表示 practice 型）: ");
     const correct = await ask("正确做法: ");
@@ -336,7 +333,7 @@ async function generateToolContextAsync(
  * B-067: per-field length cap for pitfall non-interactive input. 1000 chars
  * is generous for any natural-language pitfall description; values beyond
  * this strongly suggest abuse or accidental paste of large content. The cap
- * prevents one entry from dominating the 3000-token CLAUDE.md compile budget.
+ * prevents one entry from dominating downstream generated docs/skill output.
  */
 const PITFALL_FIELD_MAX = 1000;
 
@@ -391,8 +388,7 @@ export function parsePitfallArgs(argv: string[]): PitfallInput | null {
   if (missing.length > 0) throw new PitfallValidationError(missing);
 
   // B-067: enforce per-field length cap. Without this, 10000-char trigger
-  // gets stored, vectorized, and compiled into CLAUDE.md (3000-token budget)
-  // — a single bad entry can blow out the entire knowledge block.
+  // gets stored, vectorized, and exported into generated docs/skills output.
   const overLong: string[] = [];
   if (trigger.length > PITFALL_FIELD_MAX) overLong.push(`--trigger 长度 ${trigger.length}`);
   if (wrong.length > PITFALL_FIELD_MAX) overLong.push(`--wrong 长度 ${wrong.length}`);

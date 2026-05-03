@@ -43,7 +43,7 @@ function makeEntry(overrides: Partial<KnowledgeEntry> = {}): KnowledgeEntry {
   };
 }
 
-describe("MarkdownCompiler adapter", () => {
+describe("MarkdownCompiler adapter (legacy/internal CLAUDE.md block)", () => {
   let dir: string;
   let mdPath: string;
 

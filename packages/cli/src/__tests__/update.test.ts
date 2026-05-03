@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  findUpdaterBinary,
   runUpdateCommand,
   parseUpdateArgs,
   writeState,
@@ -32,6 +33,12 @@ describe("update command", () => {
     const r = await runUpdateCommand("status");
     expect(r.ok).toBe(true);
     expect(r.output).toContain("abcdef1234");
+    expect(r.output).toContain("updater_binary:");
+  });
+
+  it("findUpdaterBinary exposes missing updater without running install", () => {
+    const fakeModule = path.join(tmpHome, "src", "commands", "update.js");
+    expect(findUpdaterBinary(`file://${fakeModule}`)).toBeNull();
   });
 
   it("disable creates marker, enable removes", async () => {

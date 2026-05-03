@@ -1,9 +1,16 @@
 // packages/cli/src/__tests__/doctor.test.ts
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
+import { openDb } from "@teamagent/adapters";
 import {
+  checkClaudeMd,
+  executeDoctor,
   renderDoctorResult,
   parseDoctorArgs,
   checkClaudeCode,
+  checkTeamSharingStatus,
   pathContainsNodeModulesBin,
   type ClaudeProbe,
   type ClaudeProbeResult,
@@ -55,6 +62,26 @@ describe("renderDoctorResult", () => {
     expect(out).toContain("✅ node-version");
     expect(out).toContain("v22.4.0");
   });
+
+  it("does not say everything passed when product-boundary checks are skipped", () => {
+    const checks: DoctorCheckResult[] = [
+      { name: "team-sharing", status: "skip", detail: "PARTIAL" },
+    ];
+    const out = renderDoctorResult(makeResult({ checks, skipped: 1, allPassed: true }));
+    expect(out).not.toContain("全部检查通过");
+    expect(out).toContain("跳过项");
+  });
+});
+
+describe("checkTeamSharingStatus", () => {
+  it("reports Phase 4 team sharing as explicit partial, not pass/fail", () => {
+    const result = checkTeamSharingStatus();
+    expect(result.status).toBe("skip");
+    expect(result.detail).toContain("PARTIAL");
+    expect(result.detail).toContain("transport");
+    expect(result.detail).toContain("privacy");
+    expect(result.detail).toContain("review gates");
+  });
 });
 
 describe("parseDoctorArgs", () => {
@@ -73,9 +100,107 @@ describe("parseDoctorArgs", () => {
   });
 });
 
-describe("executeDoctor --fix", () => {
+describe("doctor CLAUDE.md checks", () => {
   it("parseDoctorArgs recognizes --fix", () => {
     expect(parseDoctorArgs(["--fix"]).fix).toBe(true);
+  });
+
+  it("does not require CLAUDE.md or suggest compile as a fix", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "doctor-cli-"));
+    try {
+      const claudeMd = checkClaudeMd(path.join(root, "CLAUDE.md"));
+      expect(claudeMd?.status).not.toBe("fail");
+      expect(claudeMd?.fix).toBeUndefined();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("flags old generated TEAMAGENT blocks without using compile as a fix", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "doctor-cli-"));
+    try {
+      fs.writeFileSync(
+        path.join(root, "CLAUDE.md"),
+        "# Manual\n\n<!-- TEAMAGENT:START - old -->\n- generated\n<!-- TEAMAGENT:END -->\n",
+      );
+      const claudeMd = checkClaudeMd(path.join(root, "CLAUDE.md"));
+      expect(claudeMd?.status).toBe("fail");
+      expect(claudeMd?.detail).toContain("旧 TEAMAGENT:START");
+      expect(claudeMd?.fix).toBeUndefined();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("executeDoctor team-sharing boundary", () => {
+  const passingClaudeProbe: ClaudeProbe = () => ({
+    ok: true,
+    stdout: "2.1.126 (Claude Code)\n",
+    stderr: "",
+  });
+
+  function makeTempWorkspace(): { cwd: string; homeDir: string; cleanup: () => void } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-doctor-"));
+    const cwd = path.join(root, "workspace");
+    const homeDir = path.join(root, "home");
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.mkdirSync(homeDir, { recursive: true });
+    return {
+      cwd,
+      homeDir,
+      cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
+    };
+  }
+
+  function createKnowledgeDb(cwd: string): void {
+    const dbPath = path.join(cwd, ".teamagent", "knowledge.db");
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    const db = openDb(dbPath);
+    db.close();
+  }
+
+  it("keeps team-sharing PARTIAL visible when knowledge.db is missing", async () => {
+    const workspace = makeTempWorkspace();
+    try {
+      const result = await executeDoctor({
+        cwd: workspace.cwd,
+        homeDir: workspace.homeDir,
+        claudeProbe: passingClaudeProbe,
+      });
+      const names = result.checks.map((check) => check.name);
+      expect(names).toContain("knowledge-db");
+      expect(names).toContain("team-sharing");
+      expect(result.checks.find((check) => check.name === "knowledge-db")?.status).toBe("fail");
+      expect(result.checks.find((check) => check.name === "team-sharing")).toMatchObject({
+        status: "skip",
+        detail: expect.stringContaining("PARTIAL"),
+      });
+    } finally {
+      workspace.cleanup();
+    }
+  });
+
+  it("keeps team-sharing PARTIAL visible when hook registration is missing", async () => {
+    const workspace = makeTempWorkspace();
+    try {
+      createKnowledgeDb(workspace.cwd);
+      const result = await executeDoctor({
+        cwd: workspace.cwd,
+        homeDir: workspace.homeDir,
+        claudeProbe: passingClaudeProbe,
+      });
+      const names = result.checks.map((check) => check.name);
+      expect(names).toContain("hook-registered");
+      expect(names).toContain("team-sharing");
+      expect(result.checks.find((check) => check.name === "hook-registered")?.status).toBe("fail");
+      expect(result.checks.find((check) => check.name === "team-sharing")).toMatchObject({
+        status: "skip",
+        detail: expect.stringContaining("PARTIAL"),
+      });
+    } finally {
+      workspace.cleanup();
+    }
   });
 });
 

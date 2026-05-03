@@ -52,6 +52,7 @@ describe("executeInit", () => {
     idGen: () => `pers-test-${++ctr}`,
     now: () => new Date("2026-04-14T12:00:00Z"),
   });
+  const itWithFileSymlink = process.platform === "win32" ? it.skip : it;
 
   it("dry-run: no files written, plans are reported", async () => {
     nodeFs.writeFileSync(
@@ -99,20 +100,19 @@ describe("executeInit", () => {
     projectStore.close();
     expect(personalCount).toBe(2);
 
-    // 默认走用户级 nested rule store——CLAUDE.md 保留用户内容，无 TEAMAGENT block
+    // CLAUDE.md remains human-maintained; init no longer writes a TEAMAGENT block.
     const md = nodeFs.readFileSync(path.join(tmp.cwd, "CLAUDE.md"), "utf-8");
     expect(md).not.toContain("TEAMAGENT:START");
+    expect(md).not.toContain("TEAMAGENT:END");
     expect(md).toContain("# Team rules");
-    // Nested rule store at user home
-    const indexPath = path.join(tmp.home, ".claude", "teamagent", "rules", "INDEX.md");
-    expect(nodeFs.existsSync(indexPath)).toBe(true);
+    expect(r.steps.find((s) => s.step === "compile-skills")?.status).toBe("ok");
 
     expect(r.summary.presetAdded).toBe(8);
     expect(r.summary.importedRules).toBe(2);
     expect(r.summary.totalActiveEntries).toBeGreaterThanOrEqual(10);
   });
 
-  it("target=codex writes nested rules and links AGENTS.md to rules/INDEX.md (issue #42)", async () => {
+  it("target=codex exports Skills and links .codex/skills", async () => {
     const r = await executeInit({
       ...commonOpts(),
       target: "codex",
@@ -120,28 +120,19 @@ describe("executeInit", () => {
     });
 
     expect(r.ok).toBe(true);
-    expect(r.steps.find((s) => s.step === "compile-claude-md")?.status).toBe("ok");
+    expect(r.steps.find((s) => s.step === "compile-skills")?.status).toBe("ok");
     expect(r.steps.find((s) => s.step === "link-codex-files")?.status).toBe("ok");
-    const indexPath = path.join(tmp.home, ".claude", "teamagent", "rules", "INDEX.md");
-    const agentsPath = path.join(tmp.cwd, "AGENTS.md");
     const codexSkillsPath = path.join(tmp.cwd, ".codex", "skills");
     const teamagentSkillsPath = path.join(tmp.home, ".claude", "skills", "teamagent");
-    expect(nodeFs.existsSync(indexPath)).toBe(true);
-    // Codex AGENTS.md 现在是指向 nested INDEX.md 的软链
-    expect(nodeFs.lstatSync(agentsPath).isSymbolicLink()).toBe(true);
-    expect(path.resolve(path.dirname(agentsPath), nodeFs.readlinkSync(agentsPath))).toBe(indexPath);
-    const agents = nodeFs.readFileSync(agentsPath, "utf-8");
-    expect(agents).toContain("# TeamAgent Rules");
-    // CLAUDE.md 不再被写入
+    expect(nodeFs.existsSync(path.join(tmp.cwd, "AGENTS.md"))).toBe(false);
     expect(nodeFs.existsSync(path.join(tmp.cwd, "CLAUDE.md"))).toBe(false);
     expect(nodeFs.lstatSync(codexSkillsPath).isSymbolicLink()).toBe(true);
     expect(path.resolve(tmp.cwd, ".codex", nodeFs.readlinkSync(codexSkillsPath))).toBe(
       teamagentSkillsPath,
     );
-    expect(r.steps.find((s) => s.step === "compile-codex-skills")?.status).toBe("ok");
   });
 
-  it("target=codex pre-check validates CLAUDE.md because codex still compiles it", async () => {
+  it("target=codex pre-check validates readable CLAUDE.md for import", async () => {
     const claudePath = path.join(tmp.cwd, "CLAUDE.md");
     nodeFs.writeFileSync(claudePath, "# locked\n");
 
@@ -163,11 +154,79 @@ describe("executeInit", () => {
     expect(r.steps[0]).toMatchObject({
       step: "pre-check",
       status: "failed",
-      detail: "CLAUDE.md 文件无写入权限，请运行: chmod 644 CLAUDE.md",
+      detail: "CLAUDE.md 文件无读取权限，请运行: chmod 644 CLAUDE.md",
     });
   });
 
-  it("target=both writes nested rules and links AGENTS.md to rules/INDEX.md (issue #42)", async () => {
+  it("target=codex pre-check only requires read access for existing AGENTS.md", async () => {
+    const agentsPath = path.join(tmp.cwd, "AGENTS.md");
+    nodeFs.writeFileSync(agentsPath, "# Agent guidance\n");
+
+    const accessSpy = vi.spyOn(nodeFs, "accessSync").mockImplementation((p, mode) => {
+      if (p === agentsPath && typeof mode === "number" && (mode & nodeFs.constants.W_OK) !== 0) {
+        throw new Error("unexpected write access check");
+      }
+      return undefined as unknown as void;
+    });
+
+    const r = await executeInit({
+      ...commonOpts(),
+      target: "codex",
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+
+    expect(r.ok).toBe(true);
+    expect(accessSpy).toHaveBeenCalledWith(agentsPath, nodeFs.constants.R_OK);
+    accessSpy.mockRestore();
+    expect(nodeFs.readFileSync(agentsPath, "utf-8")).toBe("# Agent guidance\n");
+  });
+
+  itWithFileSymlink(
+    "target=codex removes old TeamAgent AGENTS.md symlink and does not import it",
+    async () => {
+      const oldRulesDir = path.join(tmp.home, ".claude", "teamagent", "rules");
+      const oldRulesPath = path.join(oldRulesDir, "INDEX.md");
+      const agentsPath = path.join(tmp.cwd, "AGENTS.md");
+      nodeFs.mkdirSync(oldRulesDir, { recursive: true });
+      nodeFs.writeFileSync(oldRulesPath, "- stale generated rule\n", "utf-8");
+      nodeFs.symlinkSync(oldRulesPath, agentsPath, "file");
+
+      const r = await executeInit({
+        ...commonOpts(),
+        target: "codex",
+        llmClient: stubLLM(OK_LLM_RESPONSE),
+      });
+
+      expect(r.ok).toBe(true);
+      expect(nodeFs.existsSync(agentsPath)).toBe(false);
+      expect(r.summary.importedRules).toBe(0);
+      expect(r.steps.find((s) => s.step === "link-codex-files")?.detail).toContain(
+        "AGENTS.md legacy link (removed)",
+      );
+    }
+  );
+
+  itWithFileSymlink(
+    "target=both removes old AGENTS.md link to CLAUDE.md after import",
+    async () => {
+      const claudePath = path.join(tmp.cwd, "CLAUDE.md");
+      const agentsPath = path.join(tmp.cwd, "AGENTS.md");
+      nodeFs.writeFileSync(claudePath, "- current Claude rule\n", "utf-8");
+      nodeFs.symlinkSync(claudePath, agentsPath, "file");
+
+      const r = await executeInit({
+        ...commonOpts(),
+        target: "both",
+        llmClient: stubLLM(OK_LLM_RESPONSE),
+      });
+
+      expect(r.ok).toBe(true);
+      expect(nodeFs.existsSync(agentsPath)).toBe(false);
+      expect(r.summary.importedRules).toBe(1);
+    }
+  );
+
+  it("target=both exports Skills and links .codex/skills", async () => {
     const r = await executeInit({
       ...commonOpts(),
       target: "both",
@@ -177,11 +236,9 @@ describe("executeInit", () => {
 
     expect(r.ok).toBe(true);
     expect(nodeFs.existsSync(path.join(tmp.cwd, "CLAUDE.md"))).toBe(false);
-    const indexPath = path.join(tmp.home, ".claude", "teamagent", "rules", "INDEX.md");
-    expect(nodeFs.existsSync(indexPath)).toBe(true);
-    const agentsPath = path.join(tmp.cwd, "AGENTS.md");
-    expect(nodeFs.lstatSync(agentsPath).isSymbolicLink()).toBe(true);
-    expect(nodeFs.readFileSync(agentsPath, "utf-8")).toContain("# TeamAgent Rules");
+    expect(r.steps.find((s) => s.step === "compile-skills")?.status).toBe("ok");
+    const codexSkillsPath = path.join(tmp.cwd, ".codex", "skills");
+    expect(nodeFs.lstatSync(codexSkillsPath).isSymbolicLink()).toBe(true);
   });
 
   it("idempotent: running init twice doesn't duplicate presets", async () => {
@@ -211,6 +268,16 @@ describe("executeInit", () => {
     expect(structureStep.status).toBe("ok");
     expect(structureStep.detail).toContain("无规则");
     expect(r.summary.importedRules).toBe(0);
+  });
+
+  it("pre-check accepts missing CLAUDE.md", async () => {
+    const r = await executeInit({
+      ...commonOpts(),
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    expect(r.ok).toBe(true);
+    expect(r.steps.find((s) => s.step === "pre-check")?.status).toBe("ok");
+    expect(nodeFs.existsSync(path.join(tmp.cwd, "CLAUDE.md"))).toBe(false);
   });
 
   it("reads .cursorrules and imports from it", async () => {
@@ -348,7 +415,7 @@ describe("executeInit", () => {
     expect(nodeFs.existsSync(logPath)).toBe(true);
     const content = nodeFs.readFileSync(logPath, "utf-8").trim();
     expect(content).toContain("pre-check");
-    expect(content).toContain("compile-claude-md");
+    expect(content).toContain("compile-skills");
   });
 });
 
@@ -519,7 +586,7 @@ describe("renderInitResult — new UX", () => {
         { step: "load-presets", status: "ok" as const, detail: "加载 12 条元原则" },
         { step: "import-rules", status: "ok" as const, detail: "导入 5 条" },
         { step: "install-hook", status: "ok" as const, detail: "已写入" },
-        { step: "compile-claude-md", status: "ok" as const, detail: "写入 3 条" },
+        { step: "compile-skills", status: "ok" as const, detail: "导出 3 条" },
       ],
       summary: { stack: "typescript", presetAdded: 12, seedAdded: 0, importedRules: 5, totalActiveEntries: 17 },
     };
@@ -534,7 +601,7 @@ describe("renderInitResult — new UX", () => {
       ok: false,
       dryRun: false,
       steps: [
-        { step: "pre-check", status: "failed" as const, detail: "CLAUDE.md 文件无写入权限，请运行: chmod 644 CLAUDE.md" },
+        { step: "pre-check", status: "failed" as const, detail: "CLAUDE.md 文件不可读，请检查权限" },
       ],
       summary: { stack: "", presetAdded: 0, seedAdded: 0, importedRules: 0, totalActiveEntries: 0 },
     };

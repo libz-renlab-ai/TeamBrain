@@ -67,13 +67,13 @@ export async function runSkeletonDemo(
 
   bus.emit({
     source: "skeleton",
-    action: "[skeleton] 添加模拟知识 + 模拟编译",
+    action: "[skeleton] 添加模拟知识 + legacy markdown 预览",
     severity: "highlight",
     timestamp: now,
     target: { id: entry.id, count: store.count() },
     before: { knowledgeCount: 0 },
     after: { knowledgeCount: store.count(), blockLines: lineCount },
-    userFacingValue: `模拟知识条目已编译成 ${lineCount} 行 markdown，真实场景下会写入 CLAUDE.md`,
+    userFacingValue: `模拟知识条目可生成 ${lineCount} 行 legacy/internal markdown 预览；普通命令不再写入 CLAUDE.md 规则块`,
     counterfactual: "没有 Walking Skeleton 的骨架贯通，后续 Milestone 没有落脚点",
   });
 
@@ -104,7 +104,7 @@ export async function runSkeletonDemo(
     counterfactual: "没有 L0 门闸，坏条目会污染知识库",
   });
 
-  // M2.4: 演示双出口编译（dry-run，无实际 IO）
+  // M2.4: 演示 Skills 编译（dry-run，无实际 IO）；MarkdownCompiler 仅作为 legacy/internal 路径保留。
   // 添加 canonical+ 和 stable 条目模拟已晋升规则
   const canonicalEntry: KnowledgeEntry = {
     ...entry,
@@ -129,17 +129,6 @@ export async function runSkeletonDemo(
   store.add(canonicalEntry);
   store.add(stableEntry);
 
-  // 内存版 MarkdownCompilerLike（dry-run 不写文件）
-  const mdCompilerStub = {
-    compile(entries: KnowledgeEntry[]) {
-      return compileMarkdownBlock(entries, now, { tierFilter: ["canonical", "enforced"] });
-    },
-    writeToFile(entries: KnowledgeEntry[]) {
-      const content = compileMarkdownBlock(entries, now, { tierFilter: ["canonical", "enforced"] });
-      return { filePath: "(demo: CLAUDE.md)", blockLineCount: content.split("\n").length, blockStartLine: 0 };
-    },
-  };
-
   // 内存版 SkillCompiler（dry-run 不写文件）
   const STABLE_PLUS = new Set(["stable", "canonical", "enforced"]);
   const skillCompilerStub: SkillCompiler = {
@@ -158,7 +147,6 @@ export async function runSkeletonDemo(
 
   const compileResult = await runCompile({
     store,
-    markdownCompiler: mdCompilerStub,
     skillCompiler: skillCompilerStub,
     bus,
     dryRun: true,
@@ -166,15 +154,15 @@ export async function runSkeletonDemo(
 
   bus.emit({
     source: "compile",
-    action: "[skeleton] 双出口编译演示",
+    action: "[skeleton] Skills 编译演示",
     severity: "highlight",
     timestamp: now,
     userFacingValue: [
-      `CLAUDE.md 出口：canonical+ 规则 ${compileResult.markdown.blockLineCount} 行（dry-run，未实际写入）`,
+      "CLAUDE.md 出口：legacy/internal 已禁用（普通命令不写 root rule dump）",
       `Skills 出口：stable+ 规则 ${compileResult.skills.written.length} 条 → ~/.claude/skills/teamagent/ 目录（dry-run，未实际写入）`,
       `  导出 skill: [${compileResult.skills.written.join(", ")}]`,
     ].join("\n  "),
-    counterfactual: "没有双出口编译，规则无法作为 Claude Code skill 被所有项目复用",
+    counterfactual: "没有 Skills 编译，规则无法作为 Claude Code skill 被所有项目复用",
   });
 
   const renderer = new StdoutRenderer();

@@ -14,7 +14,8 @@ Source index: [系统展示.md](../系统展示.md)
 | **Phase 6** — 多 AI 工具 (MCP) | Cursor / Windsurf / ... 通过 MCP 接入 | ❌ 规划中 | v1.0.0（公开发布）|
 
 **关键诚实披露**：
-- **团队层还没跑通**。Phase 1-3 全是"单人本地"。向用户介绍时请不要把 Phase 4 当已完成。
+- **团队层还没跑通**。Phase 1-3 全是"单人本地"。向用户介绍时请不要把 Phase 4 当已完成；`teamagent doctor --json` 会把 `team-sharing` 明确标为 `PARTIAL`，直到 git transport、privacy redaction、review gates 都存在。
+- **自动更新不是自证已完成**。`teamagent update --status` 是只读检查，会显示 `updater_binary` 是否存在；missing 时只能说明当前 checkout 还没 build updater，不代表真实全局安装已经验证。
 - **MCP Server（实时顾问）未实现**。AI 在思考过程中主动 `check_pitfall` 查规则库还不行，只能靠 PreToolUse hook 被动拦截。
 - **Phase 2 退出标准的 7 条量化门槛尚有 2 条未达**（30 天连续 dogfood、benchmark 超过 Auto-Memory + Codacy）。
 

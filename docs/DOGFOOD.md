@@ -106,7 +106,7 @@ Opt-out: `DOGFOOD_TIER=1 bash scripts/dogfood.sh`.
 bash scripts/dogfood-probe.sh
 ```
 
-The probe runs `claudefast -p --output-format stream-json --include-hook-events --verbose --permission-mode bypassPermissions` twice — once bare (control), once after sourcing the shim — and asks the agent to `printenv CLAUDE_CONFIG_DIR` via the Bash tool. It extracts the **`tool_result.content`** with `is_error:false` from each jsonl (this is the ground-truth output of a real shell run inside the agent process — agent final-text is not trusted; agents can hallucinate when shell expansion is denied by safety hooks).
+The probe first runs `claudefast -h`, records `claudefast-help.txt`, and then runs `claudefast -p --output-format stream-json --include-partial-messages --verbose --debug hooks --debug-file <path> --permission-mode bypassPermissions "<prompt>"`. Hook evidence comes from the debug files; stream-json captures the transcript. It runs once bare (control), once after sourcing the shim, and asks the agent to `printenv CLAUDE_CONFIG_DIR` via the Bash tool. It extracts the **`tool_result.content`** with `is_error:false` from each jsonl (this is the ground-truth output of a real shell run inside the agent process — agent final-text is not trusted; agents can hallucinate when shell expansion is denied by safety hooks).
 
 PASS = control path differs from dogfood path **and** dogfood path equals the sandbox cfg dir we set. The probe also greps for the API token prefix in the jsonl as a leak check.
 
@@ -267,7 +267,7 @@ The verify script greps for: `two tmux windows`, `left/right split`, `interact`.
 
 - ❌ Right pane is a fake/mock instead of a real `claudefast` process — defeats the purpose.
 - ❌ No `/clear` between attempts — stale chat history pollutes the sandbox.
-- ❌ No observability of hook events / skill loading / permission prompts — you cannot verify what actually ran.
+- ❌ No observability of hook debug evidence / skill loading / permission prompts — you cannot verify what actually ran.
 - ❌ Both panes share chat history — sandbox must be fresh, otherwise it is not dogfood.
 - ❌ Editing left pane without checking right pane — you are not dogfooding, just editing.
 

@@ -39,6 +39,15 @@ export function writeState(s: UpdateState): void {
   fs.writeFileSync(statePath(), serializeUpdateState(s), "utf-8");
 }
 
+export function findUpdaterBinary(baseUrl = import.meta.url): string | null {
+  const here = path.dirname(fileURLToPath(baseUrl));
+  const candidates = [
+    path.resolve(here, "..", "bin-updater.cjs"),
+    path.resolve(here, "..", "..", "dist", "bin-updater.cjs"),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) ?? null;
+}
+
 export async function runUpdateCommand(sub: UpdateSubcommand, args: string[] = []): Promise<UpdateRunResult> {
   switch (sub) {
     case "status":   return statusCmd();
@@ -54,8 +63,10 @@ export async function runUpdateCommand(sub: UpdateSubcommand, args: string[] = [
 function statusCmd(): UpdateRunResult {
   const s = readState();
   const disabled = fs.existsSync(disabledPath());
+  const updaterBin = findUpdaterBinary();
   const lines = [
     `auto-update: ${disabled ? "DISABLED (~/.teamagent/auto-update.disabled)" : "enabled"}`,
+    `updater_binary: ${updaterBin ?? "missing (build with: pnpm --filter @teamagent/cli build:hook)"}`,
     `interval_hours: ${s.interval_hours}`,
     `last_check: ${s.last_check_ts ? new Date(s.last_check_ts).toISOString() : "never"}`,
     `last_installed_sha: ${s.last_installed_sha || "(unknown)"}`,
@@ -104,14 +115,7 @@ async function nowCmd(): Promise<UpdateRunResult> {
   s.consecutive_install_failures = 0;
   writeState(s);
   return new Promise((resolve) => {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    // Find bin-updater.cjs: dev = packages/cli/dist/bin-updater.cjs (not exist if not built),
-    // installed = same dir as bin.js
-    const candidates = [
-      path.resolve(here, "..", "bin-updater.cjs"),
-      path.resolve(here, "..", "..", "dist", "bin-updater.cjs"),
-    ];
-    const updaterBin = candidates.find((p) => fs.existsSync(p));
+    const updaterBin = findUpdaterBinary();
     if (!updaterBin) {
       resolve({ ok: false, output: "bin-updater.cjs not found; run pnpm --filter @teamagent/cli build:hook first\n" });
       return;

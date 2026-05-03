@@ -8,6 +8,10 @@
 
 # TeamBrain Feature Eval Report — `teambrain-eval-20260502-183008`
 
+Historical note: this report preserves the commands used for the 2026-05-02
+run. Current active claudefast hook evidence recipes use
+`--debug hooks --debug-file <path>` with stream-json transcript flags.
+
 **Run timestamp**: 2026-05-02 18:30:08 (local; doctor fix applied 18:48:00)
 **Eval dir**: `/tmp/teambrain-eval-20260502-183008`
 **Plan**: `docs/plans/2026-05-02-feature-eval-plan.md`
@@ -86,7 +90,7 @@ for q in \
   "bugreport:I found a bug, what should I do to report it?" \
   "project-tools:what project tools we have?"; do
   name="${q%%:*}"; prompt="${q#*:}"
-  ( zsh -ic "claudefast -p --output-format stream-json --include-hook-events --include-partial-messages --verbose --permission-mode acceptEdits '${prompt}'" \
+  ( zsh -ic "claudefast -p --output-format stream-json \${CLAUDEFAST_STREAM_FLAGS:-'--include-partial-messages --verbose'} --permission-mode acceptEdits '${prompt}'" \
     > "${EVAL_DIR}/streamjson/${name}.jsonl" 2>&1
     echo "exit=$?" > "${EVAL_DIR}/streamjson/${name}.exit" ) &
 done

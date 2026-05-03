@@ -6,10 +6,11 @@
 #   - fetch the codex review
 #   - chatgpt-codex-connector
 #   - pulls/.*comments       (regex anchor — gh api endpoint)
+#   - @codex review
 #   - silent
 #   - loop
 #
-# All five must be present in the response for PASS.
+# All six must be present in the response for PASS.
 
 set -euo pipefail
 
@@ -42,6 +43,7 @@ fi
 fixed_anchors=(
   "fetch the codex review"
   "chatgpt-codex-connector"
+  "@codex review"
   "silent"
   "loop"
 )

@@ -80,7 +80,7 @@ Sources of raw logs:
 
 - **stream-json artifacts** — `.fastprobe/<run>/probe_*.txt`, `.dogfood/probe-<epoch>/*.jsonl`, `.judge/<run_id>/*`
 - **tmux scrollback** — `tmux capture-pane -t <session>:<window>.<pane> -p -S -3000` (last 3000 lines of any pane in any session)
-- **hook events** — re-run with `--include-hook-events --include-partial-messages --verbose`
+- **hook evidence** — first save `claudefast -h`, then re-run with `--output-format stream-json --include-partial-messages --verbose --debug hooks --debug-file <path>` and a prompt argument or stdin
 - **process tree** — `pstree -p <claude-pid>` if claude is hung
 - **system log slice** — `log show --predicate 'process == "claude"' --last 5m` (macOS) for crashes
 

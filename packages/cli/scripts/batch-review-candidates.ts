@@ -13,10 +13,10 @@ import {
   DualLayerStore,
   SqliteCandidateQueue,
   openDb,
-  createRuleCompiler,
   makeSkillCompiler,
 } from "@teamagent/adapters";
 import { runCalibrationPipeline, defaultCalibrator, runCompile } from "@teamagent/core";
+import { scheduleDocsPropagation } from "../src/commands/docs-propagate.js";
 
 function parseCsv(arg: string | undefined): Set<string> {
   if (!arg) return new Set();
@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   const candidatesDbPath = path.join(home, ".teamagent", "candidates.db");
   const projectDbPath = path.join(cwd, ".teamagent", "knowledge.db");
   const userGlobalDbPath = path.join(home, ".teamagent", "global.db");
-  const claudeMdPath = path.join(cwd, "CLAUDE.md");
+  const skillsDir = path.join(home, ".claude", "skills", "teamagent");
 
   const queueDb = openDb(candidatesDbPath);
   const queue = new SqliteCandidateQueue(queueDb);
@@ -58,6 +58,7 @@ async function main(): Promise<void> {
   let approved = 0;
   let rejected = 0;
   let unknown = 0;
+  const approvedRuleIds: string[] = [];
 
   for (const candidate of pending) {
     const suffix = candidate.id.slice(-6);
@@ -66,6 +67,7 @@ async function main(): Promise<void> {
         projectStore.add(candidate.entry);
         queue.updateStatus(candidate.id, "approved");
         approved++;
+        approvedRuleIds.push(candidate.entry.id);
         process.stdout.write(`✓ approved ${suffix} — ${candidate.entry.trigger}\n`);
       } catch (err) {
         process.stdout.write(`⚠ failed approve ${suffix}: ${String(err).slice(0, 120)}\n`);
@@ -80,7 +82,7 @@ async function main(): Promise<void> {
   }
 
   if (approved > 0) {
-    process.stdout.write("\nRecalibrate + recompile…\n");
+    process.stdout.write("\nRecalibrate + update Skills + schedule docs propagation…\n");
     try {
       const now = () => new Date();
       await runCalibrationPipeline({
@@ -89,18 +91,14 @@ async function main(): Promise<void> {
         events: [],
         now,
       });
-      const mdCompiler = createRuleCompiler({
-        claudeMdPath,
-        now: () => now().toISOString(),
-      });
       await runCompile({
         store,
-        markdownCompiler: mdCompiler,
-        skillCompiler: makeSkillCompiler(),
+        skillCompiler: makeSkillCompiler({ skillsDir }),
       });
-      process.stdout.write("✓ rules refreshed\n");
+      scheduleDocsPropagation(approvedRuleIds, { cwd });
+      process.stdout.write("✓ Skills refreshed; docs propagation scheduled\n");
     } catch (err) {
-      process.stdout.write(`⚠ calibrate/compile failed: ${String(err).slice(0, 200)}\n`);
+      process.stdout.write(`⚠ calibrate/export failed: ${String(err).slice(0, 200)}\n`);
     }
   }
 

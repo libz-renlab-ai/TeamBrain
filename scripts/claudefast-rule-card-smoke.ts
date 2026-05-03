@@ -37,6 +37,9 @@ interface ScenarioResult {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const outRoot = path.join(repoRoot, "scripts", "out", "claudefast-rule-card", timestamp());
+let streamJsonArgs = ["--output-format", "stream-json"];
+let hookDebugSupported = false;
+let hookEvidenceMode: "debug-file" | "unsupported" = "unsupported";
 
 function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -61,6 +64,18 @@ function rmRetry(p: string): void {
   }
 }
 
+function claudefastEnv(): NodeJS.ProcessEnv {
+  const originalPath = process.env.PATH ?? "";
+  const entries = originalPath
+    .split(path.delimiter)
+    .filter((entry) => !entry.includes(`${path.sep}node_modules${path.sep}.bin`));
+  const localBin = path.join(process.env.HOME || "", ".local", "bin");
+  return {
+    ...process.env,
+    PATH: [localBin, ...entries].filter(Boolean).join(path.delimiter),
+  };
+}
+
 function runCommand(bin: string, args: string[], opts: {
   cwd?: string;
   timeoutMs?: number;
@@ -71,6 +86,7 @@ function runCommand(bin: string, args: string[], opts: {
     const child = spawn(bin, args, {
       cwd: opts.cwd ?? repoRoot,
       shell: false,
+      env: claudefastEnv(),
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -229,23 +245,23 @@ async function runScenario(args: {
   cwd: string;
   settingsPath: string;
   prompt: string;
-  checks: (events: JsonObject[]) => ScenarioResult["checks"];
+  checks: (events: JsonObject[], hookDebugText: string) => ScenarioResult["checks"];
 }): Promise<ScenarioResult> {
   const dir = path.join(outRoot, args.name);
   ensureDir(dir);
   const stdoutPath = path.join(dir, "stdout.jsonl");
   const stderrPath = path.join(dir, "stderr.log");
+  const hookDebugPath = path.join(dir, "hooks.debug.log");
   const summaryPath = path.join(dir, "summary.json");
   fs.writeFileSync(stdoutPath, "");
   fs.writeFileSync(stderrPath, "");
+  if (hookDebugSupported) fs.writeFileSync(hookDebugPath, "");
 
   const command = [
     "claudefast",
     "-p",
-    "--output-format", "stream-json",
-    "--include-hook-events",
-    "--include-partial-messages",
-    "--verbose",
+    ...streamJsonArgs,
+    ...(hookDebugSupported ? ["--debug", "hooks", "--debug-file", hookDebugPath] : []),
     "--permission-mode", "acceptEdits",
     "--setting-sources", "user",
     "--settings", args.settingsPath,
@@ -260,8 +276,12 @@ async function runScenario(args: {
     stderrPath,
   });
   const events = parseJsonLines(res.stdout);
-  const checks = args.checks(events);
+  const hookDebugText = hookDebugSupported && fs.existsSync(hookDebugPath) ? fs.readFileSync(hookDebugPath, "utf8") : "";
+  const checks = args.checks(events, hookDebugText);
   addCheck(checks, "claudefast exited 0", res.code === 0, `exit=${res.code}`);
+  if (hookDebugSupported) {
+    addCheck(checks, "hook debug evidence written", hookDebugText.includes("hook"), hookDebugPath);
+  }
 
   const scenario: ScenarioResult = {
     name: args.name,
@@ -286,15 +306,47 @@ async function main(): Promise<number> {
   const help = await runCommand("claudefast", ["-h"], { cwd: repoRoot, timeoutMs: 30_000 });
   fs.writeFileSync(path.join(outRoot, "claudefast-help.stdout.log"), help.stdout);
   fs.writeFileSync(path.join(outRoot, "claudefast-help.stderr.log"), help.stderr);
+  const helpText = `${help.stdout}\n${help.stderr}`;
+  fs.writeFileSync(path.join(outRoot, "claudefast-help.combined.log"), helpText);
   if (help.code !== 0) {
     console.error(`claudefast -h failed with exit ${help.code}`);
     return 2;
   }
-  if (!help.stdout.includes("--output-format") || !help.stdout.includes("stream-json")) {
+  if (!helpText.includes("--output-format") || !helpText.includes("stream-json")) {
     console.error("claudefast -h did not advertise --output-format stream-json");
     return 2;
   }
-  console.log("  ok claudefast -h advertises stream-json");
+  streamJsonArgs = ["--output-format", "stream-json"];
+  hookDebugSupported = helpText.includes("--debug") && helpText.includes("--debug-file");
+  if (helpText.includes("--include-partial-messages")) streamJsonArgs.push("--include-partial-messages");
+  if (helpText.includes("--verbose")) streamJsonArgs.push("--verbose");
+  hookEvidenceMode = hookDebugSupported ? "debug-file" : "unsupported";
+  fs.writeFileSync(path.join(outRoot, "claudefast-stream-json-flags.json"), JSON.stringify({
+    streamJsonArgs,
+    includeHookEventsSkipped: true,
+    includeHookEventsUsed: false,
+    hookDebugSupported,
+    hookEvidenceMode,
+  }, null, 2));
+  if (hookEvidenceMode === "unsupported") {
+    const report = {
+      generated_at: new Date().toISOString(),
+      outRoot,
+      status: "unsupported",
+      passed: false,
+      skipped: true,
+      includeHookEventsSkipped: true,
+      includeHookEventsUsed: false,
+      hookDebugSupported,
+      hookEvidenceMode,
+      streamJsonArgs,
+      reason: "claudefast -h does not advertise --debug hooks --debug-file, so hook evidence is unsupported",
+    };
+    fs.writeFileSync(path.join(outRoot, "report.json"), JSON.stringify(report, null, 2));
+    console.error(`  unsupported rule-card smoke: no supported hook evidence flags; base stream-json flags: ${streamJsonArgs.join(" ")}`);
+    return 4;
+  }
+  console.log(`  ok claudefast hook evidence mode: ${hookEvidenceMode}; stream flags: ${streamJsonArgs.join(" ")}`);
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-claudefast-"));
   try {
@@ -320,11 +372,11 @@ async function main(): Promise<number> {
       cwd: warnCwd,
       settingsPath,
       prompt: `Use the Write tool to create ${warnFile}. The exact file content must be: import axios from 'axios';\\n\\nexport const getJson = () => axios.get('/api/test');\\n`,
-      checks: (events) => {
+      checks: (events, hookDebugText) => {
         const checks: ScenarioResult["checks"] = [];
         const responses = hookResponses(events, "PreToolUse:Write");
-        const combined = responses.map(eventText).join("\n");
-        addCheck(checks, "PreToolUse Write hook responded", responses.length > 0);
+        const combined = [responses.map(eventText).join("\n"), hookDebugText].filter(Boolean).join("\n");
+        addCheck(checks, "PreToolUse Write hook responded", responses.length > 0 || hookDebugText.includes("PreToolUse"));
         addCheck(checks, "warn card rendered as ASCII", combined.includes("+-- TeamAgent 经验提醒"));
         addCheck(checks, "warn card kept allow decision", combined.includes('"permissionDecision":"allow"'));
         addCheck(checks, "warn file was created", fs.existsSync(warnFile), warnFile);
@@ -361,12 +413,12 @@ async function main(): Promise<number> {
       cwd: hardCwd,
       settingsPath,
       prompt: `Use the Write tool to replace ${hardFile}. The exact new JSON content must be:\\n${blockedJson}`,
-      checks: (events) => {
+      checks: (events, hookDebugText) => {
         const checks: ScenarioResult["checks"] = [];
         const responses = hookResponses(events, "PreToolUse:Write");
-        const combined = responses.map(eventText).join("\n");
+        const combined = [responses.map(eventText).join("\n"), hookDebugText].filter(Boolean).join("\n");
         const current = fs.readFileSync(hardFile, "utf8");
-        addCheck(checks, "PreToolUse Write hook responded", responses.length > 0);
+        addCheck(checks, "PreToolUse Write hook responded", responses.length > 0 || hookDebugText.includes("PreToolUse"));
         addCheck(checks, "block card rendered as ASCII", combined.includes("+-- TeamAgent 阻止操作"));
         addCheck(checks, "hard-rule returned deny decision", combined.includes('"permissionDecision":"deny"'));
         addCheck(checks, "JSON file stayed unchanged after denied write", current === originalJson, current);
@@ -378,6 +430,9 @@ async function main(): Promise<number> {
     const report = {
       generated_at: new Date().toISOString(),
       outRoot,
+      hookEvidenceMode,
+      includeHookEventsSkipped: true,
+      includeHookEventsUsed: false,
       scenarios: [warnScenario, hardScenario],
       passed: warnScenario.passed && hardScenario.passed,
     };

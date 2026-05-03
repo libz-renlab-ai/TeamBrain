@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import {
   DualLayerStore,
   SqliteKnowledgeStore,
-  createRuleCompiler,
   ClaudeCodeLLMClient,
   openDb,
   ClaudePluginInstaller,
@@ -21,6 +20,7 @@ import {
   extractRuleBullets,
   extractCursorRules,
   structureRuleTextsBatch,
+  runCompile,
   DEFAULT_IMPORT_CONFIDENCE,
   type FilePresence,
 } from "@teamagent/core";
@@ -97,11 +97,10 @@ function resolvePaths(opts: InitOptions) {
       opts.userGlobalDbPath ?? path.join(home, ".teamagent", "global.db"),
     claudeMdPath: opts.claudeMdPath ?? path.join(cwd, "CLAUDE.md"),
     agentsMdPath: opts.agentsMdPath ?? path.join(cwd, "AGENTS.md"),
-    teamagentSkillsDir:
+    skillsDir:
       opts.skillsDir ??
       process.env["TEAMAGENT_SKILLS_DIR"] ??
       path.join(home, ".claude", "skills", "teamagent"),
-    userRulesDir: path.join(home, ".claude", "teamagent", "rules"),
     installLogPath: path.join(home, ".teamagent", ".install-log"),
   };
 }
@@ -169,7 +168,7 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     steps.push({
       step: "install-hook",
       status: "skipped",
-      detail: "target=codex；Codex 通过 AGENTS.md 读取规则，不注册 Claude Code hook",
+      detail: "target=codex；Codex 通过 .codex/skills 读取 TeamAgent Skills，不注册 Claude Code hook",
     });
   } else {
     steps.push({ step: "install-hook", status: "skipped", detail: "skipHook=true" });
@@ -179,32 +178,8 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     steps.push(await doInstallPlugins(dryRun, opts.pluginInstaller));
   }
 
-  if (targetIncludesClaude(target)) {
-    steps.push(
-      doCompileMarkdownDoc(
-        paths,
-        paths.claudeMdPath,
-        "compile-claude-md",
-        "CLAUDE.md",
-        dryRun,
-        now,
-      ),
-    );
-  }
+  steps.push(await doCompileSkills(paths, dryRun));
   if (targetIncludesCodex(target)) {
-    if (!targetIncludesClaude(target)) {
-      steps.push(
-        doCompileMarkdownDoc(
-          paths,
-          paths.claudeMdPath,
-          "compile-claude-md",
-          "CLAUDE.md",
-          dryRun,
-          now,
-        ),
-      );
-    }
-    steps.push(await doCompileCodexSkills(paths, dryRun));
     steps.push(doLinkCodexFiles(paths, dryRun));
   }
 
@@ -271,7 +246,7 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
   return finalize(ok, dryRun, steps, summary);
 }
 
-// ======================== Step implementations ========================
+// Step implementations
 
 function runPreChecks(
   paths: ReturnType<typeof resolvePaths>,
@@ -299,9 +274,9 @@ function runPreChecks(
   for (const item of mdPaths) {
     if (!fs.existsSync(item.path)) continue;
     try {
-      fs.accessSync(item.path, fs.constants.R_OK | fs.constants.W_OK);
+      fs.accessSync(item.path, fs.constants.R_OK);
     } catch {
-      return failStep("pre-check", `${item.label} 文件无写入权限，请运行: chmod 644 ${item.label}`);
+      return failStep("pre-check", `${item.label} 文件无读取权限，请运行: chmod 644 ${item.label}`);
     }
   }
   return okStep("pre-check", "所有前置检查通过");
@@ -478,7 +453,7 @@ async function doImportRules(
   const steps: InitStepResult[] = [];
   const claudeMdExists = fs.existsSync(paths.claudeMdPath);
   const agentsMdExists =
-    fs.existsSync(paths.agentsMdPath) && !isSymlinkTo(paths.agentsMdPath, paths.claudeMdPath);
+    fs.existsSync(paths.agentsMdPath) && !isManagedAgentsMdSymlink(paths);
   const cursorRulesPath = path.join(paths.cwd, ".cursorrules");
   const cursorExists = fs.existsSync(cursorRulesPath);
 
@@ -628,52 +603,14 @@ function doInstallHook(
   }
 }
 
-function doCompileMarkdownDoc(
-  paths: ReturnType<typeof resolvePaths>,
-  mdPath: string,
-  stepName: string,
-  label: string,
-  dryRun: boolean,
-  now: () => Date,
-): InitStepResult {
-  if (dryRun) {
-    return okStep(
-      stepName,
-      `(dry-run) 会把活跃条目合并编译到 ${mdPath}`,
-    );
-  }
-  try {
-    fs.mkdirSync(path.dirname(paths.projectDbPath), { recursive: true });
-    fs.mkdirSync(path.dirname(paths.userGlobalDbPath), { recursive: true });
-    const store = new DualLayerStore({
-      projectDbPath: paths.projectDbPath,
-      userGlobalDbPath: paths.userGlobalDbPath,
-    });
-    const all = store.findActive();
-    store.close();
-    const compiler = createRuleCompiler({
-      claudeMdPath: mdPath,
-      rulesDir: paths.userRulesDir,
-      now: () => now().toISOString(),
-    });
-    const info = compiler.writeToFile(all);
-    return okStep(
-      stepName,
-      `已编译 ${all.length} 条 → ${info.filePath}`,
-    );
-  } catch (err) {
-    return failStep(stepName, `${label}: ${String(err).slice(0, 180)}`);
-  }
-}
-
-async function doCompileCodexSkills(
+async function doCompileSkills(
   paths: ReturnType<typeof resolvePaths>,
   dryRun: boolean,
 ): Promise<InitStepResult> {
   if (dryRun) {
     return okStep(
-      "compile-codex-skills",
-      `(dry-run) 会把 stable+ 规则编译到 ${paths.teamagentSkillsDir}`,
+      "compile-skills",
+      `(dry-run) 会把 stable+ 条目导出到 ${paths.skillsDir}`,
     );
   }
   try {
@@ -683,17 +620,18 @@ async function doCompileCodexSkills(
       projectDbPath: paths.projectDbPath,
       userGlobalDbPath: paths.userGlobalDbPath,
     });
-    const entries = store.getAll();
+    const all = store.getAll();
+    await runCompile({
+      store,
+      skillCompiler: makeSkillCompiler({ skillsDir: paths.skillsDir }),
+    });
     store.close();
-    const compiler = makeSkillCompiler({ skillsDir: paths.teamagentSkillsDir });
-    const artifacts = compiler.compile(entries);
-    const written = await compiler.write(artifacts);
     return okStep(
-      "compile-codex-skills",
-      `已编译 ${written.written.length} 条 skill → ${paths.teamagentSkillsDir}`,
+      "compile-skills",
+      `已导出 ${all.length} 条候选规则到 Skills；CLAUDE.md 规则块输出已禁用`,
     );
   } catch (err) {
-    return failStep("compile-codex-skills", String(err).slice(0, 200));
+    return failStep("compile-skills", String(err).slice(0, 200));
   }
 }
 
@@ -701,26 +639,10 @@ function doLinkCodexFiles(
   paths: ReturnType<typeof resolvePaths>,
   dryRun: boolean,
 ): InitStepResult {
-  // Issue #42: 默认 nested 模式下 CLAUDE.md 不再被写入；让 AGENTS.md 指向用户级
-  // nested rule store 的 INDEX.md，Codex 仍可顺着这个入口找到全部规则。
-  // Legacy 模式（TEAMAGENT_LEGACY_CLAUDE_MD=1）继续把 AGENTS.md 链到 CLAUDE.md。
-  const legacyEnv = process.env["TEAMAGENT_LEGACY_CLAUDE_MD"];
-  const legacy =
-    legacyEnv === "1" || legacyEnv?.toLowerCase() === "true" || legacyEnv?.toLowerCase() === "yes";
-  const agentsTarget = legacy
-    ? paths.claudeMdPath
-    : path.join(paths.userRulesDir, "INDEX.md");
-  const agentsLabel = legacy ? "AGENTS.md -> CLAUDE.md" : "AGENTS.md -> rules/INDEX.md";
   const links = [
     {
-      linkPath: paths.agentsMdPath,
-      targetPath: agentsTarget,
-      label: agentsLabel,
-      targetType: "file" as const,
-    },
-    {
       linkPath: path.join(paths.cwd, ".codex", "skills"),
-      targetPath: paths.teamagentSkillsDir,
+      targetPath: paths.skillsDir,
       label: ".codex/skills -> TeamAgent skills",
       targetType: "dir" as const,
     },
@@ -729,16 +651,22 @@ function doLinkCodexFiles(
   if (dryRun) {
     return okStep(
       "link-codex-files",
-      `(dry-run) 会创建软链接: ${links.map((l) => l.label).join(", ")}`,
+      `(dry-run) 会创建软链接: ${links.map((l) => l.label).join(", ")}；会清理旧 TeamAgent AGENTS.md 软链接（如存在）`,
     );
   }
 
   try {
     const details: string[] = [];
+    const cleanupState = cleanupManagedAgentsMdSymlink(paths);
+    if (cleanupState !== "not-needed") {
+      details.push(`AGENTS.md legacy link (${cleanupState})`);
+    }
     for (const link of links) {
       fs.mkdirSync(path.dirname(link.linkPath), { recursive: true });
       fs.mkdirSync(path.dirname(link.targetPath), { recursive: true });
-      if (link.targetType === "dir") fs.mkdirSync(link.targetPath, { recursive: true });
+      if (link.targetType === "dir") {
+        fs.mkdirSync(link.targetPath, { recursive: true });
+      }
       const state = ensureSymlink(link.linkPath, link.targetPath, link.targetType, () => new Date());
       details.push(`${link.label} (${state})`);
     }
@@ -775,15 +703,37 @@ function ensureSymlink(
   return "created";
 }
 
-function isSymlinkTo(linkPath: string, targetPath: string): boolean {
+function symlinkTargetAbs(linkPath: string): string | undefined {
   try {
     const stat = fs.lstatSync(linkPath);
-    if (!stat.isSymbolicLink()) return false;
+    if (!stat.isSymbolicLink()) return undefined;
     const current = fs.readlinkSync(linkPath);
-    return path.resolve(path.dirname(linkPath), current) === targetPath;
+    return path.resolve(path.dirname(linkPath), current);
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+function pathIsInsideOrEqual(candidate: string, root: string): boolean {
+  const rel = path.relative(root, candidate);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function isManagedAgentsMdSymlink(paths: ReturnType<typeof resolvePaths>): boolean {
+  const target = symlinkTargetAbs(paths.agentsMdPath);
+  if (!target) return false;
+  return (
+    target === paths.claudeMdPath ||
+    pathIsInsideOrEqual(target, path.join(paths.home, ".claude", "teamagent"))
+  );
+}
+
+function cleanupManagedAgentsMdSymlink(
+  paths: ReturnType<typeof resolvePaths>,
+): "removed" | "not-needed" {
+  if (!isManagedAgentsMdSymlink(paths)) return "not-needed";
+  fs.unlinkSync(paths.agentsMdPath);
+  return "removed";
 }
 
 function appendInstallLog(
@@ -861,7 +811,7 @@ function finalize(
   return { ok, dryRun, steps, summary };
 }
 
-// ======================== CLI glue ========================
+// CLI glue
 
 export function parseInitArgs(argv: string[]): InitOptions {
   const opts: InitOptions = {};
@@ -903,7 +853,7 @@ export function renderInitResult(result: InitResult): string {
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
     { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook"] },
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
-    { icon: "📄", label: "编译规则文件", stepKeys: ["compile-claude-md"] },
+    { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills"] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
   ];
 
@@ -930,7 +880,7 @@ export function renderInitResult(result: InitResult): string {
     lines.push("✅ TeamAgent 安装成功！\n");
     lines.push("下一步:");
     const hasAnyCompileTarget = result.steps.some(
-      (s) => s.step === "compile-claude-md" || s.step === "link-codex-files",
+      (s) => s.step === "compile-skills" || s.step === "link-codex-files",
     );
     const hasClaude =
       result.steps.some((s) => s.step === "install-hook" && !s.detail.includes("target=codex")) ||
@@ -938,7 +888,7 @@ export function renderInitResult(result: InitResult): string {
     const hasCodex = result.steps.some((s) => s.step === "link-codex-files");
     let next = 1;
     if (hasClaude) lines.push(`  ${next++}. 重新打开 Claude Code（让 hook 生效）`);
-    if (hasCodex) lines.push(`  ${next++}. 启动新的 Codex 会话（让 AGENTS.md 生效）`);
+    if (hasCodex) lines.push(`  ${next++}. 启动新的 Codex 会话（让 .codex/skills 生效）`);
     lines.push(`  ${next++}. 运行 teamagent doctor 验证安装`);
     lines.push(`  ${next++}. 运行 teamagent stats 查看知识库状态`);
     const pluginsInstalled = result.steps.some(
@@ -968,7 +918,7 @@ function stepLabel(step: string): string {
     "structure-rules": "导入规则",
     "install-hook": "Hook 注册",
     "install-plugins": "Plugin 安装",
-    "compile-claude-md": "CLAUDE.md",
+    "compile-skills": "Skills",
     "link-codex-files": "Codex 软链接",
   };
   return map[step] ?? step;
@@ -981,8 +931,8 @@ function friendlyError(raw: string): string {
   if (raw.includes("sqlite-vec") || raw.includes("extension")) {
     return "sqlite-vec 扩展加载失败。运行 teamagent doctor 诊断";
   }
-  if (raw.includes("CLAUDE.md") && (raw.includes("EACCES") || raw.includes("不可读写"))) {
-    return "CLAUDE.md 文件无写入权限，请运行: chmod 644 CLAUDE.md";
+  if (raw.includes("CLAUDE.md") && (raw.includes("EACCES") || raw.includes("不可读"))) {
+    return "CLAUDE.md 文件不可读，请检查权限";
   }
   // For pre-check failures that already have friendly messages, pass through
   if (raw.length < 120) return raw;

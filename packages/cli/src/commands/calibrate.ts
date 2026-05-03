@@ -5,7 +5,6 @@ import {
   SqliteEventLog,
   SqliteKnowledgeStore,
   DualLayerStore,
-  createRuleCompiler,
   openDb,
   makeSkillCompiler,
 } from "@teamagent/adapters";
@@ -27,6 +26,7 @@ export interface CalibrateOptions {
   projectDbPath?: string;
   userGlobalDbPath?: string;
   eventsDbPath?: string;
+  skillsDir?: string;
   claudeMdPath?: string;
   /** 只看会做什么，不写盘 */
   dryRun?: boolean;
@@ -62,8 +62,7 @@ function resolvePaths(opts: CalibrateOptions) {
       opts.userGlobalDbPath ?? path.join(home, ".teamagent", "global.db"),
     eventsDbPath:
       opts.eventsDbPath ?? path.join(home, ".teamagent", "events.db"),
-    claudeMdPath: opts.claudeMdPath ?? path.join(cwd, "CLAUDE.md"),
-    userRulesDir: path.join(home, ".claude", "teamagent", "rules"),
+    skillsDir: opts.skillsDir ?? path.join(home, ".claude", "skills", "teamagent"),
   };
 }
 
@@ -123,6 +122,30 @@ function recordAdjustment(
     timestamp: now.toISOString(),
     schema_version: 1,
   });
+}
+
+function recordV2Adjustment(
+  log: SqliteEventLog,
+  adj: CalibrationV2Record,
+  now: Date,
+): void {
+  const event: PersistedEvent = {
+    id: makeEventId(now),
+    kind: "calibrator.adjusted",
+    knowledge_id: adj.knowledge_id,
+    confidence_before: adj.confidence_before,
+    confidence_after: adj.confidence_after,
+    status_after: adj.status_after,
+    timestamp: now.toISOString(),
+    schema_version: 1,
+    demerit_before: adj.demerit_before,
+    demerit_after: adj.demerit_after,
+    tier_before: adj.tier_before,
+    tier_after: adj.tier_after,
+    tier_transition: adj.tier_transition,
+    delta_breakdown: adj.delta_breakdown,
+  };
+  log.append(event);
 }
 
 /** 包一层只读 store 用于 dry-run（calibrator-pipeline 仍调 update，但 noop） */
@@ -270,6 +293,19 @@ export async function executeCalibrate(
         dryRun,
       });
 
+      if (!dryRun && v2Result.adjusted.length > 0) {
+        if (!eventLog) {
+          eventLog = new SqliteEventLog(openDb(paths.eventsDbPath));
+        }
+        for (const adj of v2Result.adjusted) {
+          try {
+            recordV2Adjustment(eventLog, adj, nowDate);
+          } catch {
+            // 单条写失败不影响后续
+          }
+        }
+      }
+
       byScope.push({
         scope: label,
         storePath,
@@ -284,20 +320,15 @@ export async function executeCalibrate(
     }
   }
 
-  // 若有调整且非 dry-run，重编译 CLAUDE.md + skills
+  // 若有调整且非 dry-run，更新 Skills；CLAUDE.md 规则块输出已禁用。
   if (!dryRun && totalAdjusted > 0) {
     try {
       await runCompile({
         store: dualStore,
-        markdownCompiler: createRuleCompiler({
-          claudeMdPath: paths.claudeMdPath,
-          rulesDir: paths.userRulesDir,
-          now: () => nowDate.toISOString(),
-        }),
-        skillCompiler: makeSkillCompiler(),
+        skillCompiler: makeSkillCompiler({ skillsDir: paths.skillsDir }),
       });
     } catch {
-      // 重编译失败不算 fatal
+      // Skill 导出失败不算 fatal
     }
   }
 

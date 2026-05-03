@@ -105,9 +105,9 @@ echo "FASTPROBE DONE: all $TOTAL probes finished in $RUN_DIR"
 
 **核心原则**：派出 probe 即异步，完成信号靠 Monitor 读输出文件推送——而不是 `wait`（阻塞）或轮询 process 状态（脆弱）。
 
-## Step 3 / Audit → stream-json args
+## Step 3 / Audit → stream-json + hook debug args
 
-> "审计场景" → `!claudefast -p` 加 stream-json 参数。
+> "审计场景" → `!claudefast -p` 加 stream-json 参数和 hook debug 参数。
 
 适用场景：
 
@@ -118,10 +118,18 @@ echo "FASTPROBE DONE: all $TOTAL probes finished in $RUN_DIR"
 
 ### 推荐参数
 
+先跑 `claudefast -h` 并按 help 输出确认 `--output-format stream-json`、
+`--debug hooks`、`--debug-file`、`--include-partial-messages`、`--verbose`
+可用。不要使用 `--include-hook-events` 作为活跃 recipe；hook evidence
+写入 debug file。
+
+`claudefast -p` 必须带 prompt 参数，或从 stdin 读 prompt；不要只写 flags。
+
 ```bash
 claudefast -p \
   --output-format stream-json \
-  --include-hook-events \
+  --debug hooks \
+  --debug-file .fastprobe/hooks_$(date +%s).debug.log \
   --include-partial-messages \
   --verbose \
   --permission-mode acceptEdits \
@@ -134,6 +142,7 @@ claudefast -p \
 ```bash
 jq -c 'select(.type=="hook_event")' .fastprobe/audit_*.jsonl
 jq -c 'select(.type=="tool_use") | {name, input}' .fastprobe/audit_*.jsonl
+rg -n "hook|PreToolUse|PostToolUse|SessionStart|Stop" .fastprobe/hooks_*.debug.log
 ```
 
 ## 反模式
@@ -141,7 +150,8 @@ jq -c 'select(.type=="tool_use") | {name, input}' .fastprobe/audit_*.jsonl
 - ❌ 不跑 Step 1，凭记忆拼 `--include-foo` 的 flag。
 - ❌ 第二步并发 > 8（API rate limit / 本机内存压力 / token 浪费）。
 - ❌ 把 8 份并发原文整段贴回回复（应该 reduce）。
-- ❌ 审计跑普通 `-p` 输出（拿不到 hook event / tool_use 细节）。
+- ❌ 审计跑普通 `-p` 输出（拿不到 hook debug / tool_use 细节）。
+- ❌ 只写 `claudefast -p` 加 flags，不提供 prompt 参数或 stdin。
 - ❌ 把 `[redacted]` 风格 token 写进 audit jsonl 后直接 commit（先脱敏）。
 
 ## Canned Answers / 固定问答

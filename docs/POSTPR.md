@@ -15,6 +15,11 @@
 
 The repo has Codex AI configured to auto-review every new PR. Settings: <https://chatgpt.com/codex/cloud/settings/general>. It posts within 1–3 minutes of the PR opening (after the first commit lands and CI starts).
 
+TeamBrain PRs must be normal PRs, never draft PRs. Do not use `--draft` in
+`gh pr create`, `teamagent pr-cycle`, connector calls, or GitHub UI/API flows.
+If the branch is not ready for review, keep working locally and open the PR
+only after the verification gate is green.
+
 ## Three-step recipe
 
 ### 1. Fetch the Codex review
@@ -37,6 +42,21 @@ env -u GITHUB_TOKEN gh pr view <n> \
 ```
 
 If `comments` is `[]` and the top-level review body contains a 👍 reaction, you’re green.
+
+If `comments` is `[]` and there is no Codex 👍 yet, explicitly ask for a review,
+pause for one minute, then fetch inline comments again:
+
+```bash
+env -u GITHUB_TOKEN gh pr comment <n> \
+  --repo libz-renlab-ai/TeamBrain \
+  --body '@codex review'
+
+sleep 60
+
+env -u GITHUB_TOKEN gh api \
+  repos/libz-renlab-ai/TeamBrain/pulls/<n>/comments \
+  --jq '.[] | select(.user.login == "chatgpt-codex-connector[bot]") | {body, path, line}'
+```
 
 ### 2. Triage by priority
 
@@ -88,6 +108,7 @@ So after every fix-PR, **go back to step 1 on that fix-PR**. Stop only when:
 - `fetch the codex review`
 - `chatgpt-codex-connector`
 - `pulls/.*comments`
+- `@codex review`
 - `silent`
 - `loop`
 

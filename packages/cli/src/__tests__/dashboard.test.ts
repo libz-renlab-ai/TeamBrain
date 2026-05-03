@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DashboardArgsError,
+  dashboardHealthPayload,
   parseDashboardArgs,
   renderDashboardLaunch,
 } from "../commands/dashboard.js";
@@ -54,5 +55,22 @@ describe("renderDashboardLaunch", () => {
     expect(out).toContain("Real-time TeamAgent dashboard");
     expect(out).toContain("http://127.0.0.1:8787/dashboard.html");
     expect(out).toContain("Ctrl+C");
+  });
+});
+
+describe("dashboardHealthPayload", () => {
+  it("exposes a stable structured dashboard health signal", () => {
+    expect(dashboardHealthPayload({
+      outputPath: "/repo/docs/dashboard.html",
+      lastGeneratedAt: "2026-05-03T00:00:00.000Z",
+    })).toEqual({
+      service: "teamagent-dashboard",
+      ok: true,
+      status: "ok",
+      stableHealthSignal: "teamagent-dashboard-health",
+      outputPath: "/repo/docs/dashboard.html",
+      lastGeneratedAt: "2026-05-03T00:00:00.000Z",
+      lastError: "",
+    });
   });
 });

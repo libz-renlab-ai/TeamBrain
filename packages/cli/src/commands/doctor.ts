@@ -29,6 +29,7 @@ export interface DoctorOptions {
   postinstall?: boolean;
   cwd?: string;
   homeDir?: string;
+  claudeProbe?: ClaudeProbe;
 }
 
 export function parseDoctorArgs(argv: string[]): DoctorOptions {
@@ -49,9 +50,6 @@ async function autoFix(check: DoctorCheckResult, opts: DoctorOptions): Promise<v
     } else if (check.name === "hook-registered" || check.name === "hook-script") {
       const { installHook } = await import("./install-hook.js");
       installHook({ cwd });
-    } else if (check.name === "claude-md") {
-      const { executeCompile } = await import("./compile.js");
-      await executeCompile({ cwd });
     }
   } catch {
     // best-effort
@@ -71,7 +69,7 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   }
 
   // Check 2: Claude Code installed
-  const claudeCheck = checkClaudeCode();
+  const claudeCheck = checkClaudeCode(opts.claudeProbe);
   checks.push(claudeCheck);
   if (claudeCheck.status === "fail") {
     return finalize(checks, true);
@@ -96,7 +94,6 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
     // Skip remaining checks if DB missing
     checks.push(skip("hook-registered", "knowledge.db 先修"));
     checks.push(skip("hook-script", "knowledge.db 先修"));
-    checks.push(skip("claude-md", "knowledge.db 先修"));
     return finalize(checks, false);
   }
 
@@ -107,7 +104,6 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   if (opts.fix && hookCheck.status === "fail") await autoFix(hookCheck, opts);
   if (hookCheck.status === "fail" && !opts.fix) {
     checks.push(skip("hook-script", "Hook 注册先修"));
-    checks.push(skip("claude-md", "跳过"));
     return finalize(checks, false);
   }
 
@@ -116,16 +112,21 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   checks.push(hookScriptCheck);
   if (opts.fix && hookScriptCheck.status === "fail") await autoFix(hookScriptCheck, opts);
 
-  // Check 8: CLAUDE.md has TeamAgent block
+  // Check 8: CLAUDE.md is optional human-maintained guidance; generated blocks are deprecated.
   const claudeMdPath = path.join(cwd, "CLAUDE.md");
   const claudeMdCheck = checkClaudeMd(claudeMdPath);
   checks.push(claudeMdCheck);
-  if (opts.fix && claudeMdCheck.status === "fail") await autoFix(claudeMdCheck, opts);
 
   return finalize(checks, false);
 }
 
 function finalize(checks: DoctorCheckResult[], earlyExit: boolean): DoctorResult {
+  // Always report the team-sharing product boundary, including early-return
+  // paths such as missing knowledge.db or unregistered hooks. It is independent
+  // of local environment health and must stay visible in --json output.
+  if (!checks.some((check) => check.name === "team-sharing")) {
+    checks.push(checkTeamSharingStatus());
+  }
   const passed = checks.filter((c) => c.status === "pass").length;
   const failed = checks.filter((c) => c.status === "fail").length;
   const skipped = checks.filter((c) => c.status === "skip").length;
@@ -388,24 +389,35 @@ function checkHookScript(settingsPath: string): DoctorCheckResult {
   }
 }
 
-function checkClaudeMd(claudeMdPath: string): DoctorCheckResult {
+export function checkClaudeMd(claudeMdPath: string): DoctorCheckResult {
   if (!fs.existsSync(claudeMdPath)) {
     return {
       name: "claude-md",
-      status: "fail",
-      detail: "CLAUDE.md 不存在",
-      fix: "teamagent compile",
+      status: "skip",
+      detail: "CLAUDE.md 不存在（可选；TeamAgent 不再生成规则块）",
     };
   }
   const content = fs.readFileSync(claudeMdPath, "utf-8");
   if (content.includes("TEAMAGENT:START")) {
-    return { name: "claude-md", status: "pass", detail: "TEAMAGENT 区块已存在" };
+    return {
+      name: "claude-md",
+      status: "fail",
+      detail: "仍包含旧 TEAMAGENT:START 生成块；请手动移除并改用 docs/ 索引",
+    };
   }
   return {
     name: "claude-md",
-    status: "fail",
-    detail: "CLAUDE.md 中未找到 TEAMAGENT:START 标记",
-    fix: "teamagent compile",
+    status: "pass",
+    detail: "无生成规则块（OK）",
+  };
+}
+
+export function checkTeamSharingStatus(): DoctorCheckResult {
+  return {
+    name: "team-sharing",
+    status: "skip",
+    detail: "PARTIAL: Phase 4 team sharing is not complete; git transport, privacy redaction, and review gates are required before scope=team is supported",
+    fix: "Track docs/系统展示/13-delivered-vs-planned.md and docs/superpowers/plans/2026-05-01-phase4-team-memory-plan.md",
   };
 }
 
@@ -428,8 +440,10 @@ export function renderDoctorResult(result: DoctorResult): string {
   }
 
   lines.push("");
-  if (result.allPassed) {
+  if (result.allPassed && result.skipped === 0) {
     lines.push("✅ 全部检查通过！TeamAgent 运行正常。");
+  } else if (result.allPassed) {
+    lines.push("✅ 可运行检查通过；跳过项见上方（可能代表未完成产品范围）。");
   } else {
     const parts: string[] = [];
     if (result.failed > 0) parts.push(`${result.failed} 项失败`);

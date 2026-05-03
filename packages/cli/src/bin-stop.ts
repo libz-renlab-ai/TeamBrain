@@ -5,7 +5,7 @@
  * stdin: StopHookInput { session_id, transcript_path, cwd, hook_event_name }
  *
  * Mode selection:
- *   - sync (legacy default): run analyze→calibrate→compile, write progress to stderr
+ *   - sync (legacy default): run analyze→calibrate→Skill export, write progress to stderr
  *   - async (recommended): spawn detached subprocess and return immediately
  *
  * Incremental vs full:
@@ -239,12 +239,12 @@ export async function runStopPipeline(
     logError(cwd, "calibrate", e);
   }
 
-  // Step 3: compile
+  // Step 3: Skill export
   try {
-    process.stderr.write("TeamAgent: 编译规则中...\n");
+    process.stderr.write("TeamAgent: 更新 Skills 中...\n");
     const r = await executeCompile({ cwd });
     process.stderr.write(
-      `TeamAgent: 规则已更新（${r.markdown.path}），Skills 导出 ${r.skills.written.length} 条\n`,
+      `TeamAgent: Skills 导出 ${r.skills.written.length} 条；docs propagation 由新增规则调度\n`,
     );
     try {
       const { getRecentEntries } = await import("./commands/recent-entries.js");

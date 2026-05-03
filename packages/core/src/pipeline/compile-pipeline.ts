@@ -15,12 +15,15 @@ export interface SkillEvent {
 export interface CompilePipelineDeps {
   /** 只需要 getAll()——caller 可传 KnowledgeStore 或 DualLayerStore 等任意实现 */
   store: { getAll(): KnowledgeEntry[] };
-  markdownCompiler: MarkdownCompilerLike;
+  /** Legacy/internal markdown output. Normal commands leave this undefined. */
+  markdownCompiler?: MarkdownCompilerLike;
   skillCompiler: SkillCompiler;
   bus?: AttributionBus;
   /** 来自 calibrate pipeline 的 skill 事件 */
   skillEvents?: SkillEvent[];
   dryRun?: boolean;
+  /** Explicit opt-in for the legacy CLAUDE.md block writer. */
+  writeMarkdown?: boolean;
 }
 
 export interface CompilePipelineResult {
@@ -31,13 +34,15 @@ export interface CompilePipelineResult {
 export async function runCompile(deps: CompilePipelineDeps): Promise<CompilePipelineResult> {
   const entries = deps.store.getAll();
 
-  // 1. CLAUDE.md 出口
-  let mdPath = "(dry-run)";
+  // 1. Legacy CLAUDE.md 出口。Normal compile writes Skills only.
+  let mdPath = "(skipped)";
   let mdLineCount = 0;
-  if (!deps.dryRun) {
+  if (deps.writeMarkdown && deps.markdownCompiler && !deps.dryRun) {
     const info = deps.markdownCompiler.writeToFile(entries);
     mdPath = info.filePath;
     mdLineCount = info.blockLineCount;
+  } else if (deps.writeMarkdown && deps.dryRun) {
+    mdPath = "(dry-run)";
   }
 
   // 2. Skills 出口
@@ -51,10 +56,10 @@ export async function runCompile(deps: CompilePipelineDeps): Promise<CompilePipe
 
   deps.bus?.emit({
     source: "compile",
-    action: "markdown_compiled",
-    target: { id: mdPath },
+    action: "skills_compiled",
+    target: { id: "skills" },
     severity: "info",
-    userFacingValue: `CLAUDE.md: ${mdLineCount} lines, skills written: ${written.length}, removed: ${removed.length}`,
+    userFacingValue: `Skills written: ${written.length}, removed: ${removed.length}`,
     timestamp: new Date().toISOString(),
   });
 

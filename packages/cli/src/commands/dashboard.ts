@@ -25,6 +25,16 @@ export interface DashboardLaunchResult {
 
 export class DashboardArgsError extends Error {}
 
+export interface DashboardHealthPayload {
+  service: "teamagent-dashboard";
+  ok: boolean;
+  status: "ok" | "error";
+  stableHealthSignal: "teamagent-dashboard-health";
+  outputPath: string;
+  lastGeneratedAt: string;
+  lastError: string;
+}
+
 function parseDurationMs(value: string): number {
   const trimmed = value.trim();
   const match = /^(\d+)(ms|s|m)?$/.exec(trimmed);
@@ -150,6 +160,23 @@ function openBrowser(url: string): void {
   child.unref();
 }
 
+export function dashboardHealthPayload(args: {
+  outputPath: string;
+  lastGeneratedAt: string;
+  lastError?: string;
+}): DashboardHealthPayload {
+  const lastError = args.lastError ?? "";
+  return {
+    service: "teamagent-dashboard",
+    ok: !lastError,
+    status: lastError ? "error" : "ok",
+    stableHealthSignal: "teamagent-dashboard-health",
+    outputPath: args.outputPath,
+    lastGeneratedAt: args.lastGeneratedAt,
+    lastError,
+  };
+}
+
 export async function launchDashboard(options: DashboardOptions = {}): Promise<DashboardLaunchResult> {
   const cwd = options.cwd ?? process.cwd();
   const outputPath = generateDashboardOnce(cwd);
@@ -178,7 +205,7 @@ export async function launchDashboard(options: DashboardOptions = {}): Promise<D
     const url = new URL(req.url ?? "/", `http://${host}`);
     if (url.pathname === "/health.json") {
       res.writeHead(lastError ? 500 : 200, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ ok: !lastError, outputPath, lastGeneratedAt, lastError }, null, 2));
+      res.end(JSON.stringify(dashboardHealthPayload({ outputPath, lastGeneratedAt, lastError }), null, 2));
       return;
     }
     if (url.pathname === "/" || url.pathname === "/dashboard.html") {

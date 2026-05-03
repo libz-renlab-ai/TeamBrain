@@ -208,8 +208,8 @@ describe("executeCalibrate", () => {
     expect(cal.status_after).toBe("archived");
   });
 
-  it("recompiles nested rule store when adjustments occur (issue #42)", async () => {
-    seedEntry(tmp.projectDbPath, entry({ id: "rule-a", confidence: 0.7 }));
+  it("exports Skills when adjustments occur and leaves CLAUDE.md absent", async () => {
+    seedEntry(tmp.projectDbPath, entry({ id: "rule-a", confidence: 0.7, current_tier: "stable", max_tier_ever: "stable" }));
     nodeFs.mkdirSync(path.dirname(tmp.eventsDbPath), { recursive: true });
     const log = new SqliteEventLog(openDb(tmp.eventsDbPath));
     log.append(evt({ id: "p1", kind: "hook-pre.blocked", knowledge_id: "rule-a" }));
@@ -220,11 +220,9 @@ describe("executeCalibrate", () => {
       legacy: true,
       now: () => new Date("2026-04-15T02:00:00Z"),
     });
-    // 默认走用户级 nested rule store——CLAUDE.md 不再被修改
     expect(nodeFs.existsSync(tmp.claudeMdPath)).toBe(false);
-    const indexPath = path.join(tmp.home, ".claude", "teamagent", "rules", "INDEX.md");
-    expect(nodeFs.existsSync(indexPath)).toBe(true);
-    expect(nodeFs.readFileSync(indexPath, "utf-8")).toContain("# TeamAgent Rules");
+    const skillMd = path.join(tmp.home, ".claude", "skills", "teamagent", "rule-a", "SKILL.md");
+    expect(nodeFs.readFileSync(skillMd, "utf-8")).toContain("rule-a");
   });
 
   it("missing events DB → no error, no adjustments", async () => {
@@ -274,6 +272,52 @@ describe("executeCalibrate", () => {
     const still = store.getById("rule-v2")!;
     store.close();
     expect(still.confidence).toBe(0.7);
+  });
+
+  it("v2 ignored event updates store and writes calibrator.adjusted lifecycle event", async () => {
+    seedEntry(tmp.projectDbPath, entry({
+      id: "rule-v2-ignored",
+      confidence: 0.95,
+      current_tier: "stable",
+      max_tier_ever: "stable",
+      tier_entered_at: "2026-04-01T00:00:00Z",
+    }));
+    nodeFs.mkdirSync(path.dirname(tmp.eventsDbPath), { recursive: true });
+    const log = new SqliteEventLog(openDb(tmp.eventsDbPath));
+    log.append(evt({
+      id: "ignored-1",
+      kind: "ai.override.ignored",
+      knowledge_id: "rule-v2-ignored",
+      timestamp: "2026-04-15T01:00:00Z",
+    }));
+    log.close();
+
+    const r = await executeCalibrate({
+      cwd: tmp.cwd,
+      homeDir: tmp.home,
+      now: () => new Date("2026-04-15T02:00:00Z"),
+    });
+
+    expect(r.totalAdjusted).toBe(1);
+    const store = new DualLayerStore({ projectDbPath: tmp.projectDbPath, userGlobalDbPath: tmp.userGlobalDbPath });
+    const updated = store.getById("rule-v2-ignored")!;
+    store.close();
+    expect(updated.confidence).toBeLessThan(0.95);
+    expect(updated.demerit).toBeGreaterThan(8);
+
+    const log2 = new SqliteEventLog(openDb(tmp.eventsDbPath));
+    const events = log2.readAll();
+    log2.close();
+    const cal = events.find((e) => e.kind === "calibrator.adjusted")!;
+    expect(cal).toBeDefined();
+    expect(cal.knowledge_id).toBe("rule-v2-ignored");
+    expect(cal.confidence_before).toBe(0.95);
+    expect(cal.confidence_after).toBeCloseTo(updated.confidence, 5);
+    expect(cal.demerit_before).toBe(0);
+    expect(cal.demerit_after).toBeCloseTo(updated.demerit, 5);
+    expect(cal.tier_before).toBe("stable");
+    expect(cal.tier_after).toBe(updated.current_tier);
+    expect(cal.status_after).toBe(updated.status);
   });
 });
 
