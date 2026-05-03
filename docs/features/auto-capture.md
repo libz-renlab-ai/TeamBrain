@@ -88,7 +88,8 @@
 
 ```bash
 SANDBOX=$(cat /tmp/dogfood-sandbox-feature-1-capture.path)
-bash /Users/m1/projects/TeamBrain/scripts/dogfood-sync.sh --sandbox "$SANDBOX" -q
+REPO_ROOT=$(git rev-parse --show-toplevel)
+bash "$REPO_ROOT/scripts/dogfood-sync.sh" --sandbox "$SANDBOX" -q
 cd "$SANDBOX" && claudefast -p "what is TeamBrain's auto-capture-correction-moments feature? include implementation status, file paths, pipeline stages, known limits"
 ```
 

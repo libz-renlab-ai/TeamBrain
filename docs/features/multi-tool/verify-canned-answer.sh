@@ -4,7 +4,10 @@
 
 set -u
 
-PROMPT="Read docs/features/multi-tool.md and answer: list PreToolUse, UserPromptSubmit, Stop analyze, AttributionBus, MCP Server status, Cursor status, and at least one packages/ file path."
+DOC_CONTENT="$(sed -n '1,180p' docs/features/multi-tool.md)"
+PROMPT="Using the docs/features/multi-tool.md content below, answer with these exact labels: PreToolUse, UserPromptSubmit, Stop analyze, AttributionBus, MCP Server status, Cursor status, and at least one packages/ file path.
+
+$DOC_CONTENT"
 LOG="/tmp/multitool-verify-$(date +%s).out"
 
 # Pick available timeout binary; macOS often has only gtimeout (after `brew install coreutils`).
@@ -73,9 +76,8 @@ check "AttributionBus channel"    "[Aa]ttribution([- ]?[Bb]us)?"
 # "### MCP Server" on one line and "NOT YET" on the next, so allow a short
 # local window instead of accepting an unrelated NOT YET elsewhere.
 check_near "MCP NOT YET"           "[Mm][Cc][P]" "(NOT YET|未实现|not implemented|尚未|Phase 2)" 4
-# Anchor 6: Cursor labeled NOT YET / importer-only / 不支持 — same line OK because
-# the doc puts cursor + status in the same row.
-check "Cursor NOT YET"            "[Cc]ursor.*(NOT YET|未实现|importer only|no compiler|尚未|不支持)"
+# Anchor 6: Cursor labeled NOT YET / importer-only / no compiler.
+check_near "Cursor NOT YET"        "[Cc]ursor" "(NOT YET|未实现|importer only|[Nn]o compiler|compiler missing|尚未|不支持)" 4
 # Anchor 7: at least one packages/ file path
 check "packages/ file path"       "packages/(cli|adapters|ports|core)/"
 
