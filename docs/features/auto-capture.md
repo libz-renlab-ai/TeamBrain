@@ -58,8 +58,8 @@
 | 2 calibrate | `packages/cli/src/commands/calibrate.ts` + `packages/core/src/calibrator/v2/` | events.db → Wilson score + demerit + 5-tier (experimental→probation→stable→canonical→enforced) + hysteresis → `knowledge.db` |
 | 3 compile | `packages/cli/src/commands/compile.ts` + `packages/core/src/scorer.ts` | active rules → `score = conf×0.4 + hits×0.3 + recency×0.2 + enforce×0.1` → CLAUDE.md (canonical+, ≤3000 tok) + `~/.claude/skills/teamagent/<id>/SKILL.md` (stable+) |
 | 4 harvest | `packages/cli/src/harvest-writer.ts` | new entries → append `.teamagent/last-harvest.md` |
-| 4b catch-up | `packages/cli/src/stop-pipeline-vectorize.ts` | rules without embedding → vectorize ≤15/run, fire-and-forget |
-| 5 scan-errors | `packages/cli/src/stop-pipeline-scan-errors.ts` + `packages/ports/src/error-signal-collector.ts` | tool failures (A/B/C/D/G/H 六类) → `candidates.db` |
+| 4b catch-up | `packages/cli/src/bin-stop.ts` (`catchUpVectorization`) | rules without embedding → vectorize ≤15/run, fire-and-forget |
+| 5 scan-errors | `packages/cli/src/bin-stop.ts` + `packages/cli/src/commands/scan-errors.ts` + `packages/ports/src/error-signal-collector.ts` | tool failures (A/B/C/D/G/H 六类) → `candidates.db` |
 | 6 narrative-scan | `packages/core/src/narrative-scanner/scan.ts` + `packages/cli/src/stop-narrative-scan.ts` | last AI assistant turn → substring + M4-B BM25/dense RRF → `pending_warnings.json` → next-turn UserPromptSubmit 注入 |
 
 ### 5 种 correction 信号（rule-based detector）

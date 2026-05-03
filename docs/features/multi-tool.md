@@ -85,7 +85,7 @@ The script runs `claudefast -p` with the canonical multi-tool prompt and greps t
 | UserPromptSubmit channel | `UserPromptSubmit` |
 | Stop channel | `Stop( analyze\| hook)` |
 | AttributionBus channel | `[Aa]ttribution[Bb]us` |
-| MCP NOT YET (rejects "soon to launch") | `MCP.*(NOT YET\|未实现\|Phase 2)` |
+| MCP NOT YET (rejects unrelated `NOT YET`) | `MCP` within 4 lines of `NOT YET\|未实现\|Phase 2` |
 | Cursor NOT YET (rejects "fully supported") | `[Cc]ursor.*(NOT YET\|未实现\|importer only)` |
 | concrete file path | `packages/(cli\|adapters\|ports\|core)/` |
 

@@ -7,16 +7,35 @@ set -u
 PROMPT="Read docs/features/multi-tool.md and answer: list PreToolUse, UserPromptSubmit, Stop analyze, AttributionBus, MCP Server status, Cursor status, and at least one packages/ file path."
 LOG="/tmp/multitool-verify-$(date +%s).out"
 
-echo "[verify] running claudefast..." >&2
 # Pick available timeout binary; macOS often has only gtimeout (after `brew install coreutils`).
 # Fall back to no timeout if neither is present so the script still runs (just unbounded).
 TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
-if [ -n "$TIMEOUT_BIN" ]; then
-  "$TIMEOUT_BIN" 180 claudefast -p "$PROMPT" > "$LOG" 2>&1
-else
-  echo "[verify] warning: no timeout/gtimeout found; running unbounded" >&2
-  claudefast -p "$PROMPT" > "$LOG" 2>&1
-fi
+
+run_claudefast() {
+  if [ -n "$TIMEOUT_BIN" ]; then
+    "$TIMEOUT_BIN" 180 claudefast -p "$PROMPT" > "$LOG" 2>&1
+  else
+    echo "[verify] warning: no timeout/gtimeout found; running unbounded" >&2
+    claudefast -p "$PROMPT" > "$LOG" 2>&1
+  fi
+}
+
+attempt=1
+max_attempts=3
+while :; do
+  echo "[verify] running claudefast (attempt $attempt/$max_attempts)..." >&2
+  run_claudefast
+  # claudefast can occasionally return only hook epilogue text. Retry only
+  # that non-substantive case; real canned-answer misses still fail below.
+  if grep -Eq "PreToolUse|UserPromptSubmit|AttributionBus|packages/" "$LOG"; then
+    break
+  fi
+  if [ "$attempt" -ge "$max_attempts" ]; then
+    break
+  fi
+  echo "[verify] warning: claudefast output had no core anchors; retrying" >&2
+  attempt=$((attempt + 1))
+done
 echo "[verify] log -> $LOG" >&2
 
 PASS=1
@@ -30,16 +49,30 @@ check() {
   fi
 }
 
+check_near() {
+  local name="$1" anchor="$2" evidence="$3" window="$4"
+  if awk -v anchor="$anchor" -v evidence="$evidence" -v window="$window" '
+    $0 ~ anchor { remaining = window }
+    remaining > 0 && $0 ~ evidence { found = 1; exit }
+    remaining > 0 { remaining-- }
+    END { exit found ? 0 : 1 }
+  ' "$LOG"; then
+    echo "[PASS] $name"
+  else
+    echo "[FAIL] $name (anchor: $anchor, evidence within ${window} lines: $evidence)"
+    PASS=0
+  fi
+}
+
 # Anchors 1-4: 4 channels
 check "PreToolUse channel"        "PreToolUse"
 check "UserPromptSubmit channel"  "UserPromptSubmit"
 check "Stop analyze channel"      "Stop( analyze| hook| 钩子)?"
 check "AttributionBus channel"    "[Aa]ttribution([- ]?[Bb]us)?"
-# Anchor 5: MCP must be mentioned AND a NOT-YET marker must be present.
-# We grep for them independently rather than co-occurring on one line — markdown
-# layouts often put "### MCP Server" on one line and "❌ NOT YET" on the next.
-check "MCP mentioned"             "(MCP|mcp)"
-check "NOT YET marker"            "(NOT YET|未实现|not implemented|尚未|Phase 2)"
+# Anchor 5: MCP must be tied to NOT-YET evidence. Markdown answers may put
+# "### MCP Server" on one line and "NOT YET" on the next, so allow a short
+# local window instead of accepting an unrelated NOT YET elsewhere.
+check_near "MCP NOT YET"           "[Mm][Cc][P]" "(NOT YET|未实现|not implemented|尚未|Phase 2)" 4
 # Anchor 6: Cursor labeled NOT YET / importer-only / 不支持 — same line OK because
 # the doc puts cursor + status in the same row.
 check "Cursor NOT YET"            "[Cc]ursor.*(NOT YET|未实现|importer only|no compiler|尚未|不支持)"
