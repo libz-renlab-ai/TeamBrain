@@ -78,10 +78,67 @@ function extractInputText(ctx: ToolCallContext): string {
     "prompt",
   ]) {
     const v = ctx.input[key];
-    if (typeof v === "string") parts.push(v);
+    if (typeof v !== "string") continue;
+    if (key === "command" && isMetaCommand(v)) {
+      // #86 fix: meta-commands carry user-authored prose in quoted args
+      // (issue body, commit message). Scan only the command structure +
+      // flag names, not the prose. See META_COMMAND_PREFIXES jsdoc.
+      parts.push(stripQuotedArgs(v));
+    } else {
+      parts.push(v);
+    }
   }
   return parts.join("\n");
 }
+
+/**
+ * Meta-commands whose quoted args carry user-authored prose (issue body, commit
+ * message, etc.) which should NOT be scanned for wrong_pattern substring hits.
+ * Example: `gh issue create --body "moment is bad"` MUST NOT trigger a
+ * wrong_pattern: "moment" rule, because the body is documentation/discussion
+ * about the rule rather than an actual install of the bad package. See #86.
+ *
+ * Conservative whitelist — only commands whose primary purpose is authoring
+ * text content (issue/pr/release/commit/tag bodies). General Bash commands and
+ * `git` subcommands that touch code (e.g. `git apply`, `git checkout`) are NOT
+ * exempted; they may legitimately need substring detection inside quoted args.
+ */
+const META_COMMAND_PREFIXES = [
+  "gh issue create",
+  "gh issue comment",
+  "gh issue edit",
+  "gh pr create",
+  "gh pr comment",
+  "gh pr edit",
+  "gh pr review",
+  "gh release create",
+  "gh release edit",
+  "gh repo edit",
+  "git commit -m",
+  "git commit --message",
+  "git tag -m",
+  "git tag --message",
+  "git notes add -m",
+];
+
+function isMetaCommand(command: string): boolean {
+  const trimmed = command.trimStart();
+  return META_COMMAND_PREFIXES.some((p) => trimmed.startsWith(p));
+}
+
+/**
+ * Strip the *contents* of single- and double-quoted string literals from `text`,
+ * preserving the surrounding quote characters so the command's flag structure
+ * remains visible to the matcher. Backslash escapes inside the quotes are
+ * honored. Heredocs and bare-word args are untouched — they aren't the
+ * false-positive surface this targets.
+ */
+function stripQuotedArgs(text: string): string {
+  return text
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''");
+}
+
 
 function stringField(input: Record<string, unknown>, key: string): string | undefined {
   const v = input[key];
