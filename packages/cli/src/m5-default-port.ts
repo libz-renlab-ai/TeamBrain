@@ -90,7 +90,28 @@ export async function readHooksFromSettingsFile(
 }
 
 /**
- * 读两处 settings 的并集：
+ * 读两个显式给定的 settings 路径，返回 hooks 并集（dedup）。纯路径输入，
+ * 便于测试——不依赖 `os.homedir()`、`process.env.HOME` 等环境状态。
+ *
+ * 任一路径不存在 / 文件坏掉都 fail-soft 返回空列表，不抛错。
+ */
+export async function readInstalledHooksFromPaths(opts: {
+  userSettingsPath?: string;
+  projectSettingsPath?: string;
+}): Promise<HookKind[]> {
+  const [userHooks, projectHooks] = await Promise.all([
+    opts.userSettingsPath
+      ? readHooksFromSettingsFile(opts.userSettingsPath)
+      : Promise.resolve([] as HookKind[]),
+    opts.projectSettingsPath
+      ? readHooksFromSettingsFile(opts.projectSettingsPath)
+      : Promise.resolve([] as HookKind[]),
+  ]);
+  return Array.from(new Set<HookKind>([...userHooks, ...projectHooks]));
+}
+
+/**
+ * 默认探测器：读两处 settings 的并集：
  *   - user-level    ~/.claude/settings.json
  *   - project-level <projectRoot>/.claude/settings.local.json （可选）
  *
@@ -99,20 +120,19 @@ export async function readHooksFromSettingsFile(
  *   - `teamagent install-hook`      → project-level（PreToolUse / Stop / UserPromptSubmit / PostToolUse）
  *
  * 只读 user-level 会让 m5-bootstrap 永远误报后者那批 hooks 缺失。
+ *
+ * 这是 `readInstalledHooksFromPaths` 的薄 wrapper——把"`os.homedir()` +
+ * 文件名约定"绑死，方便生产代码直接调；纯函数版本留给测试用。
  */
 export async function readInstalledHooksImpl(
   projectRoot?: string
 ): Promise<HookKind[]> {
-  const userPath = path.join(os.homedir(), ".claude", "settings.json");
-  const userHooks = await readHooksFromSettingsFile(userPath);
-  if (!projectRoot) return userHooks;
-  const projectPath = path.join(
-    projectRoot,
-    ".claude",
-    "settings.local.json"
-  );
-  const projectHooks = await readHooksFromSettingsFile(projectPath);
-  return Array.from(new Set([...userHooks, ...projectHooks]));
+  return readInstalledHooksFromPaths({
+    userSettingsPath: path.join(os.homedir(), ".claude", "settings.json"),
+    projectSettingsPath: projectRoot
+      ? path.join(projectRoot, ".claude", "settings.local.json")
+      : undefined,
+  });
 }
 
 /** 列 ~/.claude/plugins/installed/ 子目录名作为已装插件。读不到返回空数组。 */

@@ -4,17 +4,23 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   readHooksFromSettingsFile,
-  readInstalledHooksImpl,
+  readInstalledHooksFromPaths,
 } from "../m5-default-port.js";
 
 /**
  * 测两层契约：
  *   1) `readHooksFromSettingsFile(path)` —— 纯路径输入，单文件读取
- *   2) `readInstalledHooksImpl(projectRoot?)` —— 二者并集 + 去重 + projectRoot 缺省回退
+ *   2) `readInstalledHooksFromPaths({ userPath, projectPath })`
+ *        —— 二者并集 + 去重 + 任一缺省的回退
  *
  * 关键 bug：`m5-bootstrap` 的旧检测器只读 user-level，对 project-level
  * `.claude/settings.local.json` 视而不见，导致 UserPromptSubmit / Stop 永远
  * 被误报缺失。这套测试锁住"必须读两处"的契约。
+ *
+ * 注意：测试用纯路径 API 而不是 `readInstalledHooksImpl(projectRoot?)`，
+ * 因为后者内部调 `os.homedir()`，在 Linux CI 上 `process.env.HOME` 覆盖不
+ * 一定生效（vitest worker 启动时已绑定真实 HOME）。把"路径解析"留给生
+ * 产代码、把"路径加路径"逻辑独立测试，是最稳妥的分层。
  */
 describe("readHooksFromSettingsFile (单文件读取)", () => {
   let tmp: string;
@@ -82,95 +88,88 @@ describe("readHooksFromSettingsFile (单文件读取)", () => {
   });
 });
 
-describe("readInstalledHooksImpl (user + project 并集)", () => {
-  // 每个测试自己有干净的 fakeHome。通过 USERPROFILE/HOME 覆盖让
-  // os.homedir() 解析到 fakeHome — Node `os.homedir()` 在 Win 看 USERPROFILE，
-  // 在 *nix 看 HOME，写两个就跨平台了。
-  let fakeHome: string;
-  let projectRoot: string;
-  let originalHome: string | undefined;
-  let originalUserProfile: string | undefined;
+describe("readInstalledHooksFromPaths (user + project 并集)", () => {
+  let tmp: string;
+  let userPath: string;
+  let projectPath: string;
 
   beforeEach(async () => {
-    fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "m5-port-home-"));
-    projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "m5-port-proj-"));
-    originalHome = process.env.HOME;
-    originalUserProfile = process.env.USERPROFILE;
-    process.env.HOME = fakeHome;
-    process.env.USERPROFILE = fakeHome;
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), "m5-port-paths-"));
+    userPath = path.join(tmp, "user-settings.json");
+    projectPath = path.join(tmp, "project-settings.local.json");
   });
 
   afterEach(async () => {
-    if (originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = originalHome;
-    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
-    else process.env.USERPROFILE = originalUserProfile;
-    await fs.rm(fakeHome, { recursive: true, force: true });
-    await fs.rm(projectRoot, { recursive: true, force: true });
+    await fs.rm(tmp, { recursive: true, force: true });
   });
 
-  async function writeUserHooks(hooks: Record<string, unknown>): Promise<void> {
-    const dir = path.join(fakeHome, ".claude");
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(
-      path.join(dir, "settings.json"),
-      JSON.stringify({ hooks }),
-      "utf8"
-    );
+  async function writeUser(hooks: Record<string, unknown>): Promise<void> {
+    await fs.writeFile(userPath, JSON.stringify({ hooks }), "utf8");
   }
 
-  async function writeProjectHooks(
-    hooks: Record<string, unknown>
-  ): Promise<void> {
-    const dir = path.join(projectRoot, ".claude");
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(
-      path.join(dir, "settings.local.json"),
-      JSON.stringify({ hooks }),
-      "utf8"
-    );
+  async function writeProject(hooks: Record<string, unknown>): Promise<void> {
+    await fs.writeFile(projectPath, JSON.stringify({ hooks }), "utf8");
   }
 
-  it("returns project-level hooks when only project settings.local.json has them (the bug fix)", async () => {
-    await writeProjectHooks({
+  it("returns project-level hooks when only project settings has them (the bug fix)", async () => {
+    await writeProject({
       UserPromptSubmit: [{}],
       Stop: [{}],
     });
-    const result = await readInstalledHooksImpl(projectRoot);
+    const result = await readInstalledHooksFromPaths({
+      userSettingsPath: userPath,
+      projectSettingsPath: projectPath,
+    });
     expect(result).toContain("UserPromptSubmit");
     expect(result).toContain("Stop");
   });
 
-  it("returns user-level hooks when only ~/.claude/settings.json has them", async () => {
-    await writeUserHooks({ SessionStart: [{}] });
-    const result = await readInstalledHooksImpl(projectRoot);
+  it("returns user-level hooks when only user settings has them", async () => {
+    await writeUser({ SessionStart: [{}] });
+    const result = await readInstalledHooksFromPaths({
+      userSettingsPath: userPath,
+      projectSettingsPath: projectPath,
+    });
     expect(result).toContain("SessionStart");
   });
 
   it("returns the union when both scopes have different hooks", async () => {
-    await writeUserHooks({ SessionStart: [{}] });
-    await writeProjectHooks({
+    await writeUser({ SessionStart: [{}] });
+    await writeProject({
       UserPromptSubmit: [{}],
       Stop: [{}],
     });
-    const result = await readInstalledHooksImpl(projectRoot);
+    const result = await readInstalledHooksFromPaths({
+      userSettingsPath: userPath,
+      projectSettingsPath: projectPath,
+    });
     expect(result).toContain("SessionStart");
     expect(result).toContain("UserPromptSubmit");
     expect(result).toContain("Stop");
   });
 
   it("deduplicates a hook wired at both scopes", async () => {
-    await writeUserHooks({ Stop: [{}] });
-    await writeProjectHooks({ Stop: [{}] });
-    const result = await readInstalledHooksImpl(projectRoot);
+    await writeUser({ Stop: [{}] });
+    await writeProject({ Stop: [{}] });
+    const result = await readInstalledHooksFromPaths({
+      userSettingsPath: userPath,
+      projectSettingsPath: projectPath,
+    });
     expect(result.filter((h) => h === "Stop")).toHaveLength(1);
   });
 
-  it("falls back to user-level only when projectRoot is omitted", async () => {
-    await writeUserHooks({ SessionStart: [{}] });
-    await writeProjectHooks({ UserPromptSubmit: [{}] });
-    const result = await readInstalledHooksImpl();
+  it("returns user-level only when projectSettingsPath is undefined", async () => {
+    await writeUser({ SessionStart: [{}] });
+    await writeProject({ UserPromptSubmit: [{}] });
+    const result = await readInstalledHooksFromPaths({
+      userSettingsPath: userPath,
+    });
     expect(result).toContain("SessionStart");
     expect(result).not.toContain("UserPromptSubmit");
+  });
+
+  it("returns [] when neither path is given", async () => {
+    const result = await readInstalledHooksFromPaths({});
+    expect(result).toEqual([]);
   });
 });
