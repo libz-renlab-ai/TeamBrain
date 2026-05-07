@@ -32,6 +32,17 @@
 
 set -uo pipefail
 
+# B-092: gracefully degrade when jq is missing (Windows Git Bash users
+# rarely have jq pre-installed). Without this guard the hook produced
+# empty stdout and Claude Code defaulted to approve, silently disabling
+# the entire self-report guard. Now we explicitly approve and exit so the
+# user is not surprised, and emit a one-line stderr nudge.
+if ! command -v jq >/dev/null 2>&1; then
+  echo '{"continue":true,"suppressOutput":true}'
+  printf 'self-report-fused.sh: jq not found on PATH; self-report guard disabled this turn. Install jq to re-enable.\n' >&2
+  exit 0
+fi
+
 LOG_DIR="$HOME/.claude/self-report"
 LOG_FILE="$LOG_DIR/log.jsonl"
 mkdir -p "$LOG_DIR"
