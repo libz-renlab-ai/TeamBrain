@@ -243,7 +243,7 @@ export async function runStopPipeline(
   // Step 3: Skill export
   try {
     process.stderr.write("TeamAgent: 更新 Skills 中...\n");
-    const r = await executeCompile({ cwd });
+    const r = await executeCompile({ cwd, legacyClaudeMd: false });
     process.stderr.write(
       `TeamAgent: Skills 导出 ${r.skills.written.length} 条；docs propagation 由新增规则调度\n`,
     );
