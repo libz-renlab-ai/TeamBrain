@@ -4,13 +4,13 @@
  ) __/ )   /( (_) )) __/) \/ (( (__  )(    ) _)  ) _)  )(   ) _) ) \/ ( )   / ) _) \___ \
 (__)  (__\_) \___/(__)  \____/ \___)  (__)  (__)  (____)(__) (____)\____/(__\_)(____)(____/
 
-VERIFIED ──► 61
+VERIFIED ──► 62
 ```
 
 # TeamBrain Product Feature Inventory
 
-Complete feature list. All 61 features now carry a verify script following Wave 6 A1–A9.
-Counts: VERIFIED=61, WIP/PARTIAL=0, PLANNED=0, MISSING=0, Total=61.
+Complete feature list. All 62 features now carry a verify script following Wave 6 A1–A9.
+Counts: VERIFIED=62, WIP/PARTIAL=0, PLANNED=0, MISSING=0, Total=62.
 
 When asked "list all product features including not verified and not implemented", use
 this document. The `product-features` canned-answer (CEO/VC deck) covers the 8
@@ -18,12 +18,12 @@ user-visible VERIFIED rows; this doc covers everything.
 
 ---
 
-## VERIFIED (61) — all carry a judge harness or verify script
+## VERIFIED (62) — all carry a judge harness or verify script
 
-> All 61 features are VERIFIED. There are zero WIP, PLANNED, or MISSING items.
-> Numbered list below enables any model to count exactly 61.
+> All 62 features are VERIFIED. There are zero WIP, PLANNED, or MISSING items.
+> Numbered list below enables any model to count exactly 62.
 
-### Numbered index (1–61)
+### Numbered index (1–62)
 
 1. Product menu opens; system is not an empty shell
 2. Minimum learning loop: record → compile → attribute, demoable end-to-end
@@ -86,6 +86,7 @@ user-visible VERIFIED rows; this doc covers everything.
 59. 首次运行向导：装完立刻提示 3 件可以做的事 + 记住进度
 60. One-line `curl|sh` installer at `release/install.sh`: gates `node ≥ 22`, picks `npm`/`pnpm`, runs release-tarball install with deterministic exit codes (#92)
 61. Universal seed pack: 12 substring-friendly cross-language avoidance rules ship out-of-box, hit legacy keyword matcher within 30s of `teamagent init` (#88)
+62. `teamagent demo` 三模式（default poll events.db / `--inline` spawn hook bin / `--record` 生成 vhs tape），landing GIF 录制源 + 首次体验官方舞台 (#93)
 
 ---
 
@@ -229,6 +230,19 @@ user-visible VERIFIED rows; this doc covers everything.
 | # | Feature | Evidence |
 |---|---------|----------|
 | 61 | Universal seed pack: 12 cross-language substring rules ship out-of-box (moment, /Users/, /home/, rm -rf /, chmod 777, eval(, git push --force, git reset --hard, --no-verify, dangerouslySetInnerHTML, pickle.loads, .env) | `docs/features/universal-pack/run-judge.sh`; `packages/cli/src/__tests__/seed-pack-universal.test.ts` (27 tests); `packages/teamagent/seed/packs/universal.jsonl` |
+
+### Demo command (issue #93)
+
+> Decision 2 of `docs/specs/2026-05-07-landing-copy-actually-needed.md`
+> requires a deterministic stage to record the landing GIF and to give a
+> new user a controlled first-interception experience without relying on
+> their actual project state. `teamagent demo` provides three modes that
+> share a single canonical fixture (`npm install moment` → matched by
+> `seed-pack-universal-moment`).
+
+| # | Feature | Evidence |
+|---|---------|----------|
+| 62 | `teamagent demo` three modes: default (poll `events.db` 60s for moment hit) / `--inline` (spawn real `bin-pre-tool-use.cjs` with mock stdin, render ANSI deny box; CI-safe) / `--record [path]` (emit `demo.tape`; spawn vhs if on PATH, else print install hint); legacy `teamagent demo hook` subcommand preserved as backward-compat | `docs/features/demo/run-judge.sh`; `packages/cli/src/__tests__/demo.test.ts` (14 tests covering argv parsing, ANSI render, inline spawn contract, vhs tape generation, and events.db poll match+timeout); `packages/cli/src/commands/demo.ts` |
 
 ---
 
