@@ -77,7 +77,22 @@ async function main(): Promise<void> {
     const store = new DualLayerStore({ projectDbPath, userGlobalDbPath: globalDbPath });
     const eventLog = new SqliteEventLog(openDb(eventsDbPath));
 
-    const useLegacy = (process.env.TEAMAGENT_MATCHER ?? "").toLowerCase() === "legacy";
+    // Issue #91: fall back to legacy keyword matcher whenever the vector
+    // model isn't ready. This includes:
+    //   - first install: state file exists with status="downloading"
+    //   - crashed warmup: status="downloading" but pid is dead (stale)
+    //   - failed warmup: status="failed"
+    //   - missing state: never ran (treat as not ready)
+    // The user can still force legacy with TEAMAGENT_MATCHER=legacy. When the
+    // detached warmup completes and writes status="ready", the very next
+    // PreToolUse invocation reads the new value and switches to semantic.
+    const { describeWarmupReadiness, defaultWarmupStatePath } = await import(
+      "./warmup-state.js"
+    );
+    const warmup = describeWarmupReadiness(defaultWarmupStatePath(home));
+    const explicitlyLegacy =
+      (process.env.TEAMAGENT_MATCHER ?? "").toLowerCase() === "legacy";
+    const useLegacy = explicitlyLegacy || !warmup.ready;
 
     let lastRuleCount = 0;
     const matcher = {

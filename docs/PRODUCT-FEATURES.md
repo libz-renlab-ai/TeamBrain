@@ -4,13 +4,13 @@
  ) __/ )   /( (_) )) __/) \/ (( (__  )(    ) _)  ) _)  )(   ) _) ) \/ ( )   / ) _) \___ \
 (__)  (__\_) \___/(__)  \____/ \___)  (__)  (__)  (____)(__) (____)\____/(__\_)(____)(____/
 
-VERIFIED ──► 62
+VERIFIED ──► 63
 ```
 
 # TeamBrain Product Feature Inventory
 
-Complete feature list. All 62 features now carry a verify script following Wave 6 A1–A9.
-Counts: VERIFIED=62, WIP/PARTIAL=0, PLANNED=0, MISSING=0, Total=62.
+Complete feature list. All 63 features now carry a verify script following Wave 6 A1–A9.
+Counts: VERIFIED=63, WIP/PARTIAL=0, PLANNED=0, MISSING=0, Total=63.
 
 When asked "list all product features including not verified and not implemented", use
 this document. The `product-features` canned-answer (CEO/VC deck) covers the 8
@@ -18,12 +18,12 @@ user-visible VERIFIED rows; this doc covers everything.
 
 ---
 
-## VERIFIED (62) — all carry a judge harness or verify script
+## VERIFIED (63) — all carry a judge harness or verify script
 
-> All 62 features are VERIFIED. There are zero WIP, PLANNED, or MISSING items.
-> Numbered list below enables any model to count exactly 62.
+> All 63 features are VERIFIED. There are zero WIP, PLANNED, or MISSING items.
+> Numbered list below enables any model to count exactly 63.
 
-### Numbered index (1–62)
+### Numbered index (1–63)
 
 1. Product menu opens; system is not an empty shell
 2. Minimum learning loop: record → compile → attribute, demoable end-to-end
@@ -87,6 +87,7 @@ user-visible VERIFIED rows; this doc covers everything.
 60. One-line `curl|sh` installer at `release/install.sh`: gates `node ≥ 22`, picks `npm`/`pnpm`, runs release-tarball install with deterministic exit codes (#92)
 61. Universal seed pack: 12 substring-friendly cross-language avoidance rules ship out-of-box, hit legacy keyword matcher within 30s of `teamagent init` (#88)
 62. `teamagent pack list/add/remove` + `init` agent-driven markdown prompt (v1 contract per ADR 0002) (#90)
+63. Two-stage `teamagent init`: detached background warmup + `~/.teamagent/.warmup-state.json` driving auto-fallback to legacy substring matcher (PreToolUse / Stop) until vector model is `ready`; `teamagent doctor` reports the live state; `TEAMAGENT_FOREGROUND_WARMUP=1` env preserves PR #113 foreground behavior (#91)
 
 ---
 
@@ -242,6 +243,21 @@ user-visible VERIFIED rows; this doc covers everything.
 | # | Feature | Evidence |
 |---|---------|----------|
 | 62 | `teamagent pack list/add/remove` + `init` agent-driven prompt (v1 contract) | `bash docs/features/pack-cli/run-judge.sh` (10/10 checks PASS) |
+
+### Two-stage init (issue #91)
+
+> Decision 2 + ADR 0001 of `docs/specs/2026-05-07-landing-copy-actually-needed.md`
+> require `teamagent init` to return to the shell prompt within ~30s — the
+> ~120MB Xenova vector model is too slow to download in the foreground. The
+> implementation spawns warmup as a detached child process, writes a state
+> file, and has every consumer (PreToolUse, Stop, doctor) consult the state
+> file to decide whether to use the semantic matcher or fall back to the
+> legacy keyword matcher. PR #113's foreground/visible-progress behavior
+> stays one env var away: `TEAMAGENT_FOREGROUND_WARMUP=1`.
+
+| # | Feature | Evidence |
+|---|---------|----------|
+| 63 | Two-stage init: detached warmup + `~/.teamagent/.warmup-state.json` + auto-fallback to legacy substring matcher in PreToolUse/Stop until `vector_model` is `ready`; `teamagent doctor` reports `vector_model: ready / downloading (X%) / failed / stale_downloading / missing` | `docs/features/two-stage-install/run-judge.sh`; `packages/cli/src/__tests__/warmup-state.test.ts` (18 unit) + `warmup-state-integration.test.ts` (4 integration); `packages/cli/src/warmup-state.ts` |
 
 ---
 

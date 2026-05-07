@@ -371,8 +371,16 @@ export async function runStopPipeline(
         }
 
         // Step 6b (M4-B): semantic match on AI last turn — supplement to literal scanNarrative.
-        // Skipped when TEAMAGENT_MATCHER=legacy. Never throws (all errors swallowed).
-        const useLegacyMatcher = (process.env.TEAMAGENT_MATCHER ?? "").toLowerCase() === "legacy";
+        // Skipped when TEAMAGENT_MATCHER=legacy or when the vector model is
+        // not yet ready (issue #91 two-stage warmup). Never throws (all
+        // errors swallowed).
+        const { describeWarmupReadiness: descRdy, defaultWarmupStatePath: dwsp } = await import(
+          "./warmup-state.js"
+        );
+        const stopWarmup = descRdy(dwsp(os.homedir()));
+        const useLegacyMatcher =
+          (process.env.TEAMAGENT_MATCHER ?? "").toLowerCase() === "legacy" ||
+          !stopWarmup.ready;
         if (!useLegacyMatcher) {
           try {
             const contextText = lastTurn?.userMessage ?? "";

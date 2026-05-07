@@ -1,3 +1,8 @@
+import {
+  writeWarmupState,
+  type WarmupState,
+} from "../warmup-state.js";
+
 export interface WarmupEmbedder {
   embed(texts: string[]): Promise<number[][]>;
 }
@@ -8,6 +13,13 @@ export interface WarmupOptions {
   stderr?: (msg: string) => void;
   /** force render mode (overrides TTY detection) — testing aid */
   forceProgressMode?: "tty" | "log" | "off";
+  /**
+   * Issue #91: when set, every meaningful progress update plus the final
+   * outcome is persisted to this JSON path so other processes can read it.
+   */
+  stateFilePath?: string;
+  /** Override the model name written to the state file (default e5-small). */
+  stateModel?: string;
 }
 
 export interface WarmupResult {
@@ -108,10 +120,74 @@ export async function runWarmup(opts: WarmupOptions = {}): Promise<WarmupResult>
     mode = process.stderr.isTTY ? "tty" : "log";
   }
 
+  // --- Issue #91: state-file plumbing ---
+  // Aggregated progress for state writes; updated by the wrapped progress
+  // callback below.
+  const startedAtIso = new Date(start).toISOString();
+  const stateModel = opts.stateModel ?? "Xenova/multilingual-e5-small";
+  const aggregated = { loaded_bytes: 0, total_bytes: 0, files_done: 0, files_total: 0 };
+
+  let lastStateWrite = 0;
+  const STATE_WRITE_THROTTLE_MS = 500;
+
+  function tryWriteState(state: WarmupState) {
+    if (!opts.stateFilePath) return;
+    try {
+      writeWarmupState(opts.stateFilePath, state);
+    } catch {
+      // best-effort: never let state-file failure break warmup itself.
+    }
+  }
+
+  function maybeWriteProgress(force = false) {
+    if (!opts.stateFilePath) return;
+    const now = Date.now();
+    if (!force && now - lastStateWrite < STATE_WRITE_THROTTLE_MS) return;
+    lastStateWrite = now;
+    tryWriteState({
+      status: "downloading",
+      started_at: startedAtIso,
+      pid: process.pid,
+      model: stateModel,
+      progress: { ...aggregated },
+    });
+  }
+
+  // Initial state at process start so readers immediately see "downloading".
+  if (opts.stateFilePath) {
+    tryWriteState({
+      status: "downloading",
+      started_at: startedAtIso,
+      pid: process.pid,
+      model: stateModel,
+    });
+  }
+
   let embedder = opts.embedder;
   if (!embedder) {
     const { XenovaRuleEmbedder } = await import("@teamagent/adapters");
-    const onProgress = makeProgressRenderer(stderr, mode);
+    const renderer = makeProgressRenderer(stderr, mode);
+    const onProgress = (e: import("@teamagent/adapters").XenovaProgressEvent) => {
+      // Update aggregated counters BEFORE the renderer (renderer also tracks
+      // its own state but we cannot read into it; mirroring is cheap).
+      if (e.file) {
+        // We do not bother per-file storage here — the renderer aggregates
+        // separately for stderr; for the state file we approximate via the
+        // last-event totals. Good enough for a "downloading X%" UX.
+        if (e.status === "progress") {
+          aggregated.loaded_bytes = Math.max(aggregated.loaded_bytes, e.loaded ?? 0);
+          aggregated.total_bytes = Math.max(aggregated.total_bytes, e.total ?? 0);
+        } else if (e.status === "done") {
+          aggregated.files_done += 1;
+          if (e.total) aggregated.loaded_bytes = Math.max(aggregated.loaded_bytes, e.total);
+        }
+        aggregated.files_total = Math.max(aggregated.files_total, aggregated.files_done);
+      }
+      renderer(e);
+      if (e.status === "progress" || e.status === "done") {
+        maybeWriteProgress(e.status === "done");
+      }
+    };
     embedder = new XenovaRuleEmbedder({ progressCallback: onProgress });
   }
 
@@ -122,12 +198,28 @@ export async function runWarmup(opts: WarmupOptions = {}): Promise<WarmupResult>
     // 进度条最后一行用 \r 留在那；done 事件后换行 + ✅
     if (mode === "tty") stderr("\n");
     stderr(`✅ TeamAgent: 模型预热完成 (${durationMs}ms)\n`);
+    tryWriteState({
+      status: "ready",
+      started_at: startedAtIso,
+      completed_at: new Date().toISOString(),
+      pid: process.pid,
+      model: stateModel,
+      progress: { ...aggregated },
+    });
     return { ok: true, durationMs };
   } catch (e) {
     if (mode === "tty") stderr("\n");
     const error = (e as Error).message ?? String(e);
     stderr(`⚠️  TeamAgent: 模型预热失败 (${error})\n`);
     stderr("   不影响安装；首次使用时仍会按需下载。\n");
+    tryWriteState({
+      status: "failed",
+      started_at: startedAtIso,
+      completed_at: new Date().toISOString(),
+      pid: process.pid,
+      model: stateModel,
+      error,
+    });
     return { ok: false, durationMs: Date.now() - start, error };
   }
 }

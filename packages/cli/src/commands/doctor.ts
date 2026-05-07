@@ -169,7 +169,68 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
     checks.push(claudeMdCheck);
   }
 
+  // Check 13 (issue #91): vector model warmup state.
+  checks.push(await checkVectorModelState(home));
+
   return finalize(checks, false);
+}
+
+/**
+ * Issue #91: report on the two-stage warmup state. Maps the readiness
+ * description into doctor's pass/fail/skip vocabulary so users see a
+ * clear "vector_model: ready" / "downloading (X%)" / "failed" row.
+ */
+async function checkVectorModelState(home: string): Promise<DoctorCheckResult> {
+  const { describeWarmupReadiness, defaultWarmupStatePath } = await import(
+    "../warmup-state.js"
+  );
+  const r = describeWarmupReadiness(defaultWarmupStatePath(home));
+  if (r.reason === "ready" && r.state) {
+    const took = r.state.completed_at && r.state.started_at
+      ? new Date(r.state.completed_at).getTime() - new Date(r.state.started_at).getTime()
+      : undefined;
+    return {
+      name: "vector_model",
+      status: "pass",
+      detail: `ready (${r.state.model})${took ? ` · 预热 ${Math.round(took / 1000)}s` : ""}`,
+    };
+  }
+  if (r.reason === "missing") {
+    return {
+      name: "vector_model",
+      status: "skip",
+      detail: "无 warmup 状态文件 (尚未跑过 init/warmup)",
+    };
+  }
+  if (r.reason === "downloading" && r.state) {
+    const p = r.state.progress;
+    const pct = p && p.total_bytes > 0
+      ? Math.min(100, Math.floor((p.loaded_bytes / p.total_bytes) * 100))
+      : null;
+    const detail = pct !== null
+      ? `downloading (${pct}%, ${p!.files_done}/${p!.files_total} files, pid=${r.state.pid})`
+      : `downloading (pid=${r.state.pid})`;
+    return { name: "vector_model", status: "skip", detail };
+  }
+  if (r.reason === "stale_downloading" && r.state) {
+    return {
+      name: "vector_model",
+      status: "fail",
+      detail: `stale downloading (pid=${r.state.pid} not alive); 跑 \`teamagent warmup\` 重试`,
+    };
+  }
+  if (r.reason === "failed" && r.state) {
+    return {
+      name: "vector_model",
+      status: "fail",
+      detail: `failed: ${r.state.error ?? "unknown"}`,
+    };
+  }
+  return {
+    name: "vector_model",
+    status: "fail",
+    detail: `state file malformed`,
+  };
 }
 
 function finalize(checks: DoctorCheckResult[], earlyExit: boolean): DoctorResult {

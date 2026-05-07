@@ -213,24 +213,44 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     dryRun ||
     process.env["NODE_ENV"] === "test" ||
     process.env["TEAMAGENT_SKIP_WARMUP"] === "1";
-  if (!skipWarmup) {
-    try {
-      const { runWarmup } = await import("./warmup.js");
-      const w = await runWarmup();
+  if (skipWarmup) {
+    steps.push({ step: "warmup", status: "skipped", detail: "skipWarmup / dryRun / test env" });
+  } else {
+    // Issue #91: default to detached (two-stage) warmup so init returns to
+    // the shell prompt within ~30s. The legacy foreground path is preserved
+    // behind TEAMAGENT_FOREGROUND_WARMUP=1 (escape hatch for users who want
+    // PR #113's visible-progress behavior + a synchronous "model ready"
+    // guarantee at end of init).
+    const useForegroundWarmup = process.env["TEAMAGENT_FOREGROUND_WARMUP"] === "1";
+    if (useForegroundWarmup) {
+      try {
+        const { runWarmup } = await import("./warmup.js");
+        const { defaultWarmupStatePath } = await import("../warmup-state.js");
+        const stateFile = defaultWarmupStatePath(paths.home);
+        const w = await runWarmup({ stateFilePath: stateFile });
+        steps.push({
+          step: "warmup",
+          status: w.ok ? "ok" : "failed",
+          detail: w.ok
+            ? `模型预热 ${w.durationMs}ms (foreground; TEAMAGENT_FOREGROUND_WARMUP=1)`
+            : `预热失败：${w.error ?? "unknown"}`,
+        });
+      } catch (err) {
+        steps.push({
+          step: "warmup",
+          status: "failed",
+          detail: `预热异常：${String(err).slice(0, 120)}`,
+        });
+      }
+    } else {
+      // Two-stage path: write a placeholder state, spawn detached, return.
+      const detachResult = await spawnDetachedWarmup(paths.home);
       steps.push({
         step: "warmup",
-        status: w.ok ? "ok" : "failed",
-        detail: w.ok ? `模型预热 ${w.durationMs}ms` : `预热失败：${w.error ?? "unknown"}`,
-      });
-    } catch (err) {
-      steps.push({
-        step: "warmup",
-        status: "failed",
-        detail: `预热异常：${String(err).slice(0, 120)}`,
+        status: detachResult.ok ? "ok" : "failed",
+        detail: detachResult.detail,
       });
     }
-  } else {
-    steps.push({ step: "warmup", status: "skipped", detail: "skipWarmup / dryRun / test env" });
   }
 
   // ---------- Phase C: Pack management (ADR 0002) ----------
@@ -531,6 +551,89 @@ function parseJsonlEntries(filePath: string): KnowledgeEntry[] {
     .split(/\r?\n/)
     .filter((l) => l.trim().length > 0)
     .map((l) => JSON.parse(l) as KnowledgeEntry);
+}
+
+/**
+ * Issue #91: locate the bundled `bin.js` so init.ts can spawn `teamagent
+ * warmup` as a detached child. Searches:
+ *   - `<this dir>/bin.js`              (bundled tarball install)
+ *   - `<this dir>/.../packages/teamagent/dist/bin.js`  (dev tree)
+ *   - `<this dir>/../teamagent/dist/bin.js`            (workspace lift)
+ * Returns undefined if no built bin.js exists (dev mode that has not run
+ * `pnpm build`); the caller falls back to a clear failure message.
+ */
+function resolveTeamAgentBinPath(): string | undefined {
+  const here = fileURLToPath(import.meta.url);
+  let dir = path.dirname(here);
+  for (let i = 0; i < 8; i++) {
+    const sibling = path.join(dir, "bin.js");
+    if (fs.existsSync(sibling)) return sibling;
+    const dev = path.join(dir, "packages", "teamagent", "dist", "bin.js");
+    if (fs.existsSync(dev)) return dev;
+    const nested = path.join(dir, "..", "teamagent", "dist", "bin.js");
+    if (fs.existsSync(nested)) return nested;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
+
+/**
+ * Issue #91: spawn `teamagent warmup --write-state <state>` as a detached
+ * child. Writes the initial placeholder state synchronously so any reader
+ * (PreToolUse, doctor) immediately sees `status="downloading"` rather than
+ * the absence of the file.
+ */
+async function spawnDetachedWarmup(home: string): Promise<{ ok: boolean; detail: string }> {
+  const { writeInitialPlaceholder, defaultWarmupStatePath } = await import("../warmup-state.js");
+  const stateFile = defaultWarmupStatePath(home);
+  const teamagentDir = path.dirname(stateFile);
+  fs.mkdirSync(teamagentDir, { recursive: true });
+  // 1) Placeholder ensures readers cannot observe the moment-of-no-file.
+  try {
+    writeInitialPlaceholder(stateFile, "Xenova/multilingual-e5-small");
+  } catch (err) {
+    return { ok: false, detail: `state-file write failed: ${String(err).slice(0, 80)}` };
+  }
+  // 2) Resolve bin.js.
+  const binPath = resolveTeamAgentBinPath();
+  if (!binPath) {
+    return {
+      ok: false,
+      detail: "未找到打包后的 bin.js（dev 模式未跑 pnpm build？）；" +
+        "向量模型未启动后台预热，PreToolUse 仍可走 legacy substring matcher",
+    };
+  }
+  // 3) Spawn detached. stdio → log file so the parent can return without
+  //    inheriting child fds; unref so node event loop can exit cleanly.
+  const logPath = path.join(teamagentDir, "warmup.log");
+  const { spawn } = await import("node:child_process");
+  let logFd: number;
+  try {
+    logFd = fs.openSync(logPath, "a");
+  } catch (err) {
+    return { ok: false, detail: `warmup.log open failed: ${String(err).slice(0, 80)}` };
+  }
+  try {
+    const child = spawn(
+      process.execPath,
+      [binPath, "warmup", "--write-state", stateFile],
+      {
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+      },
+    );
+    child.unref();
+    return {
+      ok: true,
+      detail: `detached pid=${child.pid ?? "?"} state=${stateFile} log=${logPath}`,
+    };
+  } catch (err) {
+    return { ok: false, detail: `spawn failed: ${String(err).slice(0, 80)}` };
+  } finally {
+    try { fs.closeSync(logFd); } catch { /* ok if child already inherited */ }
+  }
 }
 
 function doLoadSeed(

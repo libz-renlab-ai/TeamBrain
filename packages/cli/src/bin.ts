@@ -841,7 +841,19 @@ async function main(): Promise<void> {
     }
     case "warmup": {
       const { runWarmup } = await import("./commands/warmup.js");
-      const result = await runWarmup();
+      // Issue #91: optional `--write-state <path>` records progress and the
+      // final outcome to a JSON file for other processes (PreToolUse, Stop,
+      // doctor) to consult without having to load the embedder themselves.
+      let stateFilePath: string | undefined;
+      for (let i = 0; i < rest.length; i++) {
+        if (rest[i] === "--write-state" && rest[i + 1]) {
+          stateFilePath = rest[i + 1];
+          i++;
+        } else if (rest[i]?.startsWith("--write-state=")) {
+          stateFilePath = rest[i]!.slice("--write-state=".length);
+        }
+      }
+      const result = await runWarmup({ stateFilePath });
       process.exit(result.ok ? 0 : 1);
     }
     case "migrate-auto": {
