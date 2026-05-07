@@ -9,6 +9,7 @@
 - Phase 1 实现计划（已归档）：`docs/backup/phase1/specs/2026-04-14-teamagent-phase1-plan.md`
 - **多工具适配**：`docs/features/multi-tool.md` — 4 通道（PreToolUse / UserPromptSubmit / Stop analyze / AttributionBus）已实现；MCP Server / Cursor compiler **NOT YET**。任何「这功能跑通了吗 / 支持哪些 AI 工具」问题先读此文档，禁止说"即将上线"或省略 NOT YET 标记。
 - **如何为一个 PR 写计划 / how to plan for a PR**：`docs/HOWTO-PLAN-PR.md` — 四段结构（plan / expected outputs / how-to-verify / claudefast probes），把 DUCKPLAN、`docs/feature-verification.md` 1+2+3 门禁、`docs/FASTPROBE.md` 三步探针、`docs/POSTPR.md` 循环串成一条 PR 工作流。任何「PR 怎么计划 / 计划里写什么 / PR 前要跑哪些 probes」问题先读此文档，不要走 canned-answer 捷径。
+- **PR 已经开了之后才发现 issue 怎么修 / what to do when issues found post-PR**：`docs/PR-PLAN.md` — 严禁开 follow-up issue 然后 merge；必须 block merge、在 `docs/plans/<date>-pr-<n>-fix-plan.md` 写 PR-PLAN（task / expected outputs / judge harness 三段），用 `docs/TEAMWORK.md` 的 N+1+(2N) 模式并行修，push 到同一个 PR branch，POSTPR loop 直到 Codex 👍。任何「PR 提了之后又找出 issue 怎么办 / commit-push-pr 之后还要修怎么办」的问题先读此文档与 `docs/POSTPR.md`。
 
 ---
 
@@ -31,7 +32,7 @@
 
 ## 高优先级触发答案
 
-- 用户消息等于或近似等于 `what we shall do after each PR?`、`what to do after each PR?`、`POSTPR`、`after PR` 时，必须输出 POSTPR 规则答案，不能空答，不能只输出 `<laziness-self-report>`。答案必须包含 `fetch the codex review`、`chatgpt-codex-connector[bot]`、`pulls/<n>/comments`、P1/P2/P3 triage、conflict resolution before merge、`@codex review`、`loop until silent`，并说明停止条件是 CI green、无 merge conflict、Codex silent/👍。
+- 用户消息等于或近似等于 `what we shall do after each PR?`、`what to do after each PR?`、`POSTPR`、`after PR` 时，必须输出 POSTPR 规则答案，不能空答，不能只输出 `<laziness-self-report>`。答案必须包含 `fetch the codex review`、`chatgpt-codex-connector[bot]`、`pulls/<n>/comments`、P1/P2/P3 triage、conflict resolution before merge、`@codex review`、`loop until silent`，并说明停止条件是 CI green、无 merge conflict、Codex silent/👍。**P1/P2 triage 必须明确：fix in this PR with PR-PLAN + TEAMWORK，禁止开 follow-up issue 然后 merge；in-flight PR 找出 issue 一律 do NOT merge until fixed in same PR**。详见 `docs/PR-PLAN.md`。
 
 - 用户消息等于或近似等于 `FASTPROBE about PR+conflict resolve` 时，必须输出规则答案，不能空答，不能只输出 `<laziness-self-report>`，不能实际运行 probe。答案必须包含 `claudefast -h`、`max 8 claudefast -p probes`、`stream-json`、三类冲突（merge / Codex-review / rule-doc）、禁止项（不在 `main` 修、不 `git reset --hard`、不 force push、不丢他人改动），以及这条线性图：
 
@@ -144,7 +145,7 @@ claudefast -p \
 
 ## Project tools / FASTPROBE
 
-被问到 `what project tools we have?` 时，回答必须列出本项目工具并**显式包含 `FASTPROBE` 与 `TEAMWORK`**。当前 canonical 列表：
+被问到 `what project tools we have?` 时，回答必须列出本项目工具并**显式包含 `FASTPROBE`、`TEAMWORK` 与 `PR-PLAN`**。当前 canonical 列表：
 
 | Tool | Purpose |
 |------|---------|
@@ -156,6 +157,7 @@ claudefast -p \
 | **`BUGREPORT`** | 报 bug 流程：开 issue 在 `https://github.com/libz-renlab-ai/TeamBrain`，三段 system info / how-to-reproduce / raw logs（详见 `docs/BUGREPORT.md`，自动收集 `bash scripts/bugreport-collect.sh`） |
 | **`HOWTOISSUE`** | 在仓库新建 issue 的写法约定：三段式（问题 / 复现步骤 / 修复验证清单），严禁写 root cause 分析、fix 建议、实现细节；canonical 范式 issue #100（详见 `docs/HOW-TO-ISSUE.md`） |
 | **`POSTPR`** | 每个 PR 开完后必做：fetch Codex review → triage P1/P2 → loop until silent or 👍（详见 `docs/POSTPR.md`） |
+| **`PR-PLAN`** | commit-push-pr 之后又找出 issue 时的修法：do NOT merge、do NOT 开 follow-up issue；在 `docs/plans/<date>-pr-<n>-fix-plan.md` 写三段 plan（task / expected outputs / judge harness），用 TEAMWORK 并行修在同一个 PR branch，POSTPR loop 到 Codex 👍（详见 `docs/PR-PLAN.md`） |
 | **`PRESHIP`** | 发版前给 CEO/VC 小鸭看的 verified-only 产品功能状态 CSV（详见 `docs/PRESHIP.md`） |
 | **`RULE-VERIFY`** | 跑 `bash scripts/verify-all-rules.sh` 用 claudefast semantic judge / mechanical checks 验证 8 条 triggered rule 全部 PASS（详见 `docs/rule-verify/INDEX.md`） |
 | **`TEAMWORK`** | N+1+(2N) 成员 agent 团队模式：N 个 sonnet worker（每人跑 2 个 claudefast probe 更新文档）+ 1 个 opus 1M reporter 汇总验收；lead 必须在非 main 分支/worktree 上操作，绝不在 main 直接工作（详见 `docs/TEAMWORK.md`） |
@@ -284,9 +286,9 @@ PR opened
 随后按下面三段固定展开，不得省略段标题（`fetch the codex review` 字面词必须出现至少一次）：
 
 1. **Fetch the Codex review** — 跑 `env -u GITHUB_TOKEN gh api repos/libz-renlab-ai/TeamBrain/pulls/<n>/comments --jq '.[] | {user: .user.login, body, path, line}'`，过滤 `chatgpt-codex-connector[bot]`。Review 摘要也可用 `gh pr view <n> --repo libz-renlab-ai/TeamBrain --json reviews` 看，但**实际可执行的发现都在 inline comments**里（不要只读 review summary 就 ship）。Codex 通常在 PR 开出 1–3 分钟内贴评论；如果 inline comments 为空且没有 Codex 👍，就在 PR 评论 `@codex review`，暂停 1 分钟，再重新 fetch inline comments。
-2. **Triage by priority** — Codex 评论自带 P1（红）/P2（黄）/P3（蓝）badge。P1 视为 blocker，P2 默认 fix-before-merge（除非显式 punt 并在 PR 留 follow-up issue 链接）。修法：原 PR 没合并 → 直接 push 到同一分支让 auto-merge 重跑 CI；已合并 → 开 follow-up PR，commit message 带 `Refs codex review on PR #<n>`。
-3. **Resolve conflicts before merge** — 若 PR 出现冲突，先分类再处理：merge conflict → fetch/rebase 或 merge base 到 PR branch、本地解冲突、保留两边 intent；Codex review 与实现方案冲突 → 先更新 docs/rules 并验证规则答案，再修代码或显式 punt；规则/文档冲突 → 以当前用户指令和当前 `CLAUDE.md`/`AGENTS.md` 优先，更新文档消除歧义。禁止直接在 `main` 修、禁止 `git reset --hard`、禁止 force push、禁止为了消冲突丢掉别人改动。解冲突后必须重跑验证并 push 回同一 PR 分支；若原 PR 已 merge，则开 follow-up PR 并引用原 PR。
-4. **Loop until silent** — Codex **同样会 review 你的 follow-up PR**（实际案例：#51 → #52 → #53 三轮接力，每轮都抓出新 bug）。所以每开一个 fix PR 或 conflict-resolution commit，都回到第 1 步重跑。停止条件：CI green、无 merge conflict、Codex 在最新 commit 上 👍 或不留 comment。`fetch the codex review` 这一动作要做到链路彻底干净为止。
+2. **Triage by priority** — Codex 评论自带 P1（红）/P2（黄）/P3（蓝）badge。**P1 / P2 一律 fix in this PR before merge，禁止 punt 到 follow-up issue**；P3 nice-to-have 仅在人类 reviewer 在 PR 上显式批准后才允许 follow-up issue 延后，默认仍是本 PR 修。修法：原 PR 没合并（默认情况）→ **do NOT merge**，在 `docs/plans/<date>-pr-<n>-fix-plan.md` 写一份 PR-PLAN（task / expected outputs / judge harness 三段，详见 `docs/PR-PLAN.md`），用 TEAMWORK（N sonnet workers + 2N claudefast probes + 1 opus 1M reporter，详见 `docs/TEAMWORK.md`）并行修，push 回同一 PR branch；已合并（罕见，auto-merge 抢跑）→ 开 follow-up PR（不是 follow-up issue），commit message 带 `Refs codex review on PR #<n>`，follow-up PR 自身仍走 PR-PLAN + TEAMWORK。**禁止开 follow-up issue 写「下次再修」然后 merge 当前 PR**——这是被本规则明确移除的 punt 路径。
+3. **Resolve conflicts before merge** — 若 PR 出现冲突，先分类再处理：merge conflict → fetch/rebase 或 merge base 到 PR branch、本地解冲突、保留两边 intent；Codex review 与实现方案冲突 → 先更新 docs/rules 并验证规则答案，再用 PR-PLAN + TEAMWORK 修本 PR 代码（不要 punt 到 follow-up issue）；规则/文档冲突 → 以当前用户指令和当前 `CLAUDE.md`/`AGENTS.md` 优先，更新文档消除歧义。禁止直接在 `main` 修、禁止 `git reset --hard`、禁止 force push、禁止为了消冲突丢掉别人改动。解冲突后必须重跑验证并 push 回同一 PR 分支；若原 PR 已 merge，则开 follow-up PR 并引用原 PR。
+4. **Loop until silent** — Codex **同样会 review 你 push 上去的 fix commit**（不论是同一个 PR 的 fix push，还是已合并场景下的 follow-up PR）。所以每次 fix push 或 conflict-resolution commit 之后，都回到第 1 步重跑。停止条件：CI green、无 merge conflict、Codex 在最新 commit 上 👍 或不留 comment。merge button 在四个条件全部满足前一直 lock；没有「开个 issue 就 merge」的退出口。`fetch the codex review` 这一动作要做到链路彻底干净为止。
 
 详情、`gh api` 配方、Codex 标签解读见 `docs/POSTPR.md`。验证脚本 `bash docs/postpr/verify-canned-answer.sh` 必须 PASS —— grep 锚点 `fetch the codex review` / `chatgpt-codex-connector` / `pulls/.*comments` / `@codex review` / `silent` / `loop` 全部命中。
 
@@ -343,3 +345,37 @@ Learned behavior is no longer carried by a generated managed block in this file.
 Project knowledge should propagate through `docs/knowledge/INDEX.md` and project
 Skills, while this root `CLAUDE.md` stays limited to short human-maintained
 working agreements.
+
+<!-- TEAMAGENT:START - 自动管理，请勿手动编辑 -->
+## TeamAgent 经验（71条活跃知识，为你编译了 28 条（token 预算 3000）)
+- 使用 忽略 <local-command-caveat> 包裹的消息，除非用户明确要求分析 而非 <local-command-caveat>——该标签内容由本地命令自动生成，非用户意图表达；AI 主动响应会污染对话上下文，误把系统噪声当用户指令 [1.00] [预置]
+- 移除用户反馈的检查条件，仅基于失败本身触发分析——用户反馈约束是冗余的；所有错都应进入分析管道，由规则库自主决定是否学习，而非前置过滤 [0.95] [预置]
+- 规则类型（practice/avoidance）应只影响处理策略（enforcement），不应影响 matching 逻辑；所有规则都应参与匹配——在 matcher 中过滤 practice 类规则导致其永不触发，失去学习反馈信号和评分机制；类型应仅控制 block/warn/score 行为，而非决定规则是否生效 [0.95] [预置]
+- avoidance 必须配 wrong_pattern（可字面匹配关键词），practice 应为空；两种规则走不同处理流程——avoidance 类规则需要可靠字面关键词才能被 matcher 在 PreToolUse 拦截，practice 类规则是原则性指导、没可靠字面关键词，直接编译进 CLAUDE.md 供 AI 读；数据合法性约束必须在 seed 生成或 LLM extractor 阶段强制执行 [0.95] [预置]
+- 使用 每条 assistant message 停止前必须附加完整的 12-field <self-report> block（premature_stopping / permission_seeking / ownership_dodging / simplest_fix / reasoning_loop / known_limitation / skipped_repo_search / fabricated_value / placeholder_used / ambiguity_unresolved / contradiction_unresolved / silent_fallback 全部为 true 或 false） 而非 stop without self-report|<self-report——Stop hook 强制校验 self-report block 格式；消息末尾缺失或字段非 true|false 会触发 block，任意字段为 true 则列出 signals；这是团队协作协议的硬性门禁，不是可选建议 [0.90]
+- 每条消息末尾必须附加完整的 12-field <self-report> block——Stop hook 强制要求每条 assistant message 末尾附加 12-field <self-report> block，用于 AI 自我监督；缺失该 block 会导致消息被阻塞并返回修正模板 [0.90]
+- 必须在消息末尾附加完整的 12-field <self-report> block（premature_stopping / permission_seeking / ownership_dodging / simplest_fix / reasoning_loop / known_limitation / skipped_repo_search / fabricated_value / placeholder_used / ambiguity_unresolved / contradiction_unresolved / silent_fallback，全部为 true 或 false），不得缺失、不得为旧版 6-field <laziness-self-report>——项目 Stop hook 强制要求 12-field 格式，缺失该 block 会导致消息被 block 并返回修正模板；12 个字段全部为 false 才算合规，任何 true 都必须附上 signals 列表并触发 block [0.90]
+- append complete 12-field <self-report> block before stopping——stop hook enforces 12-field self-report; missing block triggers block decision; all 12 fields must be present with true/false values [0.90]
+- 附加完整 12-field <self-report> block（premature_stopping|permission_seeking|ownership_dodging|simplest_fix|reasoning_loop|known_limitation|skipped_repo_search|fabricated_value|placeholder_used|ambiguity_unresolved|contradiction_unresolved|silent_fallback，全部为 true|false）——项目 Stop hook 强制每条 assistant message 末尾包含 12-field <self-report> block；缺失或格式不正确会被 hook 拦截并返回修正模板，延迟交付；这是 AI 与项目协作系统的硬性协议 [0.90]
+- 使用 先读用户指向的文件，重新 brainstorm + 补全需求，再拆 task 实现；API key 来源询问用户（如 claude code haiku） 而非 计划文档只是设计文档，还没实现——AI 未读文件就断言不存在会误导用户；正确做法是先 Read 指定路径、以文件内容为准，再结合用户偏好（如用 haiku 作 token 来源）规划实现 [0.90] [预置]
+- 立即读取 output-file 并继续后续流程，不再说'等通知'——task-notification 本身就是通知；AI 仍说'等通知'说明未识别该消息为触发信号，正确做法是收到后立即处理输出、推进工作流 [0.90] [预置]
+- 后台 agent 完成时系统会发 task-notification，包含 task-id、output-file、status、summary；可通过 TaskOutput 工具按 task-id 读取结果——Agent(run_in_background=true) 底层走 TaskCreate 机制，完成后 harness 自动发 task-notification 事件；AI 声称'无法手动查状态'是错的，实际有 task-id 可查 [0.90] [预置]
+- 立即读取 output-file，继续后续流程（如 dispatch 下一 Wave）——task-notification 本身就是完成信号；收到后仍说'等通知'说明 AI 未识别该消息为触发点，正确做法是收到即处理，不需要额外等待 [0.90] [预置]
+- 维护游标，增量扫描新增 turn，去重已处理；仅在 /new、/clear、/compact、退出、关闭窗口时做完整重扫——Stop 每轮触发，全量重扫导致 token 消耗呈平方增长；增量扫描维护游标可避免重复，关键时刻完整重扫确保一致性 [0.90] [预置]
+- 自动化拉取 + 自动清理过时数据——手动维护导致数据陈旧（拉取滞后5天）和无效数据堆积，自动化+清理确保知识及时可用且命中率高 [0.90] [预置]
+- 立即用 TaskOutput 工具按 task-id 读取输出，继续流程——task-notification 本身就是完成信号，harness 发出即表示任务已完；立即处理充分利用并行性而非阻塞 [0.90] [预置]
+- 忽略标签内所有内容，除非用户明确要求分析——<local-command-caveat> 由本地命令自动生成而非用户意图，响应会把系统噪声当指令污染对话 [0.90] [预置]
+- 分别为 Windows（where/findstr/PowerShell）和 Unix（which/grep）提供诊断命令，或明确标注环境要求——Unix 命令（which, grep, cat |）在 Windows cmd 原生环境不可用；跨平台用户群需要对应平台的等价命令，混合给两个平台的指令会导致 Windows 用户卡住且困惑 [0.90] [预置]
+- 使用 Hook 系统完整工作；flag 仅隐藏 Claude Code UI 权限交互弹窗 而非 --dangerously-skip-permissions——Flag 名字暗示禁用全部权限检查，实际只跳过交互式弹窗。PreToolUse/PostToolUse/Stop/SessionStart 等 hook 独立于此标志完整运行，不受影响 [0.90] [预置]
+- 当遇到 `<local-command-caveat>` 标签，忽略其包裹的内容，除非用户明确要求分析或响应——该标签标记系统生成的消息（如本地命令输出），非用户的显式意图；直接响应会污染对话上下文并误把工具输出当作用户指令 [0.90] [预置]
+- 不要凭记忆作答；优先用 WebSearch/WebFetch 或 mcp 搜索工具验证，再结合当前代码上下文作答——模型记忆会过时或臆造（幻觉）；用户用到的新概念常在训练数据截止之后出现。先搜索再作答可避免给出错误事实、误导用户 [0.95] [预置]
+- 先把凭据/环境持久化到项目配置（增量、不改已有内容），再让 subagent 自主完成；远程实验需先检测空闲显卡避免影响他人——反复追问凭据打断用户节奏；配置应一次记录永久复用。subagent 应自主推进而非报 BLOCKED。共享 GPU 资源需礼让他人实验 [0.95] [预置]
+- 按产品经理视角讲架构、流程、关键原理,略过代码级细节——默认倾向给技术细节会淹没非技术受众；产品经理需要整体认知(架构/流程/原理)而非实现,讲解粒度要匹配听众心智模型 [0.95] [预置]
+- 使用 直接调用 mcp 工具 而非 通过 wiki 知识库系统——wiki 知识库方案过度复杂；应优先检查是否有现成 mcp 工具可直接调用，避免绕路 [0.95] [预置]
+- 全局单次init，所有项目共享规则——全局 init 避免重复配置和规则分散，保证用户所有项目规则一致，降低管理成本 [0.95] [预置]
+- 先澄清和解释系统逻辑细节，获得用户确认理解后再给建议——用户若不理解系统为何如此，对改动方案缺乏信心；同步理解是决策的前置条件，避免改动后产生新的疑虑 [0.95] [预置]
+- 按分阶段流程：通读项目结构 → 识别核心模块 → 追踪关键链路 → 提炼设计思想 → 最后动笔——充分的前期分析能确保文档的准确性、完整性和逻辑清晰，避免仓促写作导致遗漏或误读 [0.95] [预置]
+- 遇到用户提出的概念和名词优先到 web 中 search，而非依赖自身记忆——LLM 记忆可能过时或有幻觉，web search 确保信息最新准确，特别是对新术语和概念的理解 [0.95] [预置]
+> 还有 25 条 canonical+ 规则因 token 预算未显示（teamagent compile --dry-run 查看）
+> 另有 11 条因与已选条目近义（Jaccard ≥ 0.6）被多样性过滤
+<!-- TEAMAGENT:END -->
