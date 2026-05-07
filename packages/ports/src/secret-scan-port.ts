@@ -27,6 +27,7 @@ export interface SecretMatch {
     | "credit_card"
     | "api_token"
     | "jwt"
+    | "private_key"
     | "high_entropy";
   /** 命中片段（用于提示，可能被截短） */
   snippet: string;
