@@ -5,6 +5,38 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
+// --- duck-mode (issue #116) — inline because postinstall.mjs ships
+// standalone without bundled @teamagent/core. Synced subset of the
+// authoritative table at packages/core/src/duck-mode/translations.ts.
+const POSTINSTALL_DUCK = [
+  { term: "归因渲染", aliases: ["attribution"], duck: "鸭鸭说: 归因渲染就是把'系统帮你做了什么'拼成一段人话给你看呷~" },
+  { term: "知识种子", aliases: ["seed"], duck: "呷呷~ 知识种子是预先打包给鸭鸭的一袋通用规则，鸭鸭装完就能跑 (>ω<)" },
+  { term: "hook", aliases: ["Hook", "hooks", "Hooks", "SessionStart"], duck: "呷呷~ Hook 是 Claude 做事前/后的小钩子，鸭鸭可以悄悄在中间加一道关卡 (>ω<)" },
+  { term: "doctor", duck: "鸭鸭说: doctor 就是体检命令，跑一遍看哪里没装好呷~" },
+  { term: "knowledge.db", duck: "呷呷~ knowledge.db 是鸭鸭存所有规则的小本本（SQLite 文件）(>ω<)" },
+  { term: "verbose", duck: "鸭鸭说: verbose 模式 = 鸭鸭话比较多，会把过程说更细呷~" },
+];
+const DUCK_KEY = "TEAMAGENT_EXPLAIN_LIKE_CEO_DUCK";
+const isDuckModeOn = () => process["env"][DUCK_KEY] === "1";
+function duckify(text) {
+  if (!isDuckModeOn()) return text;
+  return text.split("\n").flatMap((line) => {
+    const lower = line.toLowerCase();
+    const seen = new Set();
+    const ducks = [];
+    for (const t of POSTINSTALL_DUCK) {
+      if (seen.has(t.term)) continue;
+      const cands = [t.term, ...(t.aliases ?? [])];
+      if (cands.some((c) => lower.includes(c.toLowerCase()))) {
+        ducks.push(`   ${t.duck}`);
+        seen.add(t.term);
+      }
+    }
+    return [line, ...ducks];
+  }).join("\n");
+}
+
+
 const pkgDir = path.dirname(fileURLToPath(import.meta.url));
 const binPath = path.join(pkgDir, "dist", "bin.js");
 const seedPath = path.join(pkgDir, "dist", "seed", "rules.jsonl");
@@ -115,7 +147,7 @@ try {
     fs.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf-8");
   }
 } catch (e) {
-  process.stderr.write(`ℹ️  update-state init 失败: ${e.message}\n`);
+  process.stderr.write(duckify(`ℹ️  update-state init 失败: ${e.message}\n`));
 }
 
 const n = seedRuleCount();
@@ -128,7 +160,7 @@ const userHookMsg =
       : "用户级 hook 未注册";
 
 process.stdout.write(
-  [
+  duckify([
     "",
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
     "✨ TeamAgent 安装成功",
@@ -145,12 +177,14 @@ process.stdout.write(
     "   📖 文档 & 反馈: https://github.com/libz-renlab-ai/TeamBrain",
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
     "",
-  ].join("\n"),
+  ].join("\n")),
 );
 
 if (doctorFailed) {
   process.stderr.write(
-    "ℹ️  TeamAgent doctor 有未通过项 (通常是 knowledge.db 未初始化，属正常)。\n" +
-      "   运行 `teamagent doctor` 查看详情\n\n",
+    duckify(
+      "ℹ️  TeamAgent doctor 有未通过项 (通常是 knowledge.db 未初始化，属正常)。\n" +
+        "   运行 `teamagent doctor` 查看详情\n\n",
+    ),
   );
 }

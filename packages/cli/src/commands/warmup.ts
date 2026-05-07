@@ -1,3 +1,5 @@
+import { duckifyText } from "@teamagent/core";
+
 export interface WarmupEmbedder {
   embed(texts: string[]): Promise<number[][]>;
 }
@@ -15,7 +17,7 @@ export interface WarmupResult {
 }
 
 export async function runWarmup(opts: WarmupOptions = {}): Promise<WarmupResult> {
-  const stderr = opts.stderr ?? ((m) => process.stderr.write(m));
+  const stderr = opts.stderr ?? ((m) => process.stderr.write(duckifyText(m)));
   let embedder = opts.embedder;
   if (!embedder) {
     const { XenovaRuleEmbedder } = await import("@teamagent/adapters");
