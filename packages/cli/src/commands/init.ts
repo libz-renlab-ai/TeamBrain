@@ -378,6 +378,14 @@ function resolveSeedPath(): string | undefined {
   return undefined;
 }
 
+function parseJsonlEntries(filePath: string): KnowledgeEntry[] {
+  const text = fs.readFileSync(filePath, "utf-8");
+  return text
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0)
+    .map((l) => JSON.parse(l) as KnowledgeEntry);
+}
+
 function doLoadSeed(
   userGlobalDbPath: string,
   dryRun: boolean,
@@ -393,17 +401,38 @@ function doLoadSeed(
   }
   let entries: KnowledgeEntry[];
   try {
-    const text = fs.readFileSync(seedPath, "utf-8");
-    entries = text
-      .split(/\r?\n/)
-      .filter((l) => l.trim().length > 0)
-      .map((l) => JSON.parse(l) as KnowledgeEntry);
+    entries = parseJsonlEntries(seedPath);
   } catch (err) {
     return {
       step: failStep("load-seed", `读取 seed 失败: ${String(err).slice(0, 150)}`),
       addedCount: 0,
       wouldAddCount: 0,
     };
+  }
+
+  // Issue #88: also load every `packs/*.jsonl` sibling next to the main
+  // seed file. Packs ship rules with substring-friendly `wrong_pattern`s
+  // so the legacy keyword matcher can hit within the 30s window before the
+  // vector model has been downloaded (ADR 0001 two-stage install).
+  // A malformed pack file is logged and skipped — it must not block init.
+  const packsDir = path.join(path.dirname(seedPath), "packs");
+  if (fs.existsSync(packsDir)) {
+    let packFiles: string[];
+    try {
+      packFiles = fs
+        .readdirSync(packsDir)
+        .filter((f) => f.endsWith(".jsonl"))
+        .sort();
+    } catch {
+      packFiles = [];
+    }
+    for (const file of packFiles) {
+      try {
+        entries.push(...parseJsonlEntries(path.join(packsDir, file)));
+      } catch {
+        // Skip malformed pack file; continue with remaining packs.
+      }
+    }
   }
 
   if (dryRun) {
