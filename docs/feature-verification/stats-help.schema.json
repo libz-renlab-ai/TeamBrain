@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "docs/feature-verification/stats-help.schema.json",
+  "title": "teamagent stats --help canonical envelope",
+  "description": "JSON Schema for the canonical envelope emitted by `pnpm teamagent stats --help`, used by the 1+2+3 hard-match feature-verification gate.",
+  "type": "object",
+  "required": ["command", "summary", "flags", "exit_codes"],
+  "additionalProperties": false,
+  "x-sort-key": "flags[].name asc",
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "stats"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "flags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^--[a-z][a-z0-9-]*$"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["boolean", "string", "number"]
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "exit_codes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "examples": [
+    {
+      "command": "stats",
+      "summary": "Show TeamAgent knowledge statistics: rule counts, layer distribution, and recent additions.",
+      "flags": [
+        {
+          "name": "--explain",
+          "type": "string",
+          "description": "Provide a natural-language explanation of the stats output using the given context string."
+        },
+        {
+          "name": "--explain-like-ceo-duck",
+          "type": "boolean",
+          "description": "Re-render the stats output in duck-friendly CEO language (呷呷~ mode)."
+        },
+        {
+          "name": "--override-signals",
+          "type": "boolean",
+          "description": "Ignore signal filters and show all rules regardless of active signal state."
+        },
+        {
+          "name": "--stuck-in-promotion",
+          "type": "boolean",
+          "description": "Include rules that are stuck in promotion and have not advanced to a higher tier."
+        }
+      ],
+      "exit_codes": [0, 1, 2]
+    }
+  ]
+}
