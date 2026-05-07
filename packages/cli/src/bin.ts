@@ -678,7 +678,17 @@ async function main(): Promise<void> {
       return;
     }
     case "compile": {
-      const opts = parseCompileArgs(rest);
+      let opts;
+      try {
+        opts = parseCompileArgs(rest);
+      } catch (err) {
+        const { CompileArgError } = await import("./commands/compile.js");
+        if (err instanceof CompileArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
       const result = await executeCompile(opts);
       process.stdout.write(renderCompileResult(result, opts.dryRun));
       return;
@@ -714,6 +724,15 @@ async function main(): Promise<void> {
       break;
     }
     case "migrate-v6": {
+      const { assertNoUnknownFlags, UnknownFlagError } = await import("./commands/arg-utils.js");
+      try {
+        assertNoUnknownFlags("migrate-v6", rest, new Set([
+          "--dry-run", "--fast", "--repair-all", "--limit", "--db",
+        ]));
+      } catch (err) {
+        if (err instanceof UnknownFlagError) { process.stderr.write(err.message + "\n"); process.exit(2); }
+        throw err;
+      }
       const dryRun = rest.includes("--dry-run");
       const fast = rest.includes("--fast");
       const repairAll = rest.includes("--repair-all");
@@ -727,6 +746,15 @@ async function main(): Promise<void> {
       return;
     }
     case "migrate-v7": {
+      const { assertNoUnknownFlags, UnknownFlagError } = await import("./commands/arg-utils.js");
+      try {
+        assertNoUnknownFlags("migrate-v7", rest, new Set([
+          "--dry-run", "--limit", "--db",
+        ]));
+      } catch (err) {
+        if (err instanceof UnknownFlagError) { process.stderr.write(err.message + "\n"); process.exit(2); }
+        throw err;
+      }
       const dryRun = rest.includes("--dry-run");
       const limitArg = rest.find((a) => a.startsWith("--limit="));
       const limit = limitArg ? parseInt(limitArg.split("=")[1]!, 10) : undefined;
@@ -737,6 +765,13 @@ async function main(): Promise<void> {
       return;
     }
     case "migrate": {
+      const { assertNoUnknownFlags, UnknownFlagError } = await import("./commands/arg-utils.js");
+      try {
+        assertNoUnknownFlags("migrate", rest, new Set(["--dry-run"]));
+      } catch (err) {
+        if (err instanceof UnknownFlagError) { process.stderr.write(err.message + "\n"); process.exit(2); }
+        throw err;
+      }
       const dryRun = rest.includes("--dry-run");
       const { executeMigrate } = await import("./commands/migrate-v1-to-v2.js");
       const r = await executeMigrate({ dryRun });
@@ -871,6 +906,14 @@ async function main(): Promise<void> {
       process.exit(result.ok ? 0 : 1);
     }
     case "migrate-auto": {
+      const { assertNoUnknownFlags, UnknownFlagError } = await import("./commands/arg-utils.js");
+      try {
+        // migrate-auto currently takes no flags; reject anything unknown.
+        assertNoUnknownFlags("migrate-auto", rest, new Set([]));
+      } catch (err) {
+        if (err instanceof UnknownFlagError) { process.stderr.write(err.message + "\n"); process.exit(2); }
+        throw err;
+      }
       const { runMigrateAuto } = await import("./commands/migrate-auto.js");
       const r = await runMigrateAuto();
       process.stderr.write(JSON.stringify(r, null, 2) + "\n");
