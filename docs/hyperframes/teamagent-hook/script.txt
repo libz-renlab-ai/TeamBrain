@@ -1,0 +1,9 @@
+Your AI keeps repeating the same mistake.
+TeamAgent stops the loop.
+Capture the fail.
+Compile the rule.
+Warn before the damage lands.
+Correct it once, and every future agent remembers.
+Claude Code, Codex, one team memory.
+Teach it once.
+Stop paying twice.

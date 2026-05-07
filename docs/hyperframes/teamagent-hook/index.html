@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="15.79" data-width="1080" data-height="1920">
+      <video id="bg-1" class="clip bg-video" data-start="0" data-duration="5.758" data-track-index="0" src="assets/background.mp4" muted playsinline></video>
+      <video id="bg-2" class="clip bg-video" data-start="5.758" data-duration="5.758" data-track-index="0" src="assets/background.mp4" muted playsinline></video>
+      <video id="bg-3" class="clip bg-video" data-start="11.516" data-duration="4.274" data-track-index="0" src="assets/background.mp4" muted playsinline></video>
+      <audio id="bgm" data-start="0" data-duration="15.79" data-track-index="1" data-volume="0.14" src="assets/music.mp3"></audio>
+      <audio id="narration" data-start="0" data-duration="15.79" data-track-index="2" data-volume="1" src="assets/narration.wav"></audio>
+
+      <div class="global-grid"></div>
+      <div class="global-noise"></div>
+      <div class="global-frame"></div>
+      <div class="global-vignette"></div>
+
+      <section id="scene-1" class="clip scene" data-start="0" data-duration="3.25" data-track-index="10">
+        <div class="scene-shell">
+        <div class="scene-glow" style="top: 120px; right: -80px;"></div>
+        <div class="scene-ghost" style="left: 62px; top: 850px;"></div>
+        <div class="scene-rail"></div>
+        <div class="scene-scan"></div>
+        <div class="product-shot mobile">
+          <img src="assets/mobile-preview.png" alt="TeamAgent mobile preview" />
+        </div>
+        <div class="scene-content">
+          <div class="top-bar">
+            <div class="eyebrow">TeamAgent / Runtime Memory</div>
+            <div class="status-chip">Live Hook</div>
+          </div>
+          <div class="micro-chip">ERROR PATTERN DETECTED</div>
+          <div class="hero-kicker mono">same bug. new day.</div>
+          <h1 class="hero-title">YOUR AI KEEPS REPEATING THE SAME MISTAKE</h1>
+          <p class="hero-sub">Stop the loop before it lands in prod.</p>
+          <div class="rail-tags">
+            <div class="chip">capture</div>
+            <div class="chip">compile</div>
+            <div class="chip hot">enforce</div>
+            <div class="chip">verify</div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section id="scene-2" class="clip scene" data-start="2.95" data-duration="2.5" data-track-index="11">
+        <div class="scene-shell">
+        <div class="scene-glow" style="top: 220px; left: -120px;"></div>
+        <div class="scene-ghost" style="right: 50px; top: 1060px;"></div>
+        <div class="scene-rail"></div>
+        <div class="scene-content">
+          <div class="top-bar">
+            <div class="eyebrow">hook replay / before damage</div>
+            <div class="status-chip">intercept</div>
+          </div>
+          <h2 class="block-title">TEAMAGENT STOPS THE LOOP</h2>
+          <div class="card-row">
+            <div class="evidence-card">
+              <div class="card-title mono">Trigger</div>
+              <div class="card-value accent-danger">bug repeated</div>
+              <div class="card-copy">The same failure pattern surfaces before the tool call lands.</div>
+            </div>
+            <div class="evidence-card">
+              <div class="card-title mono">Response</div>
+              <div class="card-value accent-primary">rule matched</div>
+              <div class="card-copy">A learned guardrail lights up and forces a safer path.</div>
+            </div>
+          </div>
+          <div class="data-row">
+            <div class="metric"><strong>P1</strong> repeated mistake</div>
+            <div class="metric"><strong>0s</strong> extra thinking time</div>
+            <div class="metric"><strong>1</strong> shared team memory</div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section id="scene-3" class="clip scene" data-start="5.15" data-duration="2.4" data-track-index="12">
+        <div class="scene-shell">
+        <div class="scene-glow" style="top: 1020px; right: -70px;"></div>
+        <div class="scene-ghost" style="left: 52px; top: 120px;"></div>
+        <div class="scene-rail"></div>
+        <div class="scene-content">
+          <div class="top-bar">
+            <div class="eyebrow eyebrow-plate">mistake to memory</div>
+            <div class="status-chip">capture / compile</div>
+          </div>
+          <div class="card-row">
+            <div class="terminal-card">
+              <div class="card-title">Capture the fail</div>
+              <div class="terminal-line">$ judge.json saved</div>
+              <div class="terminal-line">hook: <strong>pre-tool-use</strong></div>
+              <div class="terminal-line">signal: <strong>repeated error</strong></div>
+            </div>
+            <div class="terminal-card">
+              <div class="card-title">Compile the rule</div>
+              <div class="terminal-line">target: <strong>AGENTS.md</strong></div>
+              <div class="terminal-line">action: <strong>safer workflow</strong></div>
+              <div class="terminal-line">scope: <strong>whole team</strong></div>
+            </div>
+          </div>
+          <h2 class="block-title">CAPTURE THE FAIL. COMPILE THE RULE.</h2>
+        </div>
+        </div>
+      </section>
+
+      <section id="scene-4" class="clip scene" data-start="7.25" data-duration="2.7" data-track-index="13">
+        <div class="scene-shell">
+        <div class="scene-glow" style="top: 160px; right: 140px;"></div>
+        <div class="scene-ghost" style="right: 46px; top: 132px;"></div>
+        <div class="scene-rail"></div>
+        <div class="scene-content">
+          <div class="top-bar">
+            <div class="eyebrow">runtime intervention</div>
+            <div class="status-chip">prevent</div>
+          </div>
+          <div class="danger-banner">
+            <strong>WARN BEFORE THE DAMAGE LANDS</strong>
+            <span>Safer path suggested before the tool call executes.</span>
+          </div>
+          <div class="chip-row">
+            <div class="chip warn">danger / repeated path</div>
+            <div class="chip hot">rule / alternate fix</div>
+            <div class="chip">judge / evidence preserved</div>
+          </div>
+          <div class="terminal-card">
+            <div class="terminal-line">tool call blocked until review</div>
+            <div class="terminal-line">evidence dir: <strong>.judge/run-042/</strong></div>
+            <div class="terminal-line">next action: <strong>use the learned fix</strong></div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section id="scene-5" class="clip scene" data-start="9.65" data-duration="2.7" data-track-index="14">
+        <div class="scene-shell">
+        <div class="scene-glow" style="bottom: 180px; left: 40px;"></div>
+        <div class="scene-ghost" style="left: 60px; top: 188px;"></div>
+        <div class="scene-rail"></div>
+        <div class="scene-content">
+          <div class="top-bar">
+            <div class="eyebrow">one correction / future-proofed</div>
+            <div class="status-chip">memory upgrade</div>
+          </div>
+          <h2 class="block-title">CORRECT IT ONCE. EVERY FUTURE AGENT REMEMBERS.</h2>
+          <div class="timeline-card">
+            <div class="timeline-row">
+              <div class="timeline-node"><span>mistake</span><i><b></b></i></div>
+              <div class="timeline-node"><span>capture</span><i><b></b></i></div>
+              <div class="timeline-node"><span>rule</span><i><b></b></i></div>
+              <div class="timeline-node"><span>runtime</span><i><b></b></i></div>
+              <div class="timeline-node"><span>verified</span><i><b></b></i></div>
+            </div>
+            <div class="card-copy">The fix becomes reusable team memory instead of another private note in one engineer's head.</div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section id="scene-6" class="clip scene" data-start="12.05" data-duration="3" data-track-index="15">
+        <div class="scene-shell">
+        <div class="scene-glow" style="top: 980px; right: 40px;"></div>
+        <div class="scene-ghost" style="left: 52px; top: 1050px;"></div>
+        <div class="scene-rail"></div>
+        <div class="product-shot console">
+          <img src="assets/evidence-console.png" alt="TeamAgent evidence console" />
+        </div>
+        <div class="scene-content">
+          <div class="top-bar">
+            <div class="eyebrow">same memory / multiple agents</div>
+            <div class="status-chip">cross-tool</div>
+          </div>
+          <h2 class="block-title">CLAUDE CODE. CODEX. ONE TEAM MEMORY.</h2>
+          <div class="platform-row">
+            <div class="platform-card">
+              <div class="platform-tag">adapter</div>
+              <div class="platform-headline accent-primary">Claude</div>
+              <div class="platform-copy">Inherited rules show up where the mistake would have repeated.</div>
+            </div>
+            <div class="platform-card">
+              <div class="platform-tag">adapter</div>
+              <div class="platform-headline accent-info">Codex</div>
+              <div class="platform-copy">The same evidence-backed memory follows the next agent too.</div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <section id="scene-7" class="clip scene" data-start="14.75" data-duration="1.04" data-track-index="16">
+        <div class="scene-shell">
+        <div class="scene-glow" style="top: 130px; left: 20px;"></div>
+        <div class="scene-ghost" style="right: 62px; top: 860px;"></div>
+        <div class="scene-rail"></div>
+        <div class="scene-content">
+          <div class="top-bar">
+            <div class="eyebrow">teamagent / close</div>
+            <div class="status-chip">cta</div>
+          </div>
+          <h2 class="cta-title">TEACH IT ONCE. STOP PAYING TWICE.</h2>
+          <p class="cta-sub">A runtime team-experience layer that turns one correction into durable memory for every future agent.</p>
+          <div class="footer-lockup">
+            <div class="brand-lockup">
+              <div class="brand-mark">TEAMAGENT</div>
+              <div class="brand-copy mono">capture -> compile -> enforce -> verify</div>
+            </div>
+            <div class="micro-chip">viral hook / product intro</div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <div id="caption-layer" class="clip caption-layer" data-start="0" data-duration="15.79" data-track-index="30"></div>
+      <div class="global-fade"></div>
+    </div>
+
+    <script>window.__timelines = window.__timelines || {};</script>
+    <script src="main.js"></script>
+  </body>
+</html>
