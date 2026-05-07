@@ -57,6 +57,20 @@ describe("XenovaRuleEmbedder", () => {
     expect(pipeline).toHaveBeenCalledWith(
       "feature-extraction",
       "Xenova/multilingual-e5-small",
+      // pipelineOpts: empty object when no progressCallback
+      {},
+    );
+  });
+
+  it("forwards progressCallback to pipeline as progress_callback", async () => {
+    const { pipeline } = await import("@xenova/transformers");
+    const cb = vi.fn();
+    const e = new XenovaRuleEmbedder({ progressCallback: cb });
+    await e.embed(["hello"]);
+    expect(pipeline).toHaveBeenCalledWith(
+      "feature-extraction",
+      "Xenova/multilingual-e5-small",
+      { progress_callback: cb },
     );
   });
 

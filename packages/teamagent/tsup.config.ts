@@ -58,6 +58,20 @@ export default defineConfig([
         fs.mkdirSync(dstSeedDir, { recursive: true });
         fs.copyFileSync(srcSeed, path.join(dstSeedDir, "rules.jsonl"));
       }
+      // Issue #88: also ship every seed/packs/*.jsonl. doLoadSeed() picks them
+      // up by scanning the `packs/` directory next to the resolved seed path.
+      const srcPacksDir = path.resolve(__dirname, "seed", "packs");
+      if (fs.existsSync(srcPacksDir)) {
+        const dstPacksDir = path.resolve(__dirname, "dist", "seed", "packs");
+        fs.mkdirSync(dstPacksDir, { recursive: true });
+        for (const file of fs.readdirSync(srcPacksDir)) {
+          if (!file.endsWith(".jsonl")) continue;
+          fs.copyFileSync(
+            path.join(srcPacksDir, file),
+            path.join(dstPacksDir, file),
+          );
+        }
+      }
     },
   },
   {

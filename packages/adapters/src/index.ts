@@ -61,5 +61,6 @@ export type { SkillCompilerOptions } from "./compiler/skill-compiler.js";
 export { SqliteCandidateQueue } from "./storage/sqlite/sqlite-candidate-queue.js";
 export { CompositeErrorSignalCollector } from "./error-collector/composite-error-signal-collector.js";
 export { XenovaRuleEmbedder } from "./embedding/xenova-rule-embedder.js";
+export type { XenovaProgressEvent } from "./embedding/xenova-rule-embedder.js";
 export { SqliteSemanticRetriever } from "./retriever/sqlite-semantic-retriever.js";
 export { SqliteToolRetriever } from "./retriever/sqlite-tool-retriever.js";

@@ -4,13 +4,13 @@
  ) __/ )   /( (_) )) __/) \/ (( (__  )(    ) _)  ) _)  )(   ) _) ) \/ ( )   / ) _) \___ \
 (__)  (__\_) \___/(__)  \____/ \___)  (__)  (__)  (____)(__) (____)\____/(__\_)(____)(____/
 
-VERIFIED ──► 59
+VERIFIED ──► 64
 ```
 
 # TeamBrain Product Feature Inventory
 
-Complete feature list. All 59 features now carry a verify script following Wave 6 A1–A9.
-Counts: VERIFIED=59, WIP/PARTIAL=0, PLANNED=0, MISSING=0, Total=59.
+Complete feature list. All 64 features now carry a verify script following Wave 6 A1–A9.
+Counts: VERIFIED=64, WIP/PARTIAL=0, PLANNED=0, MISSING=0, Total=64.
 
 When asked "list all product features including not verified and not implemented", use
 this document. The `product-features` canned-answer (CEO/VC deck) covers the 8
@@ -18,12 +18,12 @@ user-visible VERIFIED rows; this doc covers everything.
 
 ---
 
-## VERIFIED (59) — all carry a judge harness or verify script
+## VERIFIED (64) — all carry a judge harness or verify script
 
-> All 59 features are VERIFIED. There are zero WIP, PLANNED, or MISSING items.
-> Numbered list below enables any model to count exactly 59.
+> All 64 features are VERIFIED. There are zero WIP, PLANNED, or MISSING items.
+> Numbered list below enables any model to count exactly 64.
 
-### Numbered index (1–59)
+### Numbered index (1–64)
 
 1. Product menu opens; system is not an empty shell
 2. Minimum learning loop: record → compile → attribute, demoable end-to-end
@@ -84,6 +84,11 @@ user-visible VERIFIED rows; this doc covers everything.
 57. M5 `m5-publish` auto-commits team-rule changes with `[teamagent-sync]` prefix
 58. M5 post-merge hook auto-pulls team rules into local KB after every `git pull`
 59. 首次运行向导：装完立刻提示 3 件可以做的事 + 记住进度
+60. One-line `curl|sh` installer at `release/install.sh`: gates `node ≥ 22`, picks `npm`/`pnpm`, runs release-tarball install with deterministic exit codes (#92)
+61. Universal seed pack: 12 substring-friendly cross-language avoidance rules ship out-of-box, hit legacy keyword matcher within 30s of `teamagent init` (#88)
+62. `teamagent pack list/add/remove` + `init` agent-driven markdown prompt (v1 contract per ADR 0002) (#90)
+63. `teamagent demo` 三模式（default poll events.db / `--inline` spawn hook bin / `--record` 生成 vhs tape），landing GIF 录制源 + 首次体验官方舞台 (#93)
+64. Two-stage `teamagent init`: detached background warmup + `~/.teamagent/.warmup-state.json` driving auto-fallback to legacy substring matcher (PreToolUse / Stop) until vector model is `ready`; `teamagent doctor` reports the live state; `TEAMAGENT_FOREGROUND_WARMUP=1` env preserves PR #113 foreground behavior (#91)
 
 ---
 
@@ -210,6 +215,63 @@ user-visible VERIFIED rows; this doc covers everything.
 | # | Feature | Evidence |
 |---|---------|----------|
 | 59 | 首次运行向导：装完立刻提示 3 件可以做的事 + 记住进度 | `scripts/judge-first-run.sh` (J1–J6) |
+
+### Landing CTA installer (#92)
+
+| # | Feature | Evidence |
+|---|---------|----------|
+| 60 | One-line `curl\|sh` installer at `release/install.sh` (POSIX sh): gates `node ≥ 22`, picks `npm`/`pnpm`, runs release-tarball install with deterministic exit codes (10/11/20/30) and idempotent re-run | `bash docs/features/install-sh/run-judge.sh` (6 scenarios: syntax / node-missing / node-old / node-ok-install with captured argv / idempotent-rerun / dash-portability) |
+
+### Seed packs / first-run interception (issue #88)
+
+> Decision 2 of `docs/specs/2026-05-07-landing-copy-actually-needed.md`:
+> "30 秒内首次拦截". Substring-friendly seed pack lets the legacy keyword
+> matcher fire within the 30-second window before the vector model has been
+> downloaded (ADR 0001 two-stage install).
+
+| # | Feature | Evidence |
+|---|---------|----------|
+| 61 | Universal seed pack: 12 cross-language substring rules ship out-of-box (moment, /Users/, /home/, rm -rf /, chmod 777, eval(, git push --force, git reset --hard, --no-verify, dangerouslySetInnerHTML, pickle.loads, .env) | `docs/features/universal-pack/run-judge.sh`; `packages/cli/src/__tests__/seed-pack-universal.test.ts` (27 tests); `packages/teamagent/seed/packs/universal.jsonl` |
+
+### Pack management (#90)
+
+> Implements ADR 0002 (`docs/adr/0002-stack-detection-via-coding-agent.md`):
+> TeamAgent does not auto-detect stacks; `teamagent init` emits a versioned
+> markdown prompt and the user's coding agent picks the right packs. Pack rule
+> content lands separately — universal pack via #88 (already #61 above),
+> per-stack packs via #89.
+
+| # | Feature | Evidence |
+|---|---------|----------|
+| 62 | `teamagent pack list/add/remove` + `init` agent-driven prompt (v1 contract) | `bash docs/features/pack-cli/run-judge.sh` (10/10 checks PASS) |
+
+### Demo command (issue #93)
+
+> Decision 2 of `docs/specs/2026-05-07-landing-copy-actually-needed.md`
+> requires a deterministic stage to record the landing GIF and to give a
+> new user a controlled first-interception experience without relying on
+> their actual project state. `teamagent demo` provides three modes that
+> share a single canonical fixture (`npm install moment` → matched by
+> `seed-pack-universal-moment` from #88).
+
+| # | Feature | Evidence |
+|---|---------|----------|
+| 63 | `teamagent demo` three modes: default (poll `events.db` 60s for moment hit) / `--inline` (spawn real `bin-pre-tool-use.cjs` with mock stdin, render ANSI deny box; CI-safe) / `--record [path]` (emit `demo.tape`; spawn vhs if on PATH, else print install hint); legacy `teamagent demo hook` subcommand preserved | `docs/features/demo/run-judge.sh`; `packages/cli/src/__tests__/demo.test.ts` (14 tests covering argv parsing, ANSI render, inline spawn contract, vhs tape generation, and events.db poll match+timeout); `packages/cli/src/commands/demo.ts` |
+
+### Two-stage init (issue #91)
+
+> Decision 2 + ADR 0001 of `docs/specs/2026-05-07-landing-copy-actually-needed.md`
+> require `teamagent init` to return to the shell prompt within ~30s — the
+> ~120MB Xenova vector model is too slow to download in the foreground. The
+> implementation spawns warmup as a detached child process, writes a state
+> file, and has every consumer (PreToolUse, Stop, doctor) consult the state
+> file to decide whether to use the semantic matcher or fall back to the
+> legacy keyword matcher. PR #113's foreground/visible-progress behavior
+> stays one env var away: `TEAMAGENT_FOREGROUND_WARMUP=1`.
+
+| # | Feature | Evidence |
+|---|---------|----------|
+| 64 | Two-stage init: detached warmup + `~/.teamagent/.warmup-state.json` + auto-fallback to legacy substring matcher in PreToolUse/Stop until `vector_model` is `ready`; `teamagent doctor` reports `vector_model: ready / downloading (X%) / failed / stale_downloading / missing` | `docs/features/two-stage-install/run-judge.sh`; `packages/cli/src/__tests__/warmup-state.test.ts` (18 unit) + `warmup-state-integration.test.ts` (4 integration); `packages/cli/src/warmup-state.ts` |
 
 ---
 

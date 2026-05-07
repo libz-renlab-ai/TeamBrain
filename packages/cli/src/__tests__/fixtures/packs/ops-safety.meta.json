@@ -1,0 +1,7 @@
+{
+  "name": "ops-safety",
+  "description": "Production / deploy safety rules",
+  "tags": ["ops", "deploy", "secrets"],
+  "file_hints": ["Dockerfile", ".env"],
+  "prompt_version": 1
+}

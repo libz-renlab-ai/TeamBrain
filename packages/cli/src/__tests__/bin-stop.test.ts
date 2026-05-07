@@ -94,6 +94,27 @@ describe("runStopPipeline", () => {
     expect(executeCompile).toHaveBeenCalled();
   });
 
+  // issue #100: Stop hook must never write CLAUDE.md, even if env says legacy=1
+  it("issue #100: passes legacyClaudeMd:false to executeCompile even when TEAMAGENT_LEGACY_CLAUDE_MD=1", async () => {
+    const originalLegacyEnv = process.env.TEAMAGENT_LEGACY_CLAUDE_MD;
+    process.env.TEAMAGENT_LEGACY_CLAUDE_MD = "1";
+    try {
+      const input: StopHookInput = {
+        session_id: "issue100-regression",
+        transcript_path: transcriptPath,
+        cwd: process.cwd(),
+        hook_event_name: "Stop",
+      };
+      await runStopPipeline(input);
+      expect(executeCompile).toHaveBeenCalledWith(
+        expect.objectContaining({ legacyClaudeMd: false }),
+      );
+    } finally {
+      if (originalLegacyEnv === undefined) delete process.env.TEAMAGENT_LEGACY_CLAUDE_MD;
+      else process.env.TEAMAGENT_LEGACY_CLAUDE_MD = originalLegacyEnv;
+    }
+  });
+
   it("continues pipeline even if analyze throws", async () => {
     vi.mocked(executeAnalyze).mockRejectedValueOnce(new Error("analyze failed"));
     const input: StopHookInput = {

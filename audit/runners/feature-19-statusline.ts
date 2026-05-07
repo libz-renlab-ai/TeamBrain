@@ -144,9 +144,22 @@ if (mode === "fresh") {
 }
 
 if (mode === "user-statusline") {
-  assert.equal(got.result.statusLineSkipped, true, "statusLineSkipped should be true");
-  assert.equal(statusLine?.command, "node /custom/user/statusline.js", "user command overwritten");
-  assert.equal(statusLine?._teamagentTag, undefined, "user statusLine should not gain TeamAgent tag");
+  // issue #104: 用户已有 statusLine 不再 skip，而是 chain wrap
+  assert.equal(got.result.statusLineSkipped, false, "statusLineSkipped should be false (issue #104)");
+  assert.equal(got.result.statusLineMergedScope, "project", "merged scope should be project");
+  assert.equal(statusLine?._teamagentTag, "teamagent-statusline", "TeamAgent tag should be set");
+  assert.equal(
+    statusLine?._teamagentOriginalCommand,
+    "node /custom/user/statusline.js",
+    "user command literal must be preserved in backup field",
+  );
+  assert.equal(statusLine?._teamagentOriginalScope, "project", "scope mismatch");
+  assert.match(String(statusLine?.command ?? ""), /^bash -c '/, "command should be bash -c chain");
+  assert.equal(
+    String(statusLine?.command ?? "").includes("node /custom/user/statusline.js"),
+    true,
+    "chain command should still contain user cmd literal",
+  );
 }
 
 if (mode === "tagged-statusline") {

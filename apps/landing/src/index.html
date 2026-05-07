@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TeamAgent — Evolving Rules for Claude Code</title>
+  <meta name="description" content="TeamAgent gives Claude Code cross-session memory, PreToolUse interception, and team-wide sync. Not just CLAUDE.md — a living rules engine.">
+  <link rel="canonical" href="https://github.com/libz-renlab-ai/TeamBrain">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #ffffff; color: #1a1a1a; line-height: 1.6; }
+    a { color: #e85c0d; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+    header { padding: 80px 0 60px; text-align: center; }
+    h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); font-weight: 700; margin-bottom: 20px; line-height: 1.25; }
+    .sub { font-size: 1.125rem; color: #555; max-width: 540px; margin: 0 auto; }
+    .gif-placeholder { aspect-ratio: 16/9; background: #f0f0f0; display: flex; align-items: center; justify-content: center; border-radius: 8px; margin: 40px 0; font-size: 0.9rem; color: #888; border: 1px solid #e0e0e0; }
+    .install-box { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 20px 24px; margin: 32px 0; }
+    .install-box pre { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.875rem; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px 16px; overflow-x: auto; margin-bottom: 8px; }
+    .install-box pre:last-child { margin-bottom: 0; }
+    .section { padding: 60px 0; border-top: 1px solid #e0e0e0; }
+    .section-title { font-size: 1.5rem; font-weight: 600; margin-bottom: 32px; }
+    .comparison-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-bottom: 40px; }
+    .comparison-table th { background: #1a1a1a; color: #ffffff; padding: 12px 16px; text-align: left; font-weight: 600; }
+    .comparison-table th:last-child { background: #e85c0d; }
+    .comparison-table td { padding: 12px 16px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+    .comparison-table tr:last-child td { border-bottom: none; }
+    .comparison-table td:not(:first-child) { text-align: center; }
+    .check { color: #e85c0d; font-weight: 700; }
+    .cross { color: #999; }
+    .bullets { list-style: none; margin-bottom: 32px; }
+    .bullets li { padding: 12px 0; padding-left: 28px; position: relative; border-bottom: 1px solid #f0f0f0; }
+    .bullets li::before { content: '—'; position: absolute; left: 0; color: #e85c0d; font-weight: 700; }
+    .details-section { border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
+    .details-section summary { padding: 14px 18px; background: #f5f5f5; cursor: pointer; font-weight: 600; user-select: none; list-style: none; }
+    .details-section summary::-webkit-details-marker { display: none; }
+    .details-section summary::after { content: '+'; float: right; font-weight: 700; color: #e85c0d; }
+    .details-section[open] summary::after { content: '−'; }
+    .details-section .detail-body { padding: 16px 18px; border-top: 1px solid #e0e0e0; font-size: 0.9rem; color: #444; }
+    footer { padding: 40px 0; border-top: 1px solid #e0e0e0; text-align: center; font-size: 0.8rem; color: #888; }
+    .trust-anchors { display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; margin-bottom: 16px; }
+    .trust-anchors span { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Claude Code 没有记忆。你纠正它的每一句话，下次都白说。</h1>
+      <p class="sub">不是 CLAUDE.md。是会自己进化的活规则库。</p>
+    </header>
+
+    <div class="gif-placeholder">demo GIF placeholder</div>
+
+    <div class="install-box">
+      <pre>curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh</pre>
+      <pre>teamagent init</pre>
+    </div>
+
+    <section class="section">
+      <h2 class="section-title">第一屏对比表</h2>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>特性</th>
+            <th>CLAUDE.md</th>
+            <th>.cursorrules</th>
+            <th>Claude memory</th>
+            <th>TeamAgent</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>跨会话记忆</td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="check">✓</span></td>
+          </tr>
+          <tr>
+            <td>工具调用前拦截 PreToolUse</td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="check">✓</span></td>
+          </tr>
+          <tr>
+            <td>团队共享 xsync</td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="cross">✗</span></td>
+            <td><span class="check">✓</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">你还在为这些头疼吗？</h2>
+      <ul class="bullets">
+        <li>每次开新会话，AI 就像失忆了一样，同一个错误犯两遍</li>
+        <li>团队里每个人调教 AI 的经验无法共享，各自为战</li>
+        <li>想让 AI 在执行危险操作前停下来，但没有拦截机制</li>
+        <li>CLAUDE.md 越写越长，AI 却不按规则来</li>
+      </ul>
+
+      <details class="details-section">
+        <summary>team-layer 团队规则层</summary>
+        <div class="detail-body">团队成员共享同一套规则库，新人加入即继承团队经验，无需重复调教。</div>
+      </details>
+      <details class="details-section">
+        <summary>多工具适配</summary>
+        <div class="detail-body">不只是 Claude Code — 同一套规则同步到 Cursor、Copilot、Windsurf 等工具，保持一致体验。</div>
+      </details>
+      <details class="details-section">
+        <summary>卸载即干净</summary>
+        <div class="detail-body">一条命令移除所有组件，无残留文件，不污染你的工作目录。</div>
+      </details>
+    </section>
+  </div>
+
+  <footer>
+    <div class="trust-anchors">
+      <span>positiveTriggerRate=1</span>
+      <span>falsePositiveRate=0</span>
+      <a href="#">teamagent verify</a>
+    </div>
+    <p><a href="https://github.com/libz-renlab-ai/TeamBrain">GitHub</a> · MIT License</p>
+  </footer>
+</body>
+</html>

@@ -23,8 +23,17 @@ import {
   structureRuleTextsBatch,
   runCompile,
   DEFAULT_IMPORT_CONFIDENCE,
+  OBSERVED_FILE_LIST,
+  renderPackPromptBody,
   type FilePresence,
+  type ObservedFile,
+  type ObservedFiles,
 } from "@teamagent/core";
+import {
+  executePackAdd,
+  readPackRegistry,
+  resolvePacksDir,
+} from "./pack.js";
 import type { LLMClient } from "@teamagent/ports";
 import type { KnowledgeEntry } from "@teamagent/types";
 import { computeEnforcement } from "@teamagent/types";
@@ -49,6 +58,14 @@ export interface InitOptions {
   skipWarmup?: boolean;
   /** 显式指定 seed 文件路径（测试用）。 */
   seedPath?: string;
+  /**
+   * Stack packs to install without showing the agent prompt.
+   * Value: "all" (every available pack) or comma-separated names (e.g. "frontend-js,ops-safety").
+   * When unset, init prints the versioned markdown prompt described by ADR 0002.
+   */
+  pack?: string;
+  /** Override registry directory (tests inject; production resolves via seed path walk + TEAMAGENT_PACKS_DIR). */
+  packsDir?: string;
   /**
    * Opt-in：装团队标配 plugins（superpowers/sales/playground）。
    * 默认 false——插件装在用户全局（~/.claude/settings.json），跨所有项目生效，
@@ -84,6 +101,13 @@ export interface InitResult {
     importedRules: number;
     totalActiveEntries: number;
   };
+  /**
+   * Versioned markdown prompt block (per ADR 0002) shown to the user's coding
+   * agent when no `--pack` flag was supplied. Empty / undefined when init was
+   * invoked with `--pack` (caller already chose) or in dry-run mode where the
+   * prompt is unnecessary.
+   */
+  packPrompt?: string;
 }
 
 function resolvePaths(opts: InitOptions) {
@@ -190,26 +214,133 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     dryRun ||
     process.env["NODE_ENV"] === "test" ||
     process.env["TEAMAGENT_SKIP_WARMUP"] === "1";
-  if (!skipWarmup) {
-    try {
-      const { runWarmup } = await import("./warmup.js");
-      const w = await runWarmup();
+  if (skipWarmup) {
+    steps.push({ step: "warmup", status: "skipped", detail: "skipWarmup / dryRun / test env" });
+  } else {
+    // Issue #91: default to detached (two-stage) warmup so init returns to
+    // the shell prompt within ~30s. The legacy foreground path is preserved
+    // behind TEAMAGENT_FOREGROUND_WARMUP=1 (escape hatch for users who want
+    // PR #113's visible-progress behavior + a synchronous "model ready"
+    // guarantee at end of init).
+    const useForegroundWarmup = process.env["TEAMAGENT_FOREGROUND_WARMUP"] === "1";
+    if (useForegroundWarmup) {
+      try {
+        const { runWarmup } = await import("./warmup.js");
+        const { defaultWarmupStatePath } = await import("../warmup-state.js");
+        const stateFile = defaultWarmupStatePath(paths.home);
+        const w = await runWarmup({ stateFilePath: stateFile });
+        steps.push({
+          step: "warmup",
+          status: w.ok ? "ok" : "failed",
+          detail: w.ok
+            ? `模型预热 ${w.durationMs}ms (foreground; TEAMAGENT_FOREGROUND_WARMUP=1)`
+            : `预热失败：${w.error ?? "unknown"}`,
+        });
+      } catch (err) {
+        steps.push({
+          step: "warmup",
+          status: "failed",
+          detail: `预热异常：${String(err).slice(0, 120)}`,
+        });
+      }
+    } else {
+      // Two-stage path: write a placeholder state, spawn detached, return.
+      const detachResult = await spawnDetachedWarmup(paths.home);
       steps.push({
         step: "warmup",
-        status: w.ok ? "ok" : "failed",
-        detail: w.ok ? `模型预热 ${w.durationMs}ms` : `预热失败：${w.error ?? "unknown"}`,
-      });
-    } catch (err) {
-      steps.push({
-        step: "warmup",
-        status: "failed",
-        detail: `预热异常：${String(err).slice(0, 120)}`,
+        status: detachResult.ok ? "ok" : "failed",
+        detail: detachResult.detail,
       });
     }
-  } else {
-    steps.push({ step: "warmup", status: "skipped", detail: "skipWarmup / dryRun / test env" });
   }
 
+  // ---------- Phase C: Pack management (ADR 0002) ----------
+  // Run BEFORE appendInstallLog and totalActive computation so that:
+  //   1. load-pack / pack-prompt steps land in ~/.teamagent/.install-log
+  //      (audit trail covers pack failures too — Codex review #110 P2).
+  //   2. summary.totalActiveEntries reflects pack-added rules (otherwise
+  //      callers see a stale count — Codex review #110 P2).
+  // When --pack <names> is given, install packs as a normal init step.
+  // Otherwise, render the versioned markdown prompt for the coding agent.
+  let packPrompt = "";
+  const packsDir = resolvePacksDir(opts.packsDir);
+  const observed = collectObservedFiles(paths.cwd);
+  const available = packsDir ? readPackRegistry(packsDir) : [];
+  let packAddedRules = 0;
+
+  if (opts.pack && opts.pack.trim().length > 0) {
+    const requested = opts.pack
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (dryRun) {
+      steps.push(
+        okStep(
+          "load-pack",
+          `(dry-run) 会安装 packs: ${requested.join(", ")}`,
+        ),
+      );
+    } else {
+      try {
+        const result = executePackAdd(requested, {
+          ...(opts.packsDir ? { packsDir: opts.packsDir } : {}),
+          userGlobalDbPath: paths.userGlobalDbPath,
+        });
+        const parts: string[] = [];
+        if (result.added.length > 0) {
+          packAddedRules = result.added.reduce((s, a) => s + a.rules, 0);
+          parts.push(`安装 ${result.added.length} 个 pack（${packAddedRules} 条规则）`);
+        }
+        if (result.alreadyInstalled.length > 0) {
+          parts.push(`已存在: ${result.alreadyInstalled.join(", ")}`);
+        }
+        if (result.notFound.length > 0) {
+          parts.push(`未找到: ${result.notFound.join(", ")}`);
+        }
+        if (result.failed.length > 0) {
+          parts.push(`失败: ${result.failed.length}`);
+        }
+        const status =
+          result.notFound.length > 0 || result.failed.length > 0
+            ? "failed"
+            : "ok";
+        steps.push({
+          step: "load-pack",
+          status,
+          detail: parts.join("，") || "无事可做",
+        });
+      } catch (err) {
+        steps.push(failStep("load-pack", String(err).slice(0, 200)));
+      }
+    }
+  } else if (!dryRun) {
+    const installedNames = collectInstalledPackNames(
+      paths.userGlobalDbPath,
+      available,
+    );
+    packPrompt = renderPackPromptBody({
+      observed,
+      available,
+      installed: installedNames,
+    });
+    steps.push(
+      okStep(
+        "pack-prompt",
+        available.length > 0
+          ? `已生成 v1 markdown prompt（${available.length} 个可用 pack）`
+          : "已生成 v1 markdown prompt（无 pack 可用）",
+      ),
+    );
+  } else {
+    steps.push(
+      okStep(
+        "pack-prompt",
+        `(dry-run) 会渲染 v1 prompt（${available.length} 个 pack）`,
+      ),
+    );
+  }
+
+  // Install log + totalActive must run AFTER Phase C so they observe pack steps + rules.
   if (!dryRun) {
     try {
       appendInstallLog(paths.installLogPath, steps, now);
@@ -220,7 +351,11 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
 
   let totalActive = 0;
   if (dryRun) {
-    totalActive = presetStep.wouldAddCount + seedStep.wouldAddCount + importStep.wouldImport;
+    totalActive =
+      presetStep.wouldAddCount +
+      seedStep.wouldAddCount +
+      importStep.wouldImport +
+      packAddedRules;
   } else {
     try {
       fs.mkdirSync(path.dirname(paths.projectDbPath), { recursive: true });
@@ -243,8 +378,40 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     importedRules: importStep.importedCount,
     totalActiveEntries: totalActive,
   };
+
   const ok = !steps.some((s) => s.status === "failed");
-  return finalize(ok, dryRun, steps, summary);
+  return finalize(ok, dryRun, steps, summary, packPrompt);
+}
+
+function collectObservedFiles(cwd: string): ObservedFiles {
+  const out = {} as ObservedFiles;
+  for (const f of OBSERVED_FILE_LIST) {
+    out[f as ObservedFile] = fs.existsSync(path.join(cwd, f));
+  }
+  return out;
+}
+
+function collectInstalledPackNames(
+  userGlobalDbPath: string,
+  available: { name: string }[],
+): string[] {
+  if (!fs.existsSync(userGlobalDbPath)) return [];
+  try {
+    const store = new SqliteKnowledgeStore(openDb(userGlobalDbPath));
+    try {
+      const all = store.getAll();
+      const names: string[] = [];
+      for (const meta of available) {
+        const tag = `pack:${meta.name}`;
+        if (all.some((e) => e.tags?.includes(tag))) names.push(meta.name);
+      }
+      return names.sort();
+    } finally {
+      store.close();
+    }
+  } catch {
+    return [];
+  }
 }
 
 // Step implementations
@@ -379,6 +546,97 @@ function resolveSeedPath(): string | undefined {
   return undefined;
 }
 
+function parseJsonlEntries(filePath: string): KnowledgeEntry[] {
+  const text = fs.readFileSync(filePath, "utf-8");
+  return text
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0)
+    .map((l) => JSON.parse(l) as KnowledgeEntry);
+}
+
+/**
+ * Issue #91: locate the bundled `bin.js` so init.ts can spawn `teamagent
+ * warmup` as a detached child. Searches:
+ *   - `<this dir>/bin.js`              (bundled tarball install)
+ *   - `<this dir>/.../packages/teamagent/dist/bin.js`  (dev tree)
+ *   - `<this dir>/../teamagent/dist/bin.js`            (workspace lift)
+ * Returns undefined if no built bin.js exists (dev mode that has not run
+ * `pnpm build`); the caller falls back to a clear failure message.
+ */
+function resolveTeamAgentBinPath(): string | undefined {
+  const here = fileURLToPath(import.meta.url);
+  let dir = path.dirname(here);
+  for (let i = 0; i < 8; i++) {
+    const sibling = path.join(dir, "bin.js");
+    if (fs.existsSync(sibling)) return sibling;
+    const dev = path.join(dir, "packages", "teamagent", "dist", "bin.js");
+    if (fs.existsSync(dev)) return dev;
+    const nested = path.join(dir, "..", "teamagent", "dist", "bin.js");
+    if (fs.existsSync(nested)) return nested;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
+
+/**
+ * Issue #91: spawn `teamagent warmup --write-state <state>` as a detached
+ * child. Writes the initial placeholder state synchronously so any reader
+ * (PreToolUse, doctor) immediately sees `status="downloading"` rather than
+ * the absence of the file.
+ */
+async function spawnDetachedWarmup(home: string): Promise<{ ok: boolean; detail: string }> {
+  const { writeInitialPlaceholder, defaultWarmupStatePath } = await import("../warmup-state.js");
+  const stateFile = defaultWarmupStatePath(home);
+  const teamagentDir = path.dirname(stateFile);
+  fs.mkdirSync(teamagentDir, { recursive: true });
+  // 1) Placeholder ensures readers cannot observe the moment-of-no-file.
+  try {
+    writeInitialPlaceholder(stateFile, "Xenova/multilingual-e5-small");
+  } catch (err) {
+    return { ok: false, detail: `state-file write failed: ${String(err).slice(0, 80)}` };
+  }
+  // 2) Resolve bin.js.
+  const binPath = resolveTeamAgentBinPath();
+  if (!binPath) {
+    return {
+      ok: false,
+      detail: "未找到打包后的 bin.js（dev 模式未跑 pnpm build？）；" +
+        "向量模型未启动后台预热，PreToolUse 仍可走 legacy substring matcher",
+    };
+  }
+  // 3) Spawn detached. stdio → log file so the parent can return without
+  //    inheriting child fds; unref so node event loop can exit cleanly.
+  const logPath = path.join(teamagentDir, "warmup.log");
+  const { spawn } = await import("node:child_process");
+  let logFd: number;
+  try {
+    logFd = fs.openSync(logPath, "a");
+  } catch (err) {
+    return { ok: false, detail: `warmup.log open failed: ${String(err).slice(0, 80)}` };
+  }
+  try {
+    const child = spawn(
+      process.execPath,
+      [binPath, "warmup", "--write-state", stateFile],
+      {
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+      },
+    );
+    child.unref();
+    return {
+      ok: true,
+      detail: `detached pid=${child.pid ?? "?"} state=${stateFile} log=${logPath}`,
+    };
+  } catch (err) {
+    return { ok: false, detail: `spawn failed: ${String(err).slice(0, 80)}` };
+  } finally {
+    try { fs.closeSync(logFd); } catch { /* ok if child already inherited */ }
+  }
+}
+
 function doLoadSeed(
   userGlobalDbPath: string,
   dryRun: boolean,
@@ -394,17 +652,38 @@ function doLoadSeed(
   }
   let entries: KnowledgeEntry[];
   try {
-    const text = fs.readFileSync(seedPath, "utf-8");
-    entries = text
-      .split(/\r?\n/)
-      .filter((l) => l.trim().length > 0)
-      .map((l) => JSON.parse(l) as KnowledgeEntry);
+    entries = parseJsonlEntries(seedPath);
   } catch (err) {
     return {
       step: failStep("load-seed", `读取 seed 失败: ${String(err).slice(0, 150)}`),
       addedCount: 0,
       wouldAddCount: 0,
     };
+  }
+
+  // Issue #88: also load every `packs/*.jsonl` sibling next to the main
+  // seed file. Packs ship rules with substring-friendly `wrong_pattern`s
+  // so the legacy keyword matcher can hit within the 30s window before the
+  // vector model has been downloaded (ADR 0001 two-stage install).
+  // A malformed pack file is logged and skipped — it must not block init.
+  const packsDir = path.join(path.dirname(seedPath), "packs");
+  if (fs.existsSync(packsDir)) {
+    let packFiles: string[];
+    try {
+      packFiles = fs
+        .readdirSync(packsDir)
+        .filter((f) => f.endsWith(".jsonl"))
+        .sort();
+    } catch {
+      packFiles = [];
+    }
+    for (const file of packFiles) {
+      try {
+        entries.push(...parseJsonlEntries(path.join(packsDir, file)));
+      } catch {
+        // Skip malformed pack file; continue with remaining packs.
+      }
+    }
   }
 
   if (dryRun) {
@@ -596,7 +875,11 @@ function doInstallHook(
     const parts: string[] = [];
     parts.push(r.alreadyInstalled ? `已安装 (无变化): ${r.settingsPath}` : `已注册: ${r.settingsPath}`);
     if (r.statusLineSkipped) {
-      parts.push("⚠️  检测到已有 statusLine，未覆盖；如要启用 TeamAgent 状态栏，请手动删除原有再重跑");
+      parts.push("⚠️  statusLine bundle 缺失，未注册");
+    } else if (r.statusLineMergedScope) {
+      parts.push(
+        `已合并已有 statusLine (scope=${r.statusLineMergedScope}) → 用户原内容 + TeamBrain 状态栏会同时渲染`,
+      );
     }
     return okStep("install-hook", parts.join(" · "));
   } catch (err) {
@@ -808,8 +1091,9 @@ function finalize(
   dryRun: boolean,
   steps: InitStepResult[],
   summary: InitResult["summary"],
+  packPrompt = "",
 ): InitResult {
-  return { ok, dryRun, steps, summary };
+  return { ok, dryRun, steps, summary, packPrompt };
 }
 
 // CLI glue
@@ -831,6 +1115,13 @@ export function parseInitArgs(argv: string[]): InitOptions {
       opts.target = parseTarget(value);
     } else if (a.startsWith("--target=")) {
       opts.target = parseTarget(a.slice("--target=".length));
+    } else if (a === "--pack") {
+      const value = argv[++i];
+      if (!value)
+        throw new Error("--pack 需要 <all|name1,name2> 值");
+      opts.pack = value;
+    } else if (a.startsWith("--pack=")) {
+      opts.pack = a.slice("--pack=".length);
     }
   }
   return opts;
@@ -856,6 +1147,7 @@ export function renderInitResult(result: InitResult): string {
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
     { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills"] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
+    { icon: "📦", label: "Stack packs", stepKeys: ["load-pack", "pack-prompt"] },
   ];
 
   for (const group of stepGroups) {
@@ -905,6 +1197,14 @@ export function renderInitResult(result: InitResult): string {
     lines.push("   运行 teamagent doctor 获取诊断建议");
   }
 
+  // Pack prompt — versioned markdown block consumed by the user's coding agent
+  // (Claude Code / Codex) per ADR 0002. Empty when init was invoked with --pack
+  // or in dry-run mode.
+  if (result.packPrompt && result.packPrompt.length > 0) {
+    lines.push("");
+    lines.push(result.packPrompt);
+  }
+
   return duckifyText(lines.join("\n") + "\n");
 }
 
@@ -921,6 +1221,8 @@ function stepLabel(step: string): string {
     "install-plugins": "Plugin 安装",
     "compile-skills": "Skills",
     "link-codex-files": "Codex 软链接",
+    "load-pack": "Pack 安装",
+    "pack-prompt": "Pack 提示",
   };
   return map[step] ?? step;
 }

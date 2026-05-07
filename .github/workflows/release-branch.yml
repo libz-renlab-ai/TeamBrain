@@ -30,6 +30,10 @@ jobs:
           cp -r packages/teamagent/dist /tmp/release-stage/dist
           cp packages/teamagent/package.json /tmp/release-stage/package.json
           cp packages/teamagent/postinstall.mjs /tmp/release-stage/postinstall.mjs
+          # Stage install.sh at branch root so the curl|sh CTA URL resolves:
+          # https://raw.githubusercontent.com/<owner>/<repo>/release/install.sh
+          cp release/install.sh /tmp/release-stage/install.sh
+          chmod 0755 /tmp/release-stage/install.sh
           printf '{"sha":"%s","built_at":"%s"}\n' \
             "$GITHUB_SHA" "$(date -u +%FT%TZ)" \
             > /tmp/release-stage/release-meta.json

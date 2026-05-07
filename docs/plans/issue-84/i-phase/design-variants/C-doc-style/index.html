@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TeamAgent — Living Rules Engine for Claude Code</title>
+  <meta name="description" content="TeamAgent: cross-session memory, PreToolUse interception, team sync. Install in 30 seconds. Not CLAUDE.md — a self-evolving rules library.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://github.com/libz-renlab-ai/TeamBrain">
+  <meta property="og:title" content="TeamAgent — Living Rules Engine for Claude Code">
+  <meta property="og:description" content="Claude Code has no memory. TeamAgent gives it one — and blocks mistakes before they happen.">
+  <meta property="og:url" content="https://libz-renlab-ai.github.io/TeamBrain/">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      --serif: Georgia, 'Times New Roman', serif;
+      --ink: #1a1a1a;
+      --muted: #555;
+      --accent: #c0392b;
+      --border: #d0d0d0;
+      --bg: #faf9f7;
+      --code-bg: #f0ede8;
+      --nav-w: 220px;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--serif);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.7;
+      display: flex;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* skip link */
+    .skip-link {
+      position: absolute; left: -9999px; top: 8px;
+      background: var(--accent); color: #fff; padding: 4px 12px;
+      font-family: var(--mono); font-size: 0.8rem; z-index: 100;
+    }
+    .skip-link:focus { left: 8px; }
+
+    /* left nav */
+    nav {
+      width: var(--nav-w);
+      min-width: var(--nav-w);
+      border-right: 1px solid var(--border);
+      padding: 40px 20px 40px 24px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+    }
+    nav .brand {
+      font-size: 1rem;
+      font-weight: bold;
+      color: var(--ink);
+      margin-bottom: 24px;
+      display: block;
+    }
+    nav ul { list-style: none; }
+    nav li { margin-bottom: 6px; }
+    nav a { color: var(--muted); }
+    nav a:hover { color: var(--accent); text-decoration: none; }
+    .nav-section { margin-top: 16px; font-size: 0.68rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+
+    /* main content */
+    main {
+      flex: 1;
+      max-width: 780px;
+      padding: 48px 48px 80px;
+    }
+    .chapter { margin-bottom: 56px; }
+    .chapter-num {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+    h1 { font-size: 1.9rem; line-height: 1.25; margin-bottom: 12px; }
+    h2 { font-size: 1.2rem; margin-top: 40px; margin-bottom: 14px; border-bottom: 1px solid var(--border); padding-bottom: 6px; font-family: var(--mono); }
+    p { margin-bottom: 14px; color: var(--ink); }
+    .lead { font-size: 1.05rem; color: var(--muted); font-style: italic; margin-bottom: 24px; }
+
+    /* comparison table */
+    table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.8rem; margin: 20px 0 28px; }
+    th { background: var(--ink); color: #fff; padding: 8px 12px; text-align: left; }
+    th:last-child { background: var(--accent); }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    td:not(:first-child) { text-align: center; }
+    .ok { color: var(--accent); font-weight: bold; }
+    .no { color: #bbb; }
+
+    /* GIF placeholder */
+    .gif-placeholder {
+      aspect-ratio: 16/9;
+      background: #1a1a1a;
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 0.8rem; color: #666;
+      margin: 24px 0;
+    }
+
+    /* install block */
+    .install-block {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      padding: 16px 20px;
+      margin: 20px 0;
+    }
+    .install-block pre {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    /* bullets */
+    ul.pain { list-style: none; margin: 0 0 20px; }
+    ul.pain li { padding: 6px 0 6px 22px; position: relative; border-bottom: 1px dashed var(--border); font-size: 0.95rem; }
+    ul.pain li::before { content: '›'; position: absolute; left: 0; color: var(--accent); font-weight: bold; }
+
+    /* details */
+    details { border: 1px solid var(--border); margin-bottom: 8px; }
+    summary {
+      font-family: var(--mono); font-size: 0.82rem;
+      padding: 10px 14px; cursor: pointer;
+      background: var(--code-bg); list-style: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: '[+] '; color: var(--accent); }
+    details[open] summary::before { content: '[−] '; }
+    .detail-body { padding: 12px 14px; font-size: 0.88rem; color: var(--muted); font-family: var(--serif); }
+
+    /* footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 24px 48px;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
+    }
+
+    @media (max-width: 700px) {
+      body { flex-direction: column; }
+      nav { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); padding: 20px; }
+      main { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to content</a>
+
+  <nav aria-label="Page sections">
+    <span class="brand">TeamAgent</span>
+    <div class="nav-section">Contents</div>
+    <ul>
+      <li><a href="#s1">§1 Problem</a></li>
+      <li><a href="#s2">§2 Comparison</a></li>
+      <li><a href="#s3">§3 Demo</a></li>
+      <li><a href="#s4">§4 Install</a></li>
+      <li><a href="#s5">§5 How it works</a></li>
+      <li><a href="#s6">§6 Team &amp; tools</a></li>
+      <li><a href="#s7">§7 Verify</a></li>
+    </ul>
+    <div class="nav-section" style="margin-top:24px;">Links</div>
+    <ul>
+      <li><a href="https://github.com/libz-renlab-ai/TeamBrain">GitHub</a></li>
+      <li><a href="#">Docs</a></li>
+    </ul>
+  </nav>
+
+  <div style="flex:1; display:flex; flex-direction:column;">
+    <main id="main-content">
+
+      <section class="chapter" id="s1">
+        <div class="chapter-num">§1 Problem</div>
+        <h1>Claude Code 没有记忆。<br>你纠正它的每一句话，下次都白说。</h1>
+        <p class="lead">不是 CLAUDE.md。是会自己进化的活规则库。</p>
+        <ul class="pain">
+          <li>AI 第 5 次想用 <code>moment</code>，你第 5 次说"换 dayjs"。</li>
+          <li>新会话开始，上次的约定统统失效，又得从头解释。</li>
+          <li>CLAUDE.md 越写越长，AI 该犯的错还是犯。</li>
+          <li>团队里每人调教的经验，没有办法共享给下一个人。</li>
+        </ul>
+      </section>
+
+      <section class="chapter" id="s2">
+        <div class="chapter-num">§2 Comparison</div>
+        <h2>对比：CLAUDE.md / .cursorrules / Claude memory / TeamAgent</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>特性</th>
+              <th>CLAUDE.md</th>
+              <th>.cursorrules</th>
+              <th>Claude memory</th>
+              <th>TeamAgent</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>跨会话记忆</td>
+              <td><span class="no">✗ 手动维护</span></td>
+              <td><span class="no">✗ 静态文件</span></td>
+              <td><span class="no">✗ 无结构</span></td>
+              <td><span class="ok">✓ 自动入库</span></td>
+            </tr>
+            <tr>
+              <td>工具调用前拦截</td>
+              <td><span class="no">✗</span></td>
+              <td><span class="no">✗</span></td>
+              <td><span class="no">✗</span></td>
+              <td><span class="ok">✓ PreToolUse</span></td>
+            </tr>
+            <tr>
+              <td>团队共享</td>
+              <td><span class="no">✗</span></td>
+              <td><span class="no">✗</span></td>
+              <td><span class="no">✗</span></td>
+              <td><span class="ok">✓ xsync</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="chapter" id="s3">
+        <div class="chapter-num">§3 Demo</div>
+        <h2>double-moment: 纠正一次，下次拦截</h2>
+        <div class="gif-placeholder" role="img" aria-label="Demo GIF placeholder: moment to dayjs correction then interception">demo GIF placeholder — 25s double-moment</div>
+        <p>moment 1：你纠正"不要 moment，用 dayjs"→ 系统自动入库规则。<br>
+        moment 2：新会话 AI 准备用 moment → PreToolUse 拦截，提示原因。</p>
+      </section>
+
+      <section class="chapter" id="s4">
+        <div class="chapter-num">§4 Install</div>
+        <h2>安装（30 秒）</h2>
+        <div class="install-block">
+          <pre>curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh
+teamagent init</pre>
+        </div>
+        <p>开源 · 自托管 · 无云端依赖 — 你的代码、规则、历史只在本机。</p>
+      </section>
+
+      <section class="chapter" id="s5">
+        <div class="chapter-num">§5 How it works</div>
+        <h2>工作原理</h2>
+        <p>对话发生 → Stop hook 捕获纠正信号 → 提炼 avoidance 规则入库 → 下次 PreToolUse 命中时拦截并给出原因。</p>
+      </section>
+
+      <section class="chapter" id="s6">
+        <div class="chapter-num">§6 Team &amp; tools</div>
+        <h2>进阶功能</h2>
+        <details>
+          <summary>team-layer 团队规则共享（xsync）</summary>
+          <div class="detail-body">每个人纠正 AI 的经验，变成全团队复用的规则。新人加入即继承团队经验，无需重复调教。</div>
+        </details>
+        <details>
+          <summary>多工具适配（Claude Code / Cursor / Codex）</summary>
+          <div class="detail-body">Claude Code 已支持；MCP Server 与 Cursor compiler 开发中（NOT YET）。规则库通用，不锁定单一工具。</div>
+        </details>
+        <details>
+          <summary>卸载 + 数据位置</summary>
+          <div class="detail-body">数据存于 <code>~/.teamagent/</code>，纯 JSON，可人工检查。<code>teamagent uninstall</code> 移除 hooks，<code>rm -rf ~/.teamagent</code> 删除所有规则数据。</div>
+        </details>
+      </section>
+
+      <section class="chapter" id="s7">
+        <div class="chapter-num">§7 Verify</div>
+        <h2>可机器验证的质量承诺</h2>
+        <p><code>positiveTriggerRate=1 · falsePositiveRate=0</code> (e2e-evaluate 实测)<br>
+        <a href="#">teamagent verify</a> — 本地可复现</p>
+      </section>
+
+    </main>
+
+    <footer>
+      <span>positiveTriggerRate=1</span>
+      <span>falsePositiveRate=0</span>
+      <a href="#">teamagent verify</a>
+      <a href="https://github.com/libz-renlab-ai/TeamBrain">GitHub</a>
+      <span>MIT License</span>
+    </footer>
+  </div>
+</body>
+</html>

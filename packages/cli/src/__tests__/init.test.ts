@@ -406,6 +406,150 @@ describe("executeInit", () => {
     expect(r2.summary.seedAdded).toBe(0);
   });
 
+  it("load-seed: also loads sibling packs/*.jsonl files (issue #88)", async () => {
+    const seedFile = path.join(tmp.root, "rules.jsonl");
+    const baseEntry = {
+      id: "seed-base-pack-test",
+      scope: { level: "global" as const },
+      category: "E" as const,
+      tags: ["seed"],
+      type: "practice" as const,
+      nature: "subjective" as const,
+      trigger: "test base",
+      wrong_pattern: "",
+      correct_pattern: "use base",
+      reasoning: "base seed entry",
+      confidence: 0.9,
+      enforcement: "warn" as const,
+      status: "active" as const,
+      hit_count: 0,
+      success_count: 0,
+      override_count: 0,
+      evidence: { success_sessions: 0, success_users: 0, correction_sessions: 0 },
+      created_at: "2026-05-07T03:30:00Z",
+      last_hit_at: "",
+      last_validated_at: "2026-05-07T03:30:00Z",
+      source: "preset" as const,
+      conflict_with: [],
+      current_tier: "experimental" as const,
+      max_tier_ever: "experimental" as const,
+      tier_entered_at: "",
+      demerit: 0,
+      demerit_last_updated: "",
+      resurrect_count: 0,
+    };
+    nodeFs.writeFileSync(seedFile, JSON.stringify(baseEntry) + "\n");
+
+    // Create a sibling packs/ directory with two jsonl pack files.
+    const packsDir = path.join(tmp.root, "packs");
+    nodeFs.mkdirSync(packsDir, { recursive: true });
+    const packEntryA = {
+      ...baseEntry,
+      id: "seed-pack-test-A",
+      type: "avoidance" as const,
+      wrong_pattern: "rm -rf /",
+      enforcement: "block" as const,
+      confidence: 0.85,
+    };
+    const packEntryB = {
+      ...baseEntry,
+      id: "seed-pack-test-B",
+      type: "avoidance" as const,
+      wrong_pattern: "chmod 777",
+      enforcement: "block" as const,
+      confidence: 0.85,
+    };
+    nodeFs.writeFileSync(
+      path.join(packsDir, "alpha.jsonl"),
+      JSON.stringify(packEntryA) + "\n",
+    );
+    nodeFs.writeFileSync(
+      path.join(packsDir, "beta.jsonl"),
+      JSON.stringify(packEntryB) + "\n",
+    );
+
+    const r = await executeInit({
+      ...commonOpts(),
+      skipSeed: false,
+      seedPath: seedFile,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+
+    expect(r.ok).toBe(true);
+    // 1 base + 2 pack entries should all be loaded.
+    expect(r.summary.seedAdded).toBe(3);
+
+    const globalStore = new SqliteKnowledgeStore(openDb(tmp.userGlobalDbPath));
+    expect(globalStore.getById("seed-base-pack-test")).toBeDefined();
+    expect(globalStore.getById("seed-pack-test-A")).toBeDefined();
+    expect(globalStore.getById("seed-pack-test-B")).toBeDefined();
+    globalStore.close();
+  });
+
+  it("load-seed: malformed pack does not abort load (issue #88)", async () => {
+    const seedFile = path.join(tmp.root, "rules.jsonl");
+    const baseEntry = {
+      id: "seed-malformed-pack-base",
+      scope: { level: "global" as const },
+      category: "E" as const,
+      tags: ["seed"],
+      type: "practice" as const,
+      nature: "subjective" as const,
+      trigger: "t",
+      wrong_pattern: "",
+      correct_pattern: "c",
+      reasoning: "r",
+      confidence: 0.9,
+      enforcement: "warn" as const,
+      status: "active" as const,
+      hit_count: 0,
+      success_count: 0,
+      override_count: 0,
+      evidence: { success_sessions: 0, success_users: 0, correction_sessions: 0 },
+      created_at: "2026-05-07T03:30:00Z",
+      last_hit_at: "",
+      last_validated_at: "2026-05-07T03:30:00Z",
+      source: "preset" as const,
+      conflict_with: [],
+      current_tier: "experimental" as const,
+      max_tier_ever: "experimental" as const,
+      tier_entered_at: "",
+      demerit: 0,
+      demerit_last_updated: "",
+      resurrect_count: 0,
+    };
+    nodeFs.writeFileSync(seedFile, JSON.stringify(baseEntry) + "\n");
+
+    const packsDir = path.join(tmp.root, "packs");
+    nodeFs.mkdirSync(packsDir, { recursive: true });
+    // Garbage in a pack file — must not abort the whole load.
+    nodeFs.writeFileSync(path.join(packsDir, "broken.jsonl"), "{not valid json\n");
+    // Good pack file alongside.
+    const goodEntry = { ...baseEntry, id: "seed-pack-good-1" };
+    nodeFs.writeFileSync(
+      path.join(packsDir, "good.jsonl"),
+      JSON.stringify(goodEntry) + "\n",
+    );
+
+    const r = await executeInit({
+      ...commonOpts(),
+      skipSeed: false,
+      seedPath: seedFile,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+
+    expect(r.ok).toBe(true);
+    // Base entry must load; broken pack is skipped; the good pack file
+    // happens to be alphabetically AFTER broken in `readdirSync().sort()`
+    // (`broken` < `good`), and the broken file's read is wrapped in
+    // try/catch — so `good.jsonl` still loads.
+    expect(r.summary.seedAdded).toBeGreaterThanOrEqual(2);
+    const globalStore = new SqliteKnowledgeStore(openDb(tmp.userGlobalDbPath));
+    expect(globalStore.getById("seed-malformed-pack-base")).toBeDefined();
+    expect(globalStore.getById("seed-pack-good-1")).toBeDefined();
+    globalStore.close();
+  });
+
   it("writes install-log on successful run", async () => {
     await executeInit({
       ...commonOpts(),

@@ -22,11 +22,60 @@ TeamAgent 解决这件事：从你纠正它的每一次对话里，自动**提�
 
 ---
 
+### 快速安装
+
+```bash
+# 推荐：先下载 install.sh，确认内容后再执行
+curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh -o /tmp/teambrain-install.sh
+cat /tmp/teambrain-install.sh          # 建议先 review，确认脚本内容符合预期
+sh /tmp/teambrain-install.sh
+```
+
+也支持直接执行（适合已熟悉该脚本、或在 CI 中使用）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh
+```
+
+校验文件（SHA256）：**TBD H1** — SHA256 校验文件位置待 H1 open question 决定后填入。
+参考：[release-prep/install-sh-checklist.md](release-prep/install-sh-checklist.md)
+
+安装完成后进入你的项目目录，初始化：
+
+```bash
+teamagent init
+```
+
+`init` 约 30 秒完成：注册 PreToolUse hook、注入 universal pack（~15 条跨语言
+avoidance 规则）、立即可拦截。背景任务将在 ~10 分钟内静默升级为 BM25+dense 语义匹配。
+
+---
+
+### 立即验证（30 秒内看到第一次拦截）
+
+```bash
+teamagent demo
+```
+
+`demo` 命令模拟一次 `moment → dayjs` 纠正 → 下一会话被 PreToolUse 拦截的完整闭环。
+GIF 演示同样展示这两个时刻（[见 landing page](https://libz-renlab-ai.github.io/TeamBrain/)）。
+
+---
+
+### 注意事项
+
+- **建议先 review install.sh**（`curl ... -o /tmp/... && cat ...`），确认来源和内容，
+  再决定是否执行。这是 P4 mitigation P4-M04 的最佳实践建议。
+- `install.sh` 固定来自仓库 `release` 分支根目录，不依赖自有域名。
+- 安装过程中不需要 SSH key，走 HTTPS tarball。
+
+---
+
 ## 5–10 分钟上手
 
 ```bash
-# 1. 装（首次需要 5–10 分钟：下载 ~30MB hook bundle + 编译 native deps + 预热 ~120MB 向量模型）
-npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz
+# 1. 装（一行 curl|sh：先校验 node ≥ 22 + npm/pnpm，再 npm install -g release tarball）
+curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh
 cd your-project                                          # 2. 进项目
 teamagent init                                           # 3. 初始化（注册 hook + 预热向量模型）
 # 如果同一个项目也要给 Codex 读取规则：
@@ -36,8 +85,19 @@ teamagent init --target=both
 # → 它每次被你纠正，都会自动入库
 ```
 
-> **为什么用 tarball URL 而不是 `npm install -g github:libz-renlab-ai/TeamBrain#release`？**
-> npm 的 `github:` shorthand 默认走 SSH（`git+ssh://git@github.com/...`），没配 SSH key 的机器（绝大多数 Windows 用户、CI/容器）会直接失败。tarball URL 走 HTTPS，绕开 git clone，更稳定。
+> **`curl … | sh` 做了什么？** 校验 `node -v` ≥ 22 → 选 `npm`（或 `pnpm`）→ 跑 `npm install -g <release-tarball>`。失败时给确定的退出码（10 = node 缺失，11 = node 太老，20 = 包管理器都没有，30 = 安装失败），不会偷偷把别的东西塞进 PATH。脚本源码：[`release/install.sh`](./release/install.sh)，验证harness：[`docs/features/install-sh/run-judge.sh`](./docs/features/install-sh/run-judge.sh)。
+
+<details>
+<summary>不能 curl 的环境（离线、Windows PowerShell、CI 容器）— 用 tarball URL 直装</summary>
+
+```bash
+npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz
+```
+
+为什么用 tarball URL 而不是 `npm install -g github:libz-renlab-ai/TeamBrain#release`？
+npm 的 `github:` shorthand 默认走 SSH（`git+ssh://git@github.com/...`），没配 SSH key 的机器（绝大多数 Windows 用户、CI/容器）会直接失败。tarball URL 走 HTTPS，绕开 git clone，更稳定。
+
+</details>
 
 之后**不用做任何事**——继续正常开发，TeamAgent 自动学习 + 自动更新。
 
@@ -216,7 +276,7 @@ claudefast -p "hi"
 ```bash
 # 安装与诊断
 teamagent init               # 初始化项目（注册 hook + 创建 .teamagent/ + 预热向量模型）
-teamagent warmup             # 单独预热向量模型 (~120MB，init 已自动跑)
+teamagent warmup             # 单独预热向量模型 (~120MB，init 已自动跑；TTY 显示进度条 / CI 每文件一行)
 teamagent doctor             # 环境诊断 + 产品边界状态
 teamagent install-plugins    # 装 superpowers / sales / playground 等团队标配 skill
 teamagent uninstall          # 卸载（保留数据，加 --delete-data 清空）

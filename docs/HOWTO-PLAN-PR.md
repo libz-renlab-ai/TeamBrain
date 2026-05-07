@@ -180,23 +180,31 @@ Hard rules for probes:
   merge / Codex-review / rule-doc, fix on the PR branch, never reset/force
   on `main`.
 
-## After the PR opens — `POSTPR` loop
+## After the PR opens — `POSTPR` loop + `PR-PLAN` for any fixes
 
-The plan isn't done when the PR opens. `docs/POSTPR.md` defines the loop:
+`docs/POSTPR.md` defines the loop; `docs/PR-PLAN.md` defines what to do
+when that loop surfaces issues. Hard rule: if review flags an issue
+while the PR is open, do **not** open a follow-up GitHub issue and merge
+anyway. P1 / P2 must be fixed in this PR via PR-PLAN + TEAMWORK; a P3
+nice-to-have may be deferred to a follow-up issue only with explicit
+human reviewer approval. The only legitimate follow-up artefact is a
+follow-up *PR* in the rare auto-merge-raced-Codex case.
 
 ```
-PR opened → CI + Codex review → conflict?
-   → classify (merge / Codex-review / rule-doc)
-   → fix on the PR branch (never main, never --force)
+PR opened → CI + Codex review → issues found?
+   → block the merge
+   → write PR-PLAN at docs/plans/<date>-pr-<n>-fix-plan.md
+     (task / expected outputs / judge harness)
+   → execute with TEAMWORK (N workers + 2N probes + 1 opus reporter)
+   → push fix commits to the SAME PR branch
    → rerun pnpm test + pnpm typecheck + verification 1+2+3
-   → push same branch (or follow-up PR if already merged)
    → re-fetch Codex review
    → stop only when CI green + no conflict + Codex 👍 or silent
 ```
 
-Codex reviews follow-up PRs too (#51 → #52 → #53 happened in this repo).
-Plan for at least one POSTPR iteration in the schedule; PRs that "merge on
-first green CI" usually skip the Codex inline-comment fetch and miss P1s.
+Plan for at least one POSTPR iteration in the schedule; PRs that "merge
+on first green CI" usually skip the Codex inline-comment fetch and miss
+P1s.
 
 ## Quick checklist (paste into the PR description)
 
@@ -212,6 +220,8 @@ first green CI" usually skip the Codex inline-comment fetch and miss P1s.
       (a) -h orient   (b) parallel -p ≤ 8   (c) stream-json audit logs
 - [ ] PR opened as a normal PR (not --draft)
 - [ ] POSTPR loop scheduled — fetch Codex inline comments after CI green
+- [ ] PR-PLAN ready to be written if review surfaces issues
+      (no follow-up-issue punt)
 - [ ] report.md drafted alongside the implementation
 ```
 
@@ -224,5 +234,8 @@ first green CI" usually skip the Codex inline-comment fetch and miss P1s.
   `/export` recipe.
 - `docs/FASTPROBE.md` — full probe recipe and PR+conflict-resolve variant.
 - `docs/POSTPR.md` — Codex review fetch + triage + loop.
+- `docs/PR-PLAN.md` — fix-issues-in-this-PR planning doc; no follow-up
+  issues for in-flight PRs.
+- `docs/TEAMWORK.md` — N+1+(2N) parallel execution pattern used by PR-PLAN.
 - `docs/CLAUDEFAST.md` — what `claudefast` is, what it isn't, and what flags
   to avoid.

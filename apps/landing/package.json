@@ -1,0 +1,19 @@
+{
+  "name": "@teamagent/landing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "cp -r src/. dist/ && cp -r public/. dist/ 2>/dev/null || true",
+    "preview": "npx serve dist",
+    "lint": "htmlhint src/",
+    "verify": "lhci autorun --config=./lighthouserc.json"
+  },
+  "devDependencies": {
+    "htmlhint": "^1.1.4",
+    "serve": "^14.2.4",
+    "@lhci/cli": "^0.13.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

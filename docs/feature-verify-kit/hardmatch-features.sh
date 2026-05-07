@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# CONTRACT: see README.md ## Hardmatch contract — do NOT downgrade to keys-only (issue #64 / 39e81ea / 9c78f99)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT_DIR="$ROOT/docs/feature-verify-kit/runs"

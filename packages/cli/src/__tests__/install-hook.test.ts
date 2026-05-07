@@ -213,7 +213,7 @@ describe("installHook — statusLine", () => {
     expect(content.statusLine._teamagentTag).toBe("teamagent-statusline");
   });
 
-  it("does not overwrite user's non-teamagent statusLine", () => {
+  it("wraps user's project-level statusLine into bash -c chain (#104)", () => {
     const settingsPath = path.join(tmp.cwd, ".claude", "settings.local.json");
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     const preExisting = {
@@ -228,16 +228,135 @@ describe("installHook — statusLine", () => {
       cwd: tmp.cwd,
       hookEntry: FAKE_HOOK_ENTRY,
       statusLineEntry: FAKE_HOOK_ENTRY,
+      homeDir: tmp.cwd, // 测试用空 home，避免读到本机真 ~/.claude
     });
-    expect(r.statusLineSkipped).toBe(true);
+    expect(r.statusLineSkipped).toBe(false);
+    expect(r.statusLineMergedScope).toBe("project");
 
     const content = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
-    expect(content.statusLine.command).toBe("node /custom/user/bar.js");
-    expect(content.statusLine._teamagentTag).toBeUndefined();
+    // command 现在是 chain 形态：bash -c '<user>; echo; <team>'
+    expect(content.statusLine.command).toMatch(/^bash -c '/);
+    expect(content.statusLine.command).toContain("node /custom/user/bar.js");
+    expect(content.statusLine.command).toContain("; echo;");
+    expect(content.statusLine._teamagentTag).toBe("teamagent-statusline");
+    expect(content.statusLine._teamagentOriginalCommand).toBe("node /custom/user/bar.js");
+    expect(content.statusLine._teamagentOriginalType).toBe("command");
+    expect(content.statusLine._teamagentOriginalScope).toBe("project");
   });
 
-  it("uninstall removes only tagged teamagent statusLine", () => {
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY });
+  it("wraps user-level ~/.claude/settings.json statusLine (#104)", () => {
+    // 模拟 ~/.claude/settings.json
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "fake-home-"));
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    fs.mkdirSync(path.dirname(userSettingsPath), { recursive: true });
+    fs.writeFileSync(
+      userSettingsPath,
+      JSON.stringify({
+        statusLine: { type: "command", command: "echo USER_OWN_STATUSLINE_TOKEN" },
+      }),
+    );
+
+    try {
+      const r = installHook({
+        cwd: tmp.cwd,
+        hookEntry: FAKE_HOOK_ENTRY,
+        statusLineEntry: FAKE_HOOK_ENTRY,
+        homeDir: fakeHome,
+      });
+      expect(r.statusLineMergedScope).toBe("user");
+
+      const projectSettings = JSON.parse(
+        fs.readFileSync(path.join(tmp.cwd, ".claude", "settings.local.json"), "utf-8"),
+      );
+      expect(projectSettings.statusLine.command).toContain("echo USER_OWN_STATUSLINE_TOKEN");
+      expect(projectSettings.statusLine.command).toMatch(/^bash -c '/);
+      expect(projectSettings.statusLine._teamagentOriginalCommand).toBe(
+        "echo USER_OWN_STATUSLINE_TOKEN",
+      );
+      expect(projectSettings.statusLine._teamagentOriginalScope).toBe("user");
+
+      // user-level 文件保持原样（V4 / V1 不变）
+      const userAfter = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+      expect(userAfter.statusLine.command).toBe("echo USER_OWN_STATUSLINE_TOKEN");
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("project-level user statusLine takes precedence over user-level (#104)", () => {
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "fake-home-"));
+    fs.mkdirSync(path.join(fakeHome, ".claude"), { recursive: true });
+    fs.writeFileSync(
+      path.join(fakeHome, ".claude", "settings.json"),
+      JSON.stringify({ statusLine: { type: "command", command: "USER_LEVEL_CMD" } }),
+    );
+    const projectPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    fs.mkdirSync(path.dirname(projectPath), { recursive: true });
+    fs.writeFileSync(
+      projectPath,
+      JSON.stringify({ statusLine: { type: "command", command: "PROJECT_LEVEL_CMD" } }),
+    );
+
+    try {
+      const r = installHook({
+        cwd: tmp.cwd,
+        hookEntry: FAKE_HOOK_ENTRY,
+        statusLineEntry: FAKE_HOOK_ENTRY,
+        homeDir: fakeHome,
+      });
+      expect(r.statusLineMergedScope).toBe("project");
+      const content = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
+      expect(content.statusLine._teamagentOriginalCommand).toBe("PROJECT_LEVEL_CMD");
+      expect(content.statusLine.command).toContain("PROJECT_LEVEL_CMD");
+      expect(content.statusLine.command).not.toContain("USER_LEVEL_CMD");
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("escapes single quotes in user cmd safely (#104)", () => {
+    const settingsPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        statusLine: { type: "command", command: "echo \"it's fine\"" },
+      }),
+    );
+
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      statusLineEntry: FAKE_HOOK_ENTRY,
+      homeDir: tmp.cwd,
+    });
+
+    const content = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    // POSIX 单引号转义：' → '\''
+    expect(content.statusLine.command).toContain("it'\\''s fine");
+    expect(content.statusLine._teamagentOriginalCommand).toBe("echo \"it's fine\"");
+  });
+
+  it("idempotent: second install does not double-wrap (#104)", () => {
+    const settingsPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        statusLine: { type: "command", command: "USER_CMD" },
+      }),
+    );
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd });
+    const content = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    expect(content.statusLine._teamagentOriginalCommand).toBe("USER_CMD");
+    // chain 中只出现一次原 cmd
+    const matches = content.statusLine.command.match(/USER_CMD/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+
+  it("uninstall removes teamagent statusLine when no backup", () => {
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd });
     uninstallHook({ cwd: tmp.cwd });
     const content = JSON.parse(
       fs.readFileSync(path.join(tmp.cwd, ".claude", "settings.local.json"), "utf-8"),
@@ -245,7 +364,7 @@ describe("installHook — statusLine", () => {
     expect(content.statusLine).toBeUndefined();
   });
 
-  it("uninstall preserves user's non-teamagent statusLine", () => {
+  it("uninstall restores user's project-level statusLine from backup (#104)", () => {
     const settingsPath = path.join(tmp.cwd, ".claude", "settings.local.json");
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(
@@ -254,9 +373,43 @@ describe("installHook — statusLine", () => {
         statusLine: { type: "command", command: "user-status.sh" },
       }),
     );
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd });
     uninstallHook({ cwd: tmp.cwd });
     const content = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
     expect(content.statusLine.command).toBe("user-status.sh");
+    expect(content.statusLine.type).toBe("command");
+    expect(content.statusLine._teamagentTag).toBeUndefined();
+  });
+
+  it("uninstall scope=user just deletes project-level entry (#104)", () => {
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "fake-home-"));
+    fs.mkdirSync(path.join(fakeHome, ".claude"), { recursive: true });
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    fs.writeFileSync(
+      userSettingsPath,
+      JSON.stringify({
+        statusLine: { type: "command", command: "echo USER_OWN_STATUSLINE_TOKEN" },
+      }),
+    );
+    try {
+      installHook({
+        cwd: tmp.cwd,
+        hookEntry: FAKE_HOOK_ENTRY,
+        statusLineEntry: FAKE_HOOK_ENTRY,
+        homeDir: fakeHome,
+      });
+      uninstallHook({ cwd: tmp.cwd });
+
+      const projectSettings = JSON.parse(
+        fs.readFileSync(path.join(tmp.cwd, ".claude", "settings.local.json"), "utf-8"),
+      );
+      expect(projectSettings.statusLine).toBeUndefined();
+
+      // user-level 永远不变（V4）
+      const userAfter = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+      expect(userAfter.statusLine.command).toBe("echo USER_OWN_STATUSLINE_TOKEN");
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
   });
 });

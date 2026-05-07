@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TeamBrain — Living Rules for Claude Code</title>
+  <meta name="description" content="TeamBrain is a self-evolving rules database for Claude Code. Not CLAUDE.md. Memory that persists across sessions.">
+  <link rel="canonical" href="https://github.com/libz-renlab-ai/TeamBrain">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; }
+    body {
+      background: #0d0d0d;
+      color: #f5f0e8;
+      font-family: Georgia, 'Times New Roman', serif;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    a { color: #e85c0d; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    pre {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 1rem 1.5rem;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.875rem;
+      color: #f5f0e8;
+      overflow-x: auto;
+    }
+    pre .cmd { color: #e85c0d; }
+
+    /* Hero */
+    .hero {
+      padding: 6rem 2rem 3rem;
+      text-align: center;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .hero h1 {
+      font-size: clamp(3rem, 10vw, 5rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-bottom: 1.5rem;
+      color: #f5f0e8;
+    }
+    .hero h1 em {
+      font-style: normal;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      color: #e85c0d;
+    }
+    .hero .sub {
+      font-size: clamp(1rem, 2.5vw, 1.25rem);
+      color: #a09a90;
+      max-width: 600px;
+      margin: 0 auto 3rem;
+    }
+
+    /* GIF Placeholder */
+    .gif-section {
+      min-height: 60vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #111;
+      padding: 2rem;
+    }
+    .gif-placeholder {
+      width: 100%;
+      max-width: 960px;
+      aspect-ratio: 16 / 9;
+      background: #111;
+      border: 1px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #f5f0e8;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      font-size: 1rem;
+      letter-spacing: 0.05em;
+    }
+
+    /* Install */
+    .install-section {
+      padding: 3rem 2rem;
+      text-align: center;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .install-section h2 {
+      font-size: 1.5rem;
+      font-weight: 400;
+      margin-bottom: 1.5rem;
+      color: #f5f0e8;
+    }
+
+    /* Comparison Table */
+    .comparison {
+      padding: 4rem 2rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    .comparison h2 {
+      font-size: clamp(1.5rem, 4vw, 2rem);
+      font-weight: 400;
+      text-align: center;
+      margin-bottom: 2.5rem;
+      color: #f5f0e8;
+    }
+    .comparison table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .comparison th {
+      background: #1a1a1a;
+      padding: 1rem;
+      text-align: center;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      font-weight: 600;
+      color: #e85c0d;
+      border: 1px solid #333;
+    }
+    .comparison th:first-child {
+      background: #0d0d0d;
+      color: #a09a90;
+    }
+    .comparison td {
+      padding: 0.875rem 1rem;
+      text-align: center;
+      border: 1px solid #2a2a2a;
+      color: #f5f0e8;
+    }
+    .comparison td:first-child {
+      background: #1a1a1a;
+      color: #a09a90;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      font-size: 0.8rem;
+    }
+    .comparison .yes { color: #e85c0d; font-weight: bold; }
+    .comparison .no { color: #555; }
+
+    /* Pain Points */
+    .painpoints {
+      padding: 3rem 2rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .painpoints h2 {
+      font-size: 1.25rem;
+      font-weight: 400;
+      margin-bottom: 1.5rem;
+      color: #a09a90;
+    }
+    .painpoints ul {
+      list-style: none;
+      margin-bottom: 2rem;
+    }
+    .painpoints li {
+      padding: 0.5rem 0;
+      padding-left: 1.5rem;
+      position: relative;
+      color: #f5f0e8;
+    }
+    .painpoints li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: #e85c0d;
+    }
+
+    /* Details折叠 */
+    details {
+      border: 1px solid #2a2a2a;
+      margin-bottom: 1rem;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    summary {
+      padding: 0.875rem 1rem;
+      background: #1a1a1a;
+      cursor: pointer;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      font-size: 0.875rem;
+      color: #a09a90;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after {
+      content: '+';
+      color: #e85c0d;
+      font-size: 1.25rem;
+    }
+    details[open] summary::after { content: '−'; }
+    details p {
+      padding: 1rem;
+      background: #111;
+      font-size: 0.875rem;
+      color: #a09a90;
+      border-top: 1px solid #2a2a2a;
+    }
+    details code {
+      font-family: 'SF Mono', 'Consolas', monospace;
+      color: #e85c0d;
+    }
+
+    /* Footer */
+    footer {
+      padding: 3rem 2rem;
+      text-align: center;
+      border-top: 1px solid #1a1a1a;
+      margin-top: 4rem;
+    }
+    footer nav {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+    footer a {
+      color: #a09a90;
+      font-size: 0.875rem;
+    }
+    footer a:hover { color: #e85c0d; text-decoration: none; }
+    footer .badge {
+      display: inline-block;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 0.25rem 0.75rem;
+      font-size: 0.75rem;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+  <section class="hero">
+    <h1>Claude Code <em>没有记忆。</em></h1>
+    <p class="sub">不是 CLAUDE.md。是会自己进化的活规则库。</p>
+  </section>
+
+  <section class="gif-section" aria-label="Demo GIF placeholder">
+    <div class="gif-placeholder" role="img" aria-label="TeamBrain demo GIF showing cross-session memory and rule evolution">
+      [ demo GIF ]
+    </div>
+  </section>
+
+  <section class="install-section">
+    <h2>npm install</h2>
+    <pre><span class="cmd">npx</span> teamagent init</pre>
+  </section>
+
+  <section class="comparison">
+    <h2>规则持久化方案对比</h2>
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th>CLAUDE.md</th>
+          <th>.cursorrules</th>
+          <th>Claude memory</th>
+          <th>TeamAgent</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>跨会话记忆</td>
+          <td class="no">—</td>
+          <td class="no">—</td>
+          <td class="no">—</td>
+          <td class="yes">✓</td>
+        </tr>
+        <tr>
+          <td>工具调用前拦截</td>
+          <td class="yes">✓</td>
+          <td class="yes">✓</td>
+          <td class="no">—</td>
+          <td class="yes">✓</td>
+        </tr>
+        <tr>
+          <td>团队共享</td>
+          <td class="no">—</td>
+          <td class="no">—</td>
+          <td class="no">—</td>
+          <td class="yes">✓</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="painpoints">
+    <h2>Claude Code 的问题</h2>
+    <ul>
+      <li>每个新会话都是白板，所有规则要从零编写</li>
+      <li>规则写在文件里，但 AI 根本不主动读</li>
+      <li>团队成员各写各的，经验无法积累</li>
+      <li>装了一堆工具，不知道哪条规则在管它们</li>
+    </ul>
+
+    <details>
+      <summary>team-layer：团队规则层</summary>
+      <p>团队共享的规则沉淀在 <code>team-layer</code>，每个成员开箱即用，不需要重新配置。</p>
+    </details>
+
+    <details>
+      <summary>多工具：4 通道适配</summary>
+      <p>PreToolUse / UserPromptSubmit / Stop analyze / AttributionBus 四个通道同时适配，跨工具统一行为。</p>
+    </details>
+
+    <details>
+      <summary>uninstall：一键卸载</summary>
+      <p>删除 <code>.claude/</code> 目录即可完全卸载，不留残余，不影响原有工作流。</p>
+    </details>
+  </section>
+
+  <footer>
+    <nav>
+      <a href="https://github.com/libz-renlab-ai/TeamBrain">teamagent verify</a>
+      <a href="https://github.com/libz-renlab-ai/TeamBrain">GitHub</a>
+    </nav>
+    <span class="badge">MIT</span>
+  </footer>
+
+</body>
+</html>

@@ -150,6 +150,16 @@ import {
   parseRecordingArgs,
   renderRecordingResult,
 } from "./commands/recording.js";
+import {
+  executePackAdd,
+  executePackList,
+  executePackRemove,
+  packAddExitCode,
+  parsePackArgs,
+  renderPackAdd,
+  renderPackList,
+  renderPackRemove,
+} from "./commands/pack.js";
 
 function findPackageVersion(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
@@ -320,7 +330,7 @@ async function main(): Promise<void> {
       return;
     }
     case "demo": {
-      // teamagent demo hook <tool> <key=value>...
+      // Legacy subcommand: teamagent demo hook <tool> <key=value>...
       const sub = rest[0];
       if (sub === "hook") {
         const opts = parseDemoHookArgs(rest.slice(1));
@@ -333,8 +343,12 @@ async function main(): Promise<void> {
         process.stdout.write(executeDemoHook(opts).output);
         return;
       }
-      process.stderr.write(`未知 demo 子命令: ${sub}\n`);
-      process.exit(1);
+      // Issue #93 modes: teamagent demo / --inline / --record [path]
+      const { parseDemoArgs, executeDemo } = await import("./commands/demo.js");
+      const demoArgs = parseDemoArgs(rest);
+      const r = await executeDemo(demoArgs);
+      process.stdout.write(r.output);
+      if (r.exitCode !== 0) process.exit(r.exitCode);
       return;
     }
     case "install-hook": {
@@ -413,7 +427,7 @@ async function main(): Promise<void> {
       if (rest.includes("--help") || rest.includes("-h")) {
         process.stdout.write(
           "Usage: teamagent init [--dry-run] [--skip-import] [--skip-hook] [--install-plugins]\n" +
-          "                      [--target=claude|codex|both]\n" +
+          "                      [--target=claude|codex|both] [--pack <all|name1,name2>]\n" +
           "\n" +
           "Options:\n" +
           "  --dry-run            Preview what init would do without making changes\n" +
@@ -422,6 +436,8 @@ async function main(): Promise<void> {
           "  --skip-warmup        Skip embedding model warmup\n" +
           "  --install-plugins    Also install team plugins (superpowers/caveman/sales)\n" +
           "  --target=TARGET      claude (default), codex, or both\n" +
+          "  --pack=NAMES         Install stack packs without showing the agent prompt.\n" +
+          "                       NAMES may be 'all' or a comma-separated list (e.g. frontend-js,ops-safety).\n" +
           "\n" +
           "Scaffolds TeamAgent config in the current project:\n" +
           "  - Creates .teamagent/ directory and initializes knowledge DB\n" +
@@ -619,6 +635,48 @@ async function main(): Promise<void> {
       }
       return;
     }
+    case "pack": {
+      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage:\n" +
+            "  teamagent pack list [--json]\n" +
+            "  teamagent pack add <names>      e.g. pack add frontend-js,ops-safety\n" +
+            "  teamagent pack remove <names>\n" +
+            "\n" +
+            "Manages stack packs (per ADR 0002 — agent-driven detection).\n" +
+            "Pack rules are written to ~/.teamagent/global.db with tag pack:<name>.\n",
+        );
+        return;
+      }
+      let args;
+      try {
+        args = parsePackArgs(rest);
+      } catch (err) {
+        process.stderr.write(
+          `${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(2);
+        return;
+      }
+      if (args.sub === "list") {
+        const result = executePackList({});
+        process.stdout.write(renderPackList(result, args.json));
+        return;
+      }
+      if (args.sub === "add") {
+        const result = executePackAdd(args.names, {});
+        process.stdout.write(renderPackAdd(result));
+        const code = packAddExitCode(result);
+        if (code !== 0) process.exit(code);
+        return;
+      }
+      if (args.sub === "remove") {
+        const result = executePackRemove(args.names, {});
+        process.stdout.write(renderPackRemove(result));
+        return;
+      }
+      return;
+    }
     case "compile": {
       const opts = parseCompileArgs(rest);
       const result = await executeCompile(opts);
@@ -797,7 +855,19 @@ async function main(): Promise<void> {
     }
     case "warmup": {
       const { runWarmup } = await import("./commands/warmup.js");
-      const result = await runWarmup();
+      // Issue #91: optional `--write-state <path>` records progress and the
+      // final outcome to a JSON file for other processes (PreToolUse, Stop,
+      // doctor) to consult without having to load the embedder themselves.
+      let stateFilePath: string | undefined;
+      for (let i = 0; i < rest.length; i++) {
+        if (rest[i] === "--write-state" && rest[i + 1]) {
+          stateFilePath = rest[i + 1];
+          i++;
+        } else if (rest[i]?.startsWith("--write-state=")) {
+          stateFilePath = rest[i]!.slice("--write-state=".length);
+        }
+      }
+      const result = await runWarmup({ stateFilePath });
       process.exit(result.ok ? 0 : 1);
     }
     case "migrate-auto": {
@@ -1010,6 +1080,10 @@ async function main(): Promise<void> {
           "                                   迁移旧规则（trigger_description 为空）通过 LLM 生成双描述，并写入 vec0 和 FTS5",
           "  teamagent migrate-v7 [--dry-run] [--limit=N] [--db=<path>]",
           "                                   批量为存量规则生成 tool_context_description，并写入 knowledge_tool_vec",
+          "  teamagent pack list [--json]",
+          "                                   列出已安装 / 可用的 stack packs（ADR 0002 — agent 决定装哪些）",
+          "  teamagent pack add <names>       例 pack add frontend-js,ops-safety；从 seed/packs/<name>.{jsonl,meta.json} 读取并注入用户全局 store",
+          "  teamagent pack remove <names>    按 tag pack:<name> 过滤删除全局 store 中对应规则",
           "  teamagent ingest --from-insights <path> | --from-audit | --from-pr <n>",
           "                   | --from-git [--since=30d] | --from-ci [--since=30d] | --from-candidates <path>",
           "                                   多源摄入：Claude /insights / npm audit / PR review / git hotspot / CI failure",

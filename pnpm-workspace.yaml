@@ -1,2 +1,4 @@
 packages:
   - "packages/*"
+  # apps/ subprojects (landing page etc; introduced in #84)
+  - "apps/*"

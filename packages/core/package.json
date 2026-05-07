@@ -18,7 +18,8 @@
     "@teamagent/types": "workspace:*",
     "web-tree-sitter": "^0.26.0",
     "tree-sitter-typescript": "^0.23.0",
-    "tree-sitter-python": "^0.23.0"
+    "tree-sitter-python": "^0.23.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "vitest": "^2.1.0"
