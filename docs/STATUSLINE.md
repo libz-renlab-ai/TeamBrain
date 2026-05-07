@@ -16,7 +16,7 @@
 
 # Statusline / 状态栏共存
 
-Claude Code 一次只渲染一条 `statusLine.command`。如果用户已经有自己的 statusline（user level `~/.claude/settings.json` 或 project level `.claude/settings.json`），TeamBrain 会**用 `bash -c` chain 把两段连起来**，中间一个 `echo` 分行——不替换、不丢字段、可还原（issue #104 / PR #124）。
+Claude Code 一次只渲染一条 `statusLine.command`。如果用户已经有自己的 statusline（user level `~/.claude/settings.json` 或 project level `.claude/settings.local.json`），TeamBrain 会**用 `bash -c` chain 把两段连起来**，中间一个 `echo` 分行——不替换、不丢字段、可还原（issue #104 / PR #124）。TeamBrain **只读写 project-level `.claude/settings.local.json`**（gitignored、per-host），从不修改用户提交到仓库的 `.claude/settings.json`。
 
 ## TL;DR
 
