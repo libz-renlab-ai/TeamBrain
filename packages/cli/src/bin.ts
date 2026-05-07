@@ -891,7 +891,11 @@ async function main(): Promise<void> {
       process.exit(1);
       return;
     }
-    case undefined:
+    case undefined: {
+      const { runFirstRunWizard } = await import("./commands/first-run.js");
+      await runFirstRunWizard();
+      return;
+    }
     case "--help":
     case "-h":
     case "help": {

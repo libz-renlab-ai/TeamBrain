@@ -1,0 +1,106 @@
+teamagent — TeamAgent CLI
+
+用法:
+  teamagent skeleton-demo          M0 Walking Skeleton 演示
+  teamagent m5-infect [--project-root=<path>] [--author=<name>]
+                                   [M5-A] 把 TeamAgent 病毒式契约写入项目（幂等）
+  teamagent m5-bootstrap [--project-root=<path>] [--check]
+                                   [M5-A] 读项目 manifest，报告本机与契约的差异
+  teamagent m5-share --text="<规则文本>" [--rule-id=<id>] [--scope=personal|team] [--author=<n>]
+                                   [M5-B] 跑闸门 1+2 决定规则归宿；shareable 的写到 .teamagent/team/
+  teamagent m5-sync [--project-root=<path>]
+                                   [M5-C] 读 .teamagent/team/ 所有 claim，LWW 合并报告团队规则集
+  teamagent m5-delete --rule-id=<id> [--by=<n>] [--reason=<text>]
+                                   [M5-C] 写 tombstone（任意人删任意规则）
+  teamagent m5-status [--project-root=<path>]
+                                   [M5-D] 综合面板：契约 + 本机 diff + 团队规则集统计
+  teamagent m5-publish [--project-root=<path>] [--push]
+                                   [M5-E] 自动 commit .teamagent/team/ 待变化（--push 同时推 origin）
+  teamagent pitfall                手动记录一条踩坑经验 (交互)
+  teamagent pitfall --non-interactive --trigger=... --wrong=... --correct=... --reason=...
+                                   非交互模式 (可选: --category=C|E|S|K --tags=a,b --level=personal|team|global --nature=objective|subjective)
+  teamagent stats [--stuck-in-promotion] [--stuck-days=N] [--explain=<id>]
+                                   展示知识库统计；--stuck-in-promotion 列出卡在 probation 超 N 天的规则
+  teamagent demo hook <tool> <k=v>...
+                                   离线模拟 PreToolUse hook (例: teamagent demo hook Bash 'command=npm install moment')
+  teamagent install-hook           把 PreToolUse hook 注册到当前项目 .claude/settings.local.json
+  teamagent uninstall-hook         移除 PreToolUse hook 注册
+  teamagent install-user-hook      把 SessionStart hook 注册到 ~/.claude/settings.json
+                                   (打开任何新项目时自动 init, 一次装永久生效)
+  teamagent uninstall-user-hook    移除用户级 SessionStart hook 注册
+  teamagent analyze [--session=<id|path>] [--verbose] [--commit]
+                                   分析 Claude Code 会话日志，识别纠正时刻+成功信号
+                                   --commit: 通过 LLM 提取成知识条目并写入知识库 + 更新 Skills + 调度 docs propagation
+  teamagent review [N] [--scope=personal|team|global]
+                                   列出最近 N 条知识（默认 10），供人工复核
+  teamagent init [--dry-run] [--skip-import] [--skip-hook] [--install-plugins] [--target=claude|codex|both]
+                                   一键安装到当前项目：建目录 + 注入元原则 + 导入已有规则 + 注册 Hook + 导出 Skills
+                                   默认 target=claude；codex 会创建 .codex/skills 软链接且不注册 Claude hook
+                                   --install-plugins: 同时注册团队标配插件（opt-in，改写用户全局 settings）
+  teamagent install-codex [--dry-run] [--skip-import]
+                                   Codex 快捷安装：导出 Skills，并创建 .codex/skills 软链接
+  teamagent doctor [--fix] [--json]
+                                   诊断安装环境（Node版本/Claude Code/sqlite-vec/Hook/CLAUDE.md）
+                                   --fix: 自动修复能自动修的问题
+                                   --json: 输出机器可读 JSON
+  teamagent install-plugins [--dry-run] [--only=a,b] [--scope=user|project|local]
+                                   注册团队标配 plugins（superpowers/sales/playground）
+                                   通过 'claude plugin marketplace add' + 'claude plugin install' 调 CC CLI
+                                   默认装全部；--only 限定子集；--dry-run 只预览
+  teamagent pair capsule --name=<device> --host=<host> [--user=<user>] [--out=<file>]
+                                   生成短期 teammate 配对胶囊（不包含 SSH 私钥）
+  teamagent pair accept <capsule-file|token> [--local-name=<device>]
+                                   接受胶囊，写入 peer 账本、SSH config 受管块和收据
+  teamagent pair knock <peer> [--json] [--simulate]
+                                   通过 SSH 验证配对；--simulate 用于离线验收
+  teamagent pair list              列出已配对 teammate
+  teamagent disable                临时禁用 Hook（保留数据）
+  teamagent enable                 重新启用 Hook
+  teamagent uninstall [--delete-data] [--dry-run]
+                                   完全卸载：移除 Hook 注册 + 清掉 CLAUDE.md 区块；加 --delete-data 同时清数据
+  teamagent calibrate [--days=7] [--dry-run]
+                                   根据 events.jsonl 重算 confidence + 自动归档低分条目
+  teamagent verify [--report=path]
+                                   跑 5 个验证场景（踩坑→学习→避坑），输出 PRR/KP 指标
+  teamagent e2e-evaluate [--json] [--keep-temp]
+                                   真实 SQLite + analyze + compile + PreToolUse 测评学习、触发、误触发和新成员可见性
+  teamagent recording --help
+                                   Recording Memory 导入、检索、注入、指标和 golden benchmark
+  teamagent dogfood-report [--output=path]
+                                   扫 events.jsonl + knowledge.jsonl + git log，自动生成自举报告
+  teamagent bug-report [--out=path] [--stdout]
+                                   生成可附到 issue 的诊断报告：系统信息 + hook 配置 + 原始日志（自动脱敏）
+  teamagent dashboard --watch [--open] [--port=8787] [--interval=2s]
+                                   启动实时 HTML dashboard：生成 docs/dashboard.html，周期刷新真实规则/事件数据并本地服务
+  teamagent dashboard --once
+                                   只生成一次 docs/dashboard.html，不启动服务器
+  teamagent compile [--dry-run] [--skills-only] [--markdown-only] [--force] [--legacy-claude-md] [--target=claude|codex|both]
+                                   编译 Agent Skills (stable+)；CLAUDE.md 规则块输出已禁用
+                                   --legacy-claude-md: 显式恢复旧 CLAUDE.md managed block 输出
+                                   --dry-run: 预览将写/删哪些文件，不实际写入
+                                   --skills-only / --markdown-only: legacy flags
+  teamagent docs-propagate --rule-id=<id>
+                                   将新规则自然传播到 docs/ 并用 cheap runner 验证
+  teamagent config stop-mode <sync|async>  切换 Stop hook 运行模式（默认 sync）
+  teamagent config show                    查看当前配置
+  teamagent scan-errors [--mode=efficient|full] [--since=<duration|ISO>] [--min-freq=N] [--dry-run] [--quiet]
+                                   自动采集错误信号 → 提取候选规则 → 写入候选队列
+  teamagent review-candidates [--limit=N] [--approve-scope=personal|team|global]
+                                   交互式审核候选规则：[a]批准 [r]拒绝 [s]跳过 [q]退出；可把批准项提升为本地 team scope
+  teamagent team-export [--out=path]
+                                   导出本地 active team scope 规则到 JSON；导出前执行隐私守门
+  teamagent team-import [--file=path]
+                                   从 team-export JSON 导入本地 team scope 规则，已存在 id 会跳过
+  teamagent pr-cycle [--pr=N] [--wait-ms=300000] [--dry-run]
+                                   创建/定位 PR，等待后检查 review；有反馈时要求先更新文档/规则并用 claudefast/codexfastg 验证答案
+  teamagent migrate-v6 [--dry-run] [--limit=N] [--db=<path>]
+                                   迁移旧规则（trigger_description 为空）通过 LLM 生成双描述，并写入 vec0 和 FTS5
+  teamagent migrate-v7 [--dry-run] [--limit=N] [--db=<path>]
+                                   批量为存量规则生成 tool_context_description，并写入 knowledge_tool_vec
+  teamagent ingest --from-insights <path> | --from-audit | --from-pr <n>
+                   | --from-git [--since=30d] | --from-ci [--since=30d] | --from-candidates <path>
+                                   多源摄入：Claude /insights / npm audit / PR review / git hotspot / CI failure
+                                   半自动源加 --dry-run 只产出候选 md 供人工勾选
+
+环境变量:
+  TEAMAGENT_VISIBILITY=silent|smart|verbose    归因渲染模式（默认 verbose）

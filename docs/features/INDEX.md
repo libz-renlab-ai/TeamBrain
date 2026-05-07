@@ -20,6 +20,7 @@ docs/features/
     ├── ab-benchmark/             ← run-judge.sh (arm-A vs arm-B avoidance rate)
     ├── rule-quality/             ← run-judge.sh + verify-canned-answer.sh
     ├── matcher-scope/            ← run-judge.sh (B-055 word-boundary + file_types glob)
+    ├── teamwork/                 ← N+1+(2N) agent team pattern (probe-grounded verify)
     └── planned/                  ← Phase 2–6 stubs (superseded by implementations above)
         ├── mcp-server.md         ← superseded by mcp-server/ harness
         ├── cursor-compiler.md    ← superseded by cursor-compiler/ harness
@@ -61,6 +62,12 @@ For the **full feature inventory** (49 features, all VERIFIED), see
 | Multi-tool: PreToolUse/Stop/AttributionBus | `multi-tool/verify-canned-answer.sh` | All three hooks live; DOGFOOD Tier 2/3 green |
 | `teamagent compile` (Skills-default, CLAUDE.md legacy opt-in) | `packages/cli/src/__tests__/compile.test.ts` (`no flags: writes skills and leaves CLAUDE.md untouched` + `--legacy-claude-md restores old behavior`) | Default writes Skills only; deleted CLAUDE.md block does NOT regenerate without `--legacy-claude-md` (or `TEAMAGENT_LEGACY_CLAUDE_MD=1`) |
 | Canned-answer rules (9 triggers) | `docs/rule-verify/INDEX.md` | `bash scripts/verify-all-rules.sh` PASS |
+
+## Patterns
+
+| Feature | Verify Script | One-liner |
+|---------|--------------|-----------|
+| [TEAMWORK (agent team pattern)](teamwork/INDEX.md) | `claudefast -p "what would happen when we say TEAMWORK ? ONLY explain please"` (probe-grounded; see `teamwork/INDEX.md`) | N+1+(2N) member team — N sonnet workers (2 claudefast probes each) + 1 opus 1M reporter; lead never works in main. |
 
 ## How to run all feature harnesses
 

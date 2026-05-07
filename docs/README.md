@@ -12,6 +12,7 @@ the indexes below to choose what to read first.
 | Understand the architecture shape | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Look up implementation details | [SYSTEM.md](SYSTEM.md) |
 | Launch the real-time dashboard | Run `pnpm teamagent dashboard --watch --open` |
+| Plan a PR — what to write, what to ship, how to verify, which probes to run | [HOWTO-PLAN-PR.md](HOWTO-PLAN-PR.md) |
 | Verify or test a feature/fix, including PR review gates | [feature-verification.md](feature-verification.md) |
 | Prepare a verified-only CEO/VC ship-status CSV | [PRESHIP.md](PRESHIP.md) |
 | Live-preview / dogfood agent edits in two tmux panes | [DOGFOOD.md](DOGFOOD.md) |
@@ -37,6 +38,12 @@ the indexes below to choose what to read first.
 1. [ARCHITECTURE.md](ARCHITECTURE.md) for the conceptual architecture.
 2. [SYSTEM.md](SYSTEM.md) for the deeper technical reference.
 3. [notes/2026-04-14-hook-protocol-decisions.md](notes/2026-04-14-hook-protocol-decisions.md) for hook protocol decisions.
+
+### PR Planning
+
+1. [HOWTO-PLAN-PR.md](HOWTO-PLAN-PR.md) for the four-section PR plan
+   structure: plan, expected outputs, how-to-verify (judge harness), and
+   `claudefast` probes to run before coding.
 
 ### Verification
 
