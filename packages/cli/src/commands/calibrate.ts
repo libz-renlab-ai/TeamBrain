@@ -338,6 +338,20 @@ export async function executeCalibrate(
   return { dryRun, byScope, totalAdjusted, totalArchived };
 }
 
+/** B-127/B-149: known flags for `calibrate` — typo'd flags are rejected. */
+const CALIBRATE_KNOWN_FLAGS = new Set<string>([
+  "--dry-run",
+  "--legacy",
+  "--days",
+]);
+
+export class CalibrateArgError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CalibrateArgError";
+  }
+}
+
 export function parseCalibrateArgs(argv: string[]): CalibrateOptions {
   const opts: CalibrateOptions = {};
   for (let i = 0; i < argv.length; i++) {
@@ -349,6 +363,13 @@ export function parseCalibrateArgs(argv: string[]): CalibrateOptions {
       i++;
     } else if (a.startsWith("--days=")) {
       opts.days = parseInt(a.slice("--days=".length), 10);
+    } else if (a.startsWith("--")) {
+      const base = a.split("=")[0]!;
+      if (!CALIBRATE_KNOWN_FLAGS.has(base)) {
+        throw new CalibrateArgError(
+          `calibrate: unknown flag "${a}". Run 'teamagent --help' for valid flags.`,
+        );
+      }
     }
   }
   return opts;

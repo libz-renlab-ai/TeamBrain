@@ -482,19 +482,49 @@ async function main(): Promise<void> {
       return;
     }
     case "uninstall": {
-      const opts = parseUninstallArgs(rest);
+      let opts;
+      try {
+        opts = parseUninstallArgs(rest);
+      } catch (err) {
+        const { UninstallArgError } = await import("./commands/uninstall.js");
+        if (err instanceof UninstallArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
       const r = uninstall(opts);
       process.stdout.write(renderUninstallResult(r));
       return;
     }
     case "calibrate": {
-      const opts = parseCalibrateArgs(rest);
+      let opts;
+      try {
+        opts = parseCalibrateArgs(rest);
+      } catch (err) {
+        const { CalibrateArgError } = await import("./commands/calibrate.js");
+        if (err instanceof CalibrateArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
       const r = await executeCalibrate(opts);
       process.stdout.write(renderCalibrateResult(r));
       return;
     }
     case "verify": {
-      const opts = parseVerifyArgs(rest);
+      let opts;
+      try {
+        opts = parseVerifyArgs(rest);
+      } catch (err) {
+        const { VerifyArgError } = await import("./commands/verify.js");
+        if (err instanceof VerifyArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
       const { result, reportPath } = await executeVerify(opts);
       process.stdout.write(renderVerifyTerminal(result));
       if (reportPath) {

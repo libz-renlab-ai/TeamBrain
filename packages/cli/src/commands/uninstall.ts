@@ -164,11 +164,30 @@ export function stripTeamagentBlock(content: string): {
   return { content: joined.endsWith("\n") ? joined : joined + "\n", changed: true };
 }
 
+/** B-127/B-149: known flags for `uninstall`; reject typos so a fat-fingered
+ *  `--delette-data` does not silently miss the actual --delete-data toggle. */
+const UNINSTALL_KNOWN_FLAGS = new Set<string>(["--delete-data", "--dry-run"]);
+
+export class UninstallArgError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UninstallArgError";
+  }
+}
+
 export function parseUninstallArgs(argv: string[]): UninstallOptions {
   const opts: UninstallOptions = {};
   for (const a of argv) {
     if (a === "--delete-data") opts.deleteData = true;
     else if (a === "--dry-run") opts.dryRun = true;
+    else if (a.startsWith("--")) {
+      const base = a.split("=")[0]!;
+      if (!UNINSTALL_KNOWN_FLAGS.has(base)) {
+        throw new UninstallArgError(
+          `uninstall: unknown flag "${a}". Run 'teamagent --help' for valid flags.`,
+        );
+      }
+    }
   }
   return opts;
 }

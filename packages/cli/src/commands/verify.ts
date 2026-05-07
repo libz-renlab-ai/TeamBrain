@@ -147,6 +147,16 @@ export function renderVerifyMarkdown(r: VerifyResult, now: Date): string {
   return lines.join("\n") + "\n";
 }
 
+/** B-127/B-149: known flags for `verify`. */
+const VERIFY_KNOWN_FLAGS = new Set<string>(["--report"]);
+
+export class VerifyArgError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VerifyArgError";
+  }
+}
+
 export function parseVerifyArgs(argv: string[]): VerifyOptions {
   const opts: VerifyOptions = {};
   for (let i = 0; i < argv.length; i++) {
@@ -156,6 +166,13 @@ export function parseVerifyArgs(argv: string[]): VerifyOptions {
       i++;
     } else if (a.startsWith("--report=")) {
       opts.reportPath = a.slice("--report=".length);
+    } else if (a.startsWith("--")) {
+      const base = a.split("=")[0]!;
+      if (!VERIFY_KNOWN_FLAGS.has(base)) {
+        throw new VerifyArgError(
+          `verify: unknown flag "${a}". Run 'teamagent --help' for valid flags.`,
+        );
+      }
     }
   }
   return opts;
