@@ -98,7 +98,8 @@ TeamBrain 的全局安装 (`teamagent` CLI) 会**在每次 Claude Code 会话开
   "installed_at": 1778143872429,
   "consecutive_install_failures": 0,
   "last_install_error": null,
-  "pending_banner": null                      // 或 { from, to, at, shown: false }
+  "pending_banner": null,                     // 或 { from, to, at, shown: false }
+  "reinstall_banner_shown_at": 0              // B-104: 安装失败时的 24h 节流 alert 时间戳
 }
 ```
 
