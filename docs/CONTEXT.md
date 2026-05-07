@@ -94,6 +94,14 @@ _Avoid_: setter, owner, author（与 viral sync 的 Author 撞名）
 Claude Code 用 Agent tool 派出的、专门做 tier 重判的临时 agent。读 events / 搜 gbrain / 看 repo，最后调 `teamagent set-tier` 写回。**不在 TeamBrain 进程里跑**——TeamBrain 不内嵌 LLM。
 _Avoid_: AgenticCalibrator（暗示是 TeamBrain 内部模块、与 ADR-0004 冲突）, AI calibrator, smart calibrator
 
+### Module structure（port / adapter 在物理目录上的分布）
+
+**Archived port**:
+曾经存在于 `packages/ports/src/` 但因 deletion-test 失败（only one production adapter，且 callers 直接 import 该 adapter 而非走 port type）被搬到 `packages/ports/src/_archived/` 抽屉的 port interface。原文件保留在抽屉内供考古与未来复活，但**不再**从 `packages/ports/src/index.ts` export，**不在** CLAUDE.md「Port 接口冻结于 M0」元约束范围内。复活条件：出现 ≥2 个真实 production adapter，或 contract test 能 meaningfully exercise 一个非平凡的 in-memory fake。详见 ADR-0005。
+_Avoid_: deprecated（暗示还能用、即将删；archived 是已经下线）
+_Avoid_: legacy port（暗示老但还在跑；archived 不再 export）
+_Avoid_: dead code（暗示无用应被 git rm；archived 是有意保留作 design history）
+
 ## Relationships
 
 - 一条 **personal** 规则经 **two gates** 通过后晋升为 **team**；不通过则永停 **L1**
