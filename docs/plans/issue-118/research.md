@@ -63,8 +63,8 @@
 | trigger condition | `pnpm teamagent init`（调用 `installHook()`）；`statusLine` 不存在或带 `_teamagentTag` 时注册 / 幂等更新 |
 | impact scope | `<cwd>/.claude/settings.local.json` `statusLine` 字段；**从不**写 user-level `~/.claude/settings.json` |
 | audit trail | init 命令 stdout；无 file log |
-| opt-out | `pnpm teamagent uninstall` 删带 `_teamagentTag` 项；用户 non-teamagent statusLine 当前会被 skip（issue #104 V2 真 gap） |
-| 关联 issue | **#104**（V2 失败：project shadow user-level；修复方向 = wrap chain `bash -c '<user>; echo; <teamagent>'`） |
+| opt-out | `pnpm teamagent uninstall` 删带 `_teamagentTag` 项；按 `_teamagentOriginalScope` (project/user) 还原备份的用户原 cmd |
+| 关联 issue | **#104 已修复**（PR #124 merged 2026-05-07）：`install-hook.ts` 现在用 `bash -c '<user_cmd>; echo; <teamagent_cmd>'` chain wrap，备份字段 `_teamagentOriginalCommand` / `_teamagentOriginalType` / `_teamagentOriginalScope` 落 project-level；从不写 user-level `~/.claude/settings.json`。详见 `docs/STATUSLINE.md` |
 
 源码：`packages/cli/src/commands/install-hook.ts:222-244`（注册）/ `316-320`（uninstall）；`packages/cli/src/commands/init.ts:582-604`（init 调用点）。测试：`packages/cli/src/__tests__/install-hook.test.ts:182-262`。已存 research：`docs/plans/2026-05-07-issue104-statusline-research.md`。
 
@@ -102,7 +102,7 @@
 | opt-out | (a) 创建空文件 `~/.teamagent/auto-update.disabled`<br>(b) env `TEAMAGENT_AUTO_UPDATE=0`（注意：env 变量是 `TEAMAGENT_AUTO_UPDATE`，值为 `"0"`，不是 `_DISABLED`） |
 | 关联 issue | 无；本 audit 首次系统化记录 |
 
-源码：`packages/cli/src/bin-updater.ts:41-45,109-123,187-206`；`packages/cli/src/updater-logic.ts:22-86,150-166`；`packages/cli/src/session-start-logic.ts:17,116,134-158,164-175,202-221`；`packages/teamagent/postinstall.mjs:186-212`；`packages/cli/src/commands/migrate-auto.ts:16-29`。**测试：未发现** auto-upgrade logic unit test（postinstall 不被单测）——本 issue 可能要求补 test。
+源码：`packages/cli/src/bin-updater.ts:34,41-45,109-123,187-206`（`PACKAGE_SPEC` HTTPS tarball）；`packages/cli/src/updater-logic.ts:22-86,150-166`；`packages/core/src/update/should-check.ts:14,25`（env / interval_hours）；`packages/core/src/update/update-state.ts:30`（`interval_hours: 1` 默认）；`packages/cli/src/session-start-logic.ts:17,116,134-158,164-175,202-221`；`packages/teamagent/postinstall.mjs:186-212`；`packages/cli/src/commands/migrate-auto.ts:16-29`。测试：`packages/cli/src/__tests__/updater-logic.test.ts`（7 case）+ `session-start-update.test.ts` + `session-start-logic.test.ts` + `packages/core/src/update/__tests__/should-check.test.ts`（核心节流逻辑）。
 
 ## 横向汇总（7 + 1 sub-trigger）
 
