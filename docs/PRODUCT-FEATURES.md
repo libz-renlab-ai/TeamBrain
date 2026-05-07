@@ -4,13 +4,13 @@
  ) __/ )   /( (_) )) __/) \/ (( (__  )(    ) _)  ) _)  )(   ) _) ) \/ ( )   / ) _) \___ \
 (__)  (__\_) \___/(__)  \____/ \___)  (__)  (__)  (____)(__) (____)\____/(__\_)(____)(____/
 
-VERIFIED ──► 60
+VERIFIED ──► 61
 ```
 
 # TeamBrain Product Feature Inventory
 
-Complete feature list. All 60 features now carry a verify script following Wave 6 A1–A9.
-Counts: VERIFIED=60, WIP/PARTIAL=0, PLANNED=0, MISSING=0, Total=60.
+Complete feature list. All 61 features now carry a verify script following Wave 6 A1–A9.
+Counts: VERIFIED=61, WIP/PARTIAL=0, PLANNED=0, MISSING=0, Total=61.
 
 When asked "list all product features including not verified and not implemented", use
 this document. The `product-features` canned-answer (CEO/VC deck) covers the 8
@@ -18,12 +18,12 @@ user-visible VERIFIED rows; this doc covers everything.
 
 ---
 
-## VERIFIED (60) — all carry a judge harness or verify script
+## VERIFIED (61) — all carry a judge harness or verify script
 
-> All 60 features are VERIFIED. There are zero WIP, PLANNED, or MISSING items.
-> Numbered list below enables any model to count exactly 60.
+> All 61 features are VERIFIED. There are zero WIP, PLANNED, or MISSING items.
+> Numbered list below enables any model to count exactly 61.
 
-### Numbered index (1–60)
+### Numbered index (1–61)
 
 1. Product menu opens; system is not an empty shell
 2. Minimum learning loop: record → compile → attribute, demoable end-to-end
@@ -84,7 +84,8 @@ user-visible VERIFIED rows; this doc covers everything.
 57. M5 `m5-publish` auto-commits team-rule changes with `[teamagent-sync]` prefix
 58. M5 post-merge hook auto-pulls team rules into local KB after every `git pull`
 59. 首次运行向导：装完立刻提示 3 件可以做的事 + 记住进度
-60. Universal seed pack: 12 substring-friendly cross-language avoidance rules ship out-of-box, hit legacy keyword matcher within 30s of `teamagent init`
+60. One-line `curl|sh` installer at `release/install.sh`: gates `node ≥ 22`, picks `npm`/`pnpm`, runs release-tarball install with deterministic exit codes (#92)
+61. Universal seed pack: 12 substring-friendly cross-language avoidance rules ship out-of-box, hit legacy keyword matcher within 30s of `teamagent init` (#88)
 
 ---
 
@@ -212,6 +213,12 @@ user-visible VERIFIED rows; this doc covers everything.
 |---|---------|----------|
 | 59 | 首次运行向导：装完立刻提示 3 件可以做的事 + 记住进度 | `scripts/judge-first-run.sh` (J1–J6) |
 
+### Landing CTA installer (#92)
+
+| # | Feature | Evidence |
+|---|---------|----------|
+| 60 | One-line `curl\|sh` installer at `release/install.sh` (POSIX sh): gates `node ≥ 22`, picks `npm`/`pnpm`, runs release-tarball install with deterministic exit codes (10/11/20/30) and idempotent re-run | `bash docs/features/install-sh/run-judge.sh` (6 scenarios: syntax / node-missing / node-old / node-ok-install with captured argv / idempotent-rerun / dash-portability) |
+
 ### Seed packs / first-run interception (issue #88)
 
 > Decision 2 of `docs/specs/2026-05-07-landing-copy-actually-needed.md`:
@@ -221,7 +228,7 @@ user-visible VERIFIED rows; this doc covers everything.
 
 | # | Feature | Evidence |
 |---|---------|----------|
-| 60 | Universal seed pack: 12 cross-language substring rules ship out-of-box (moment, /Users/, /home/, rm -rf /, chmod 777, eval(, git push --force, git reset --hard, --no-verify, dangerouslySetInnerHTML, pickle.loads, .env) | `docs/features/universal-pack/run-judge.sh`; `packages/cli/src/__tests__/seed-pack-universal.test.ts` (27 tests); `packages/teamagent/seed/packs/universal.jsonl` |
+| 61 | Universal seed pack: 12 cross-language substring rules ship out-of-box (moment, /Users/, /home/, rm -rf /, chmod 777, eval(, git push --force, git reset --hard, --no-verify, dangerouslySetInnerHTML, pickle.loads, .env) | `docs/features/universal-pack/run-judge.sh`; `packages/cli/src/__tests__/seed-pack-universal.test.ts` (27 tests); `packages/teamagent/seed/packs/universal.jsonl` |
 
 ---
 

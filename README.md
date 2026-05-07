@@ -25,8 +25,8 @@ TeamAgent 解决这件事：从你纠正它的每一次对话里，自动**提�
 ## 5–10 分钟上手
 
 ```bash
-# 1. 装（首次需要 5–10 分钟：下载 ~30MB hook bundle + 编译 native deps + 预热 ~120MB 向量模型）
-npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz
+# 1. 装（一行 curl|sh：先校验 node ≥ 22 + npm/pnpm，再 npm install -g release tarball）
+curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh
 cd your-project                                          # 2. 进项目
 teamagent init                                           # 3. 初始化（注册 hook + 预热向量模型）
 # 如果同一个项目也要给 Codex 读取规则：
@@ -36,8 +36,19 @@ teamagent init --target=both
 # → 它每次被你纠正，都会自动入库
 ```
 
-> **为什么用 tarball URL 而不是 `npm install -g github:libz-renlab-ai/TeamBrain#release`？**
-> npm 的 `github:` shorthand 默认走 SSH（`git+ssh://git@github.com/...`），没配 SSH key 的机器（绝大多数 Windows 用户、CI/容器）会直接失败。tarball URL 走 HTTPS，绕开 git clone，更稳定。
+> **`curl … | sh` 做了什么？** 校验 `node -v` ≥ 22 → 选 `npm`（或 `pnpm`）→ 跑 `npm install -g <release-tarball>`。失败时给确定的退出码（10 = node 缺失，11 = node 太老，20 = 包管理器都没有，30 = 安装失败），不会偷偷把别的东西塞进 PATH。脚本源码：[`release/install.sh`](./release/install.sh)，验证harness：[`docs/features/install-sh/run-judge.sh`](./docs/features/install-sh/run-judge.sh)。
+
+<details>
+<summary>不能 curl 的环境（离线、Windows PowerShell、CI 容器）— 用 tarball URL 直装</summary>
+
+```bash
+npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz
+```
+
+为什么用 tarball URL 而不是 `npm install -g github:libz-renlab-ai/TeamBrain#release`？
+npm 的 `github:` shorthand 默认走 SSH（`git+ssh://git@github.com/...`），没配 SSH key 的机器（绝大多数 Windows 用户、CI/容器）会直接失败。tarball URL 走 HTTPS，绕开 git clone，更稳定。
+
+</details>
 
 之后**不用做任何事**——继续正常开发，TeamAgent 自动学习 + 自动更新。
 
