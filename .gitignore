@@ -47,6 +47,9 @@ docs/dogfood/.last-verify.out
 docs/feature-verify-kit/runs/
 .gstack/
 .sandbox/
+# M5 viral sync 钩子由 `teamagent m5-bootstrap --apply` 在每台机器本地生成；
+# 启用方式：git config --local core.hooksPath .githooks
+.githooks/
 docs/bugreport/.last-verify.out
 docs/postpr/.last-verify.out
 docs/fastprobe/.last-verify.out
