@@ -71,7 +71,7 @@ describe("hook block humane format (issue #86)", () => {
       tool_use_id: "tu-trim",
     } as any);
 
-    const firstLine = (result.systemMessage ?? "").split("\n")[0];
+    const firstLine = (result.systemMessage ?? "").split("\n")[0] ?? "";
     expect(firstLine.length).toBeLessThanOrEqual(80);
   });
 
