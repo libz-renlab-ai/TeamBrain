@@ -1,5 +1,15 @@
 export { scoreEntry } from "./scorer.js";
 export {
+  TRANSLATIONS,
+  isDuckModeEnabled,
+  duckify,
+  duckifyText,
+  writeDuckified,
+  type DuckTranslation,
+  type DuckifyOpts,
+  type IsEnabledOpts,
+} from "./duck-mode/index.js";
+export {
   compileMarkdownBlock,
   injectBlockIntoDoc,
   stripLegacyTeamagentBlock,
