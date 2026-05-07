@@ -6,7 +6,11 @@
  *
  * 这里提供真实的探测器：
  *   - readTeamagentVersion: 从 packages/teamagent/package.json 读 self version
- *   - readInstalledHooks: parse ~/.claude/settings.json 的 hooks 字段（user-level）
+ *   - readInstalledHooks: parse 两处 settings 的并集：
+ *       · user-level    ~/.claude/settings.json         （SessionStart 类）
+ *       · project-level <root>/.claude/settings.local.json
+ *         （PreToolUse / PostToolUse / UserPromptSubmit / Stop —— `teamagent install-hook`
+ *           写入这里；只读 user-level 会误报缺失）
  *   - readInstalledPlugins: 列 ~/.claude/plugins/installed/ 子目录
  *   - readInstalledProjectSkills: 仍 stub（M5-D2 范围）
  *
@@ -30,12 +34,12 @@ const ALL_HOOK_KINDS: HookKind[] = [
   "PreCompact",
 ];
 
-export function createDefaultBootstrapPort(): FsBootstrap {
+export function createDefaultBootstrapPort(projectRoot?: string): FsBootstrap {
   return new FsBootstrap({
     readTeamagentVersion: readSelfVersion,
     readInstalledPlugins: readInstalledPluginsImpl,
     readInstalledProjectSkills: async () => [],
-    readInstalledHooks: readInstalledHooksImpl,
+    readInstalledHooks: () => readInstalledHooksImpl(projectRoot),
   });
 }
 
@@ -65,12 +69,16 @@ export async function readSelfVersion(): Promise<string | null> {
 }
 
 /**
- * 读 user-level ~/.claude/settings.json 的 hooks 字段，返回已注册的 HookKind 列表。
- * Claude Code 把 hooks 按事件名分组：`{"hooks": {"UserPromptSubmit": [...], "Stop": [...]}}`，
+ * 读单个 Claude Code settings 文件的 hooks 字段，返回已注册的 HookKind 列表。
+ * Claude Code 把 hooks 按事件名分组：
+ *   `{"hooks": {"UserPromptSubmit": [...], "Stop": [...]}}`，
  * 所以只需看哪些 key 存在就行。
+ *
+ * Fail-soft：文件不存在 / JSON 不合法 / 任何 IO 错误都返回 []。
  */
-export async function readInstalledHooksImpl(): Promise<HookKind[]> {
-  const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
+export async function readHooksFromSettingsFile(
+  settingsPath: string
+): Promise<HookKind[]> {
   try {
     const raw = await fs.readFile(settingsPath, "utf8");
     const cfg = JSON.parse(raw) as { hooks?: Record<string, unknown> };
@@ -79,6 +87,32 @@ export async function readInstalledHooksImpl(): Promise<HookKind[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * 读两处 settings 的并集：
+ *   - user-level    ~/.claude/settings.json
+ *   - project-level <projectRoot>/.claude/settings.local.json （可选）
+ *
+ * 这里 cover 两条 install 路径：
+ *   - `teamagent install-user-hook` → user-level（SessionStart）
+ *   - `teamagent install-hook`      → project-level（PreToolUse / Stop / UserPromptSubmit / PostToolUse）
+ *
+ * 只读 user-level 会让 m5-bootstrap 永远误报后者那批 hooks 缺失。
+ */
+export async function readInstalledHooksImpl(
+  projectRoot?: string
+): Promise<HookKind[]> {
+  const userPath = path.join(os.homedir(), ".claude", "settings.json");
+  const userHooks = await readHooksFromSettingsFile(userPath);
+  if (!projectRoot) return userHooks;
+  const projectPath = path.join(
+    projectRoot,
+    ".claude",
+    "settings.local.json"
+  );
+  const projectHooks = await readHooksFromSettingsFile(projectPath);
+  return Array.from(new Set([...userHooks, ...projectHooks]));
 }
 
 /** 列 ~/.claude/plugins/installed/ 子目录名作为已装插件。读不到返回空数组。 */

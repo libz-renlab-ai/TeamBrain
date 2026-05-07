@@ -30,7 +30,7 @@ export interface M5StatusResult {
 export async function runM5Status(
   opts: M5StatusOptions
 ): Promise<M5StatusResult> {
-  const port = createDefaultBootstrapPort();
+  const port = createDefaultBootstrapPort(opts.projectRoot);
 
   const manifestRaw = await port.readManifest(opts.projectRoot);
   const result: M5StatusResult = {

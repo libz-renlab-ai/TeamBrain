@@ -27,7 +27,7 @@ export interface M5BootstrapResult {
 export async function runM5Bootstrap(
   opts: M5BootstrapOptions
 ): Promise<M5BootstrapResult> {
-  const port = opts.port ?? createDefaultBootstrapPort();
+  const port = opts.port ?? createDefaultBootstrapPort(opts.projectRoot);
 
   const manifestRaw = await port.readManifest(opts.projectRoot);
   if (!manifestRaw) {
