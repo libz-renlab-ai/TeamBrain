@@ -145,7 +145,48 @@ function relativeTime(dateStr: string, now: Date): string {
   return `${Math.floor(days / 30)}个月前`;
 }
 
+// Humane hook block (issue #86): first line tells the user what the rule
+// is about + suggests an alternative; second line shows the suggested
+// pattern verbatim (copy-paste ready); third line collapses confidence /
+// trigger count / age / rule id into a details suffix.
+//
+// Legacy ASCII-box rendering preserved behind the TEAMAGENT_HOOK_ASCII_BOX=1
+// env switch so engineer dogfooders who liked the old shape can opt back in.
+
 function formatWarnMessage(rule: any, now: Date): string {
+  if (process.env.TEAMAGENT_HOOK_ASCII_BOX === "1") {
+    return formatLegacyWarnBox(rule, now);
+  }
+  return formatHumaneBlock(rule, now, /*severity*/ "warn");
+}
+
+function formatBlockReason(rule: any, now: Date): string {
+  if (process.env.TEAMAGENT_HOOK_ASCII_BOX === "1") {
+    return formatLegacyBlockBox(rule, now);
+  }
+  return formatHumaneBlock(rule, now, /*severity*/ "block");
+}
+
+function formatHumaneBlock(rule: any, now: Date, severity: "warn" | "block"): string {
+  const age = rule.created_at ? relativeTime(rule.created_at as string, now) : "未知";
+  const conf = typeof rule.confidence === "number" ? rule.confidence.toFixed(2) : "?";
+  const hitCount = typeof rule.hit_count === "number" ? rule.hit_count : 0;
+  const ruleIdShort = ruleIdShortForm(rule.id ?? rule.rule_id);
+  const correct: string = rule.correct_pattern ?? rule.trigger ?? "";
+  const summary: string = rule.summary ?? rule.trigger ?? rule.wrong_pattern ?? "需要注意";
+  const prefix = severity === "block" ? "⚠️ TeamAgent 拦了一下" : "⚠️ TeamAgent 提醒";
+
+  const firstLine = trimAt(`${prefix} — ${summary}`, 80);
+  const suggestionLine = correct
+    ? `   复制即可: ${trimAt(correct, 200)}`
+    : `   建议: 见下方规则细节`;
+  const hitPart = severity === "block" ? ` · 已触发 ${hitCount} 次` : "";
+  const detailLine = `   细节: conf=${conf} ${age}学到${hitPart}${ruleIdShort ? ` rule=${ruleIdShort}` : ""}`;
+
+  return [firstLine, suggestionLine, detailLine].join("\n");
+}
+
+function formatLegacyWarnBox(rule: any, now: Date): string {
   const age = rule.created_at ? relativeTime(rule.created_at as string, now) : "未知";
   const conf = typeof rule.confidence === "number" ? rule.confidence.toFixed(2) : "?";
   const correct = rule.correct_pattern ?? rule.trigger ?? "";
@@ -158,7 +199,7 @@ function formatWarnMessage(rule: any, now: Date): string {
   return formatAsciiRuleBlock("TeamAgent 经验提醒", lines);
 }
 
-function formatBlockReason(rule: any, now: Date): string {
+function formatLegacyBlockBox(rule: any, now: Date): string {
   const age = rule.created_at ? relativeTime(rule.created_at as string, now) : "未知";
   const conf = typeof rule.confidence === "number" ? rule.confidence.toFixed(2) : "?";
   const hitCount = typeof rule.hit_count === "number" ? rule.hit_count : 0;
@@ -170,6 +211,19 @@ function formatBlockReason(rule: any, now: Date): string {
   if (correct) lines.push(...formatRuleField("使用", correct));
   if (reasoning) lines.push(...formatRuleField("理由", reasoning));
   return formatAsciiRuleBlock("TeamAgent 强烈提醒", lines);
+}
+
+function trimAt(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + "…";
+}
+
+function ruleIdShortForm(id: unknown): string {
+  if (typeof id !== "string" || id.length === 0) return "";
+  // pers-20260507033700-ty7hqm → ty7hqm (last 6 chars after final hyphen)
+  const tail = id.split("-").pop();
+  if (!tail) return id.slice(0, 8);
+  return tail.length > 8 ? tail.slice(0, 8) : tail;
 }
 
 const RULE_BOX_WIDTH = 72;

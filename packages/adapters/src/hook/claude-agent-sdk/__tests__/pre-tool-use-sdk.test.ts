@@ -44,8 +44,8 @@ describe("createPreToolUseHandler (SDK)", () => {
     expect(result.permissionDecision).toBe("allow");
     expect(result.permissionDecisionReason).toBeUndefined();
     expect(result.systemMessage).toContain("fetch");
-    expect(result.systemMessage).toMatch(/\+-- TeamAgent 强烈提醒 -+\+/);
-    expect(result.systemMessage).toMatch(/置信度 0\.\d+/);
+    expect(result.systemMessage).toMatch(/⚠️ TeamAgent 拦了一下/);
+    expect(result.systemMessage).toMatch(/conf=0\.\d+/);
     // calibrator / 升档统计仍依赖 hook-pre.blocked 事件，保留不变
     expect(mockEventLog.append).toHaveBeenCalledWith(expect.objectContaining({
       kind: "hook-pre.blocked",
@@ -78,8 +78,8 @@ describe("createPreToolUseHandler (SDK)", () => {
 
     expect(result.permissionDecision).toBe("allow");
     expect(result.systemMessage).toContain("fetch");
-    expect(result.systemMessage).toMatch(/\+-- TeamAgent 经验提醒 -+\+/);
-    expect(result.systemMessage).toMatch(/置信度 0\.\d+/);
+    expect(result.systemMessage).toMatch(/⚠️ TeamAgent 提醒/);
+    expect(result.systemMessage).toMatch(/conf=0\.\d+/);
     expect(result.systemMessage).toMatch(/前学到/);
     expect(mockEventLog.append).toHaveBeenCalledWith(expect.objectContaining({
       kind: "hook-pre.warned",
