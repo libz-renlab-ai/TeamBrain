@@ -1,3 +1,4 @@
+import { duckifyText } from "@teamagent/core";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
@@ -319,7 +320,7 @@ export function executeStats(opts: StatsOptions = {}): string {
       // DB 损坏 → 视为空
     }
     const stuck = findStuckInPromotion(allEntries, stuckDays, now);
-    return renderStuckInPromotion(stuck, stuckDays, now);
+    return duckifyText(renderStuckInPromotion(stuck, stuckDays, now));
   }
 
   // --override-signals: show per-rule ignored/complied counts
@@ -334,7 +335,7 @@ export function executeStats(opts: StatsOptions = {}): string {
     } catch {
       // 损坏 → 视为空
     }
-    return renderOverrideSignals(events);
+    return duckifyText(renderOverrideSignals(events));
   }
 
   // --explain <rule-id>: just look up the entry and print v2 fields
@@ -357,7 +358,7 @@ export function executeStats(opts: StatsOptions = {}): string {
     } catch {
       // DB 损坏 → entry remains undefined
     }
-    return renderExplain(entry, id);
+    return duckifyText(renderExplain(entry, id));
   }
 
   let events: PersistedEvent[] = [];
@@ -396,9 +397,9 @@ export function executeStats(opts: StatsOptions = {}): string {
     // DB 损坏 → 视为空
   }
 
-  return renderStats(
+  return duckifyText(renderStats(
     { personal, team, global },
     movements,
     windowDays,
-  );
+  ));
 }

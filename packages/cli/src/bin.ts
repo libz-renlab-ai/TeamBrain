@@ -199,7 +199,17 @@ function findPackageVersion(): string {
 
 async function main(): Promise<void> {
   const command = process.argv[2];
-  const rest = process.argv.slice(3);
+  const rawRest = process.argv.slice(3);
+
+  // Global flags inherited by all subcommands (issue #116):
+  // --explain-like-ceo-duck enables duck-mode explanations (中文 cute-duck
+  // alongside engineer jargon). Mirrors env TEAMAGENT_EXPLAIN_LIKE_CEO_DUCK.
+  const duckCliFlag = "--explain-like-ceo-duck";
+  if (rawRest.includes(duckCliFlag)) {
+    const envObj = (globalThis as { process: { env: Record<string, string | undefined> } }).process.env;
+    envObj["TEAMAGENT_EXPLAIN_LIKE_CEO_DUCK"] = "1";
+  }
+  const rest = rawRest.filter((a) => a !== duckCliFlag);
 
   switch (command) {
     case "--version":
