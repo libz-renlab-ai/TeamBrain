@@ -76,6 +76,24 @@ _Avoid_: cross-instance, cross-laptop, multi-host
 **保留给 gbrain**，描述 gbrain 自身的 mirror / 多源拓扑；TeamBrain rules **不**用此词。
 _Avoid_: 在 TeamBrain 上下文中混用 federated 描述任何 team-scope rule transport
 
+### Calibration & tier（一条规则的成熟度与决策来源）
+
+**Confidence**:
+单调标量 ∈ [0, 1]，描述「这条规则历史上有多准」。由 `RuleBasedCalibrator`（=旧 v1）在 Stop hook 里根据 events 自动更新；纯函数、无 LLM。**只是一个信号**，不直接决定 compile / enforcement。
+_Avoid_: score, accuracy, trust, reliability
+
+**Tier**:
+一条规则的 maturity / enforcement / compile gate 等级，6 档枚举：`experimental | probation | stable | canonical | enforced | dormant`。`stable` 及以上才会被 `pnpm teamagent compile` 写进 Skills；`enforced` 是最强档；`dormant` 等同旧 `archived` 状态。**Tier 不由内部 calibrator 自动算**——见 ADR-0004——而是由外部 agent / 人类通过 `teamagent set-tier` 写入。
+_Avoid_: status, level, stage, rank, grade, confidence-bucket
+
+**Calibration source**:
+审计字段，记录当前 `tier` 是谁设的：`auto-rule`（RuleBasedCalibrator 推出来的提案，目前不写 tier，预留）/ `manual`（人类直接 CLI）/ `subagent`（Claude Code 通过 Agent tool 派出的 subagent 写的）。每次 tier 变化连同 `tier_set_at` 时间戳与 `--reason` 文本一并落库。
+_Avoid_: setter, owner, author（与 viral sync 的 Author 撞名）
+
+**Calibration subagent**:
+Claude Code 用 Agent tool 派出的、专门做 tier 重判的临时 agent。读 events / 搜 gbrain / 看 repo，最后调 `teamagent set-tier` 写回。**不在 TeamBrain 进程里跑**——TeamBrain 不内嵌 LLM。
+_Avoid_: AgenticCalibrator（暗示是 TeamBrain 内部模块、与 ADR-0004 冲突）, AI calibrator, smart calibrator
+
 ## Relationships
 
 - 一条 **personal** 规则经 **two gates** 通过后晋升为 **team**；不通过则永停 **L1**
@@ -83,6 +101,9 @@ _Avoid_: 在 TeamBrain 上下文中混用 federated 描述任何 team-scope rule
 - **Teammate** 接收后由 `.githooks/post-merge` 触发 `m5-sync --apply`，merge 进各自的项目 KB；不影响各自的 **L1**
 - **L1 / L2 / L3** 是物理层；**personal / team / global** 是逻辑 scope；前者承载后者，但 L3 永不承载任何非 sandbox scope
 - **Cross-machine** 是 **viral sync** 在物理空间上的可观察现象；不是独立机制
+- 一条规则同时持有 **Confidence**（自动、连续）和 **Tier**（外部、离散）两条独立轴；前者由 `RuleBasedCalibrator` 自动推进，后者由 **Calibration subagent** 或人类通过 `teamagent set-tier` 推进，**Calibration source** 字段忠实记账谁推的
+- **Tier ≥ stable** 是 `pnpm teamagent compile` 写 Skills 的门槛；因此 **Tier** 决定 compile gate，**Confidence** 不直接决定
+- **Calibration subagent** 走 git-backed transport / cross-machine **无关** —— 它是 host agent 进程内的本地行为，输出落到 L1 还是 L2 由所改 rule 自身的 scope 决定
 
 ## Example dialogue
 
@@ -98,3 +119,6 @@ _Avoid_: 在 TeamBrain 上下文中混用 federated 描述任何 team-scope rule
 - **"A 的 brain / B 的 brain"** — issue #82 body 把经验实体化成 per-person brain；解决：no per-person brain，只有项目级 KB + 三种 scope；遇此措辞替换为 "A 的 personal-scope rules" / "A 写入 L2 的规则"
 - **"federated"** — gbrain config 用 federated source 指它自己的镜像源；issue #82 body 又用 "gbrain federated source" 暗指 TeamBrain transport；解决：federated 仅指 gbrain；TeamBrain transport 永远叫 git-backed transport
 - **"cross-machine sync"（`docs/features/planned/cross-machine-sync.md`）** — 该文件标 Status: PLANNED Phase 4，但 M5 已经 supersede；解决：cross-machine 为现象描述词，不再做新机制名；该文件应在 M5 verify 后归档或改为指向 M5
+- **"Calibrator v1 / v2"** — 历史上有两套 Calibrator port + impl 并存（`packages/ports/src/calibrator.ts` + `calibrator-v2.ts`）；v2 引入了 Wilson LB / `Observation` / 自动 Tier 状态机，但 callers 全程 hardcode v1；解决：见 ADR-0004，v2 整套删掉，**RuleBasedCalibrator (=v1)** 是 in-process 唯一 calibrator，仅动 **Confidence**；**Tier** 改由外部写
+- **"5-tier vs 6-tier"** — CLAUDE.md「TeamAgent 经验」第 4 条与设计文档曾写 5-tier；实际枚举 6 档（含 `dormant`）；解决：6-tier 为 canonical，文档在 ADR-0004 实现 PR 中对齐
+- **"AgenticCalibrator"** — 在 grilling 过程中曾被提出作为 TeamBrain 内部模块名；解决：拒绝；TeamBrain 不内嵌 LLM，agentic 判断由 host 端的 **Calibration subagent** 完成
