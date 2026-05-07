@@ -1,3 +1,4 @@
+import { duckifyText } from "@teamagent/core";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -904,7 +905,7 @@ export function renderInitResult(result: InitResult): string {
     lines.push("   运行 teamagent doctor 获取诊断建议");
   }
 
-  return lines.join("\n") + "\n";
+  return duckifyText(lines.join("\n") + "\n");
 }
 
 function stepLabel(step: string): string {
