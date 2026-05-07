@@ -320,7 +320,7 @@ async function main(): Promise<void> {
       return;
     }
     case "demo": {
-      // teamagent demo hook <tool> <key=value>...
+      // Legacy subcommand: teamagent demo hook <tool> <key=value>...
       const sub = rest[0];
       if (sub === "hook") {
         const opts = parseDemoHookArgs(rest.slice(1));
@@ -333,8 +333,12 @@ async function main(): Promise<void> {
         process.stdout.write(executeDemoHook(opts).output);
         return;
       }
-      process.stderr.write(`未知 demo 子命令: ${sub}\n`);
-      process.exit(1);
+      // Issue #93 modes: teamagent demo / --inline / --record [path]
+      const { parseDemoArgs, executeDemo } = await import("./commands/demo.js");
+      const demoArgs = parseDemoArgs(rest);
+      const r = await executeDemo(demoArgs);
+      process.stdout.write(r.output);
+      if (r.exitCode !== 0) process.exit(r.exitCode);
       return;
     }
     case "install-hook": {
