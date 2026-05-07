@@ -1,0 +1,33 @@
+📊 TeamAgent 知识库统计
+
+总数: 69 (活跃 67, 归档 2)
+
+按作用域:
+  personal  13
+  team      0
+  global    54
+
+按分类:
+  C 代码层  1
+  E 工程层  7
+  S 策略层  31
+  K 认知层  28
+
+最近 5 条新增:
+  [2026-05-07] K/communication  汇总多个工作者的任务完成结果向用户报告时
+  [2026-05-07] K/duckspeak  汇报重要任务（如 TEAMWORK）的完成状态或工作结果时
+  [2026-05-07] S/task-status  报告多个后台任务的执行状态，某个任务已发送 task-notification 完成信号
+  [2026-05-07] K/task-management  收到 task-notification 后，需要报告并行任务的完成状态
+  [2026-05-07] K/async-task  收到异步任务完成通知（task-notification）后需要报告工作进度或团队状态
+
+本周（7 天）confidence 变化 top 5:
+  +0.24  pers-20260507033700-ty7hqm
+         (已删)
+  +0.23  pers-20260504092340-v42ow6
+         (已删)
+  +0.16  pers-20260504094845-jnp4kz
+         (已删)
+  +0.15  pers-20260503041637-gaoekx [自动归档]
+         (已删)
+  +0.15  pers-20260507011449-0wo1fg [自动归档]
+         (已删)
