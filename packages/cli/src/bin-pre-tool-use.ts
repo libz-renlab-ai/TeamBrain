@@ -203,9 +203,17 @@ async function main(): Promise<void> {
 
             return { matched: merged, semanticHits };
           } catch (_semErr) {
-            // Silent fallback to legacy on any semantic error
-            const stack = (_semErr instanceof Error ? _semErr.stack : String(_semErr)) ?? String(_semErr);
-            process.stderr.write(`teamagent pre-hook: semantic match failed, falling back to legacy: ${stack}\n`);
+            // Silent fallback to legacy on any semantic error.
+            // B-147: emit a one-liner reason; full stack only when
+            // TEAMAGENT_HOOK_DEBUG=1 (otherwise users see a 30-line Node
+            // crash dump every PreToolUse when onnxruntime-node is missing).
+            const msg = _semErr instanceof Error ? _semErr.message : String(_semErr);
+            if (process.env.TEAMAGENT_HOOK_DEBUG === "1") {
+              const stack = (_semErr instanceof Error ? _semErr.stack : String(_semErr)) ?? String(_semErr);
+              process.stderr.write(`teamagent pre-hook: semantic match failed, falling back to legacy: ${stack}\n`);
+            } else {
+              process.stderr.write(`teamagent pre-hook: semantic match unavailable (${msg.slice(0, 200)}); using legacy keyword matcher\n`);
+            }
           }
         }
 
