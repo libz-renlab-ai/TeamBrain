@@ -36,12 +36,12 @@ describe("packages/cli hook bundle config", () => {
     // Capture the noExternal: [...] block. Multi-line, so scan from the
     // literal `noExternal:` to the closing `]` on its own line.
     const match = source.match(/noExternal:\s*\[([\s\S]*?)\]/);
-    expect(match, "noExternal block not found in tsup.hook.config.ts").toBeTruthy();
+    const block = match?.[1];
+    expect(block, "noExternal block not found in tsup.hook.config.ts").toBeTruthy();
 
-    const block = match![1];
     for (const dep of REQUIRED_NO_EXTERNAL) {
       expect(
-        block.includes(`"${dep}"`),
+        block!.includes(`"${dep}"`),
         `tsup.hook.config.ts noExternal must include "${dep}" — otherwise the staged ` +
           `~/.teamagent/hooks/bin-*.cjs will hit MODULE_NOT_FOUND on hook fire (issue #131)`,
       ).toBe(true);
@@ -51,11 +51,11 @@ describe("packages/cli hook bundle config", () => {
   it("does not list pure-JS deps in external (which would re-break the staged bin)", () => {
     const source = fs.readFileSync(HOOK_CONFIG, "utf-8");
     const match = source.match(/external:\s*\[([\s\S]*?)\]/);
-    expect(match, "external block not found in tsup.hook.config.ts").toBeTruthy();
-    const block = match![1];
+    const block = match?.[1];
+    expect(block, "external block not found in tsup.hook.config.ts").toBeTruthy();
     for (const dep of REQUIRED_NO_EXTERNAL) {
       expect(
-        block.includes(`"${dep}"`),
+        block!.includes(`"${dep}"`),
         `tsup.hook.config.ts external must NOT include "${dep}" — pure-JS deps belong in noExternal`,
       ).toBe(false);
     }
