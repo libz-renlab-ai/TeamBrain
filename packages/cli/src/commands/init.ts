@@ -22,8 +22,17 @@ import {
   structureRuleTextsBatch,
   runCompile,
   DEFAULT_IMPORT_CONFIDENCE,
+  OBSERVED_FILE_LIST,
+  renderPackPromptBody,
   type FilePresence,
+  type ObservedFile,
+  type ObservedFiles,
 } from "@teamagent/core";
+import {
+  executePackAdd,
+  readPackRegistry,
+  resolvePacksDir,
+} from "./pack.js";
 import type { LLMClient } from "@teamagent/ports";
 import type { KnowledgeEntry } from "@teamagent/types";
 import { computeEnforcement } from "@teamagent/types";
@@ -48,6 +57,14 @@ export interface InitOptions {
   skipWarmup?: boolean;
   /** 显式指定 seed 文件路径（测试用）。 */
   seedPath?: string;
+  /**
+   * Stack packs to install without showing the agent prompt.
+   * Value: "all" (every available pack) or comma-separated names (e.g. "frontend-js,ops-safety").
+   * When unset, init prints the versioned markdown prompt described by ADR 0002.
+   */
+  pack?: string;
+  /** Override registry directory (tests inject; production resolves via seed path walk + TEAMAGENT_PACKS_DIR). */
+  packsDir?: string;
   /**
    * Opt-in：装团队标配 plugins（superpowers/sales/playground）。
    * 默认 false——插件装在用户全局（~/.claude/settings.json），跨所有项目生效，
@@ -83,6 +100,13 @@ export interface InitResult {
     importedRules: number;
     totalActiveEntries: number;
   };
+  /**
+   * Versioned markdown prompt block (per ADR 0002) shown to the user's coding
+   * agent when no `--pack` flag was supplied. Empty / undefined when init was
+   * invoked with `--pack` (caller already chose) or in dry-run mode where the
+   * prompt is unnecessary.
+   */
+  packPrompt?: string;
 }
 
 function resolvePaths(opts: InitOptions) {
@@ -209,6 +233,93 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     steps.push({ step: "warmup", status: "skipped", detail: "skipWarmup / dryRun / test env" });
   }
 
+  // ---------- Phase C: Pack management (ADR 0002) ----------
+  // Run BEFORE appendInstallLog and totalActive computation so that:
+  //   1. load-pack / pack-prompt steps land in ~/.teamagent/.install-log
+  //      (audit trail covers pack failures too — Codex review #110 P2).
+  //   2. summary.totalActiveEntries reflects pack-added rules (otherwise
+  //      callers see a stale count — Codex review #110 P2).
+  // When --pack <names> is given, install packs as a normal init step.
+  // Otherwise, render the versioned markdown prompt for the coding agent.
+  let packPrompt = "";
+  const packsDir = resolvePacksDir(opts.packsDir);
+  const observed = collectObservedFiles(paths.cwd);
+  const available = packsDir ? readPackRegistry(packsDir) : [];
+  let packAddedRules = 0;
+
+  if (opts.pack && opts.pack.trim().length > 0) {
+    const requested = opts.pack
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (dryRun) {
+      steps.push(
+        okStep(
+          "load-pack",
+          `(dry-run) 会安装 packs: ${requested.join(", ")}`,
+        ),
+      );
+    } else {
+      try {
+        const result = executePackAdd(requested, {
+          ...(opts.packsDir ? { packsDir: opts.packsDir } : {}),
+          userGlobalDbPath: paths.userGlobalDbPath,
+        });
+        const parts: string[] = [];
+        if (result.added.length > 0) {
+          packAddedRules = result.added.reduce((s, a) => s + a.rules, 0);
+          parts.push(`安装 ${result.added.length} 个 pack（${packAddedRules} 条规则）`);
+        }
+        if (result.alreadyInstalled.length > 0) {
+          parts.push(`已存在: ${result.alreadyInstalled.join(", ")}`);
+        }
+        if (result.notFound.length > 0) {
+          parts.push(`未找到: ${result.notFound.join(", ")}`);
+        }
+        if (result.failed.length > 0) {
+          parts.push(`失败: ${result.failed.length}`);
+        }
+        const status =
+          result.notFound.length > 0 || result.failed.length > 0
+            ? "failed"
+            : "ok";
+        steps.push({
+          step: "load-pack",
+          status,
+          detail: parts.join("，") || "无事可做",
+        });
+      } catch (err) {
+        steps.push(failStep("load-pack", String(err).slice(0, 200)));
+      }
+    }
+  } else if (!dryRun) {
+    const installedNames = collectInstalledPackNames(
+      paths.userGlobalDbPath,
+      available,
+    );
+    packPrompt = renderPackPromptBody({
+      observed,
+      available,
+      installed: installedNames,
+    });
+    steps.push(
+      okStep(
+        "pack-prompt",
+        available.length > 0
+          ? `已生成 v1 markdown prompt（${available.length} 个可用 pack）`
+          : "已生成 v1 markdown prompt（无 pack 可用）",
+      ),
+    );
+  } else {
+    steps.push(
+      okStep(
+        "pack-prompt",
+        `(dry-run) 会渲染 v1 prompt（${available.length} 个 pack）`,
+      ),
+    );
+  }
+
+  // Install log + totalActive must run AFTER Phase C so they observe pack steps + rules.
   if (!dryRun) {
     try {
       appendInstallLog(paths.installLogPath, steps, now);
@@ -219,7 +330,11 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
 
   let totalActive = 0;
   if (dryRun) {
-    totalActive = presetStep.wouldAddCount + seedStep.wouldAddCount + importStep.wouldImport;
+    totalActive =
+      presetStep.wouldAddCount +
+      seedStep.wouldAddCount +
+      importStep.wouldImport +
+      packAddedRules;
   } else {
     try {
       fs.mkdirSync(path.dirname(paths.projectDbPath), { recursive: true });
@@ -242,8 +357,40 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     importedRules: importStep.importedCount,
     totalActiveEntries: totalActive,
   };
+
   const ok = !steps.some((s) => s.status === "failed");
-  return finalize(ok, dryRun, steps, summary);
+  return finalize(ok, dryRun, steps, summary, packPrompt);
+}
+
+function collectObservedFiles(cwd: string): ObservedFiles {
+  const out = {} as ObservedFiles;
+  for (const f of OBSERVED_FILE_LIST) {
+    out[f as ObservedFile] = fs.existsSync(path.join(cwd, f));
+  }
+  return out;
+}
+
+function collectInstalledPackNames(
+  userGlobalDbPath: string,
+  available: { name: string }[],
+): string[] {
+  if (!fs.existsSync(userGlobalDbPath)) return [];
+  try {
+    const store = new SqliteKnowledgeStore(openDb(userGlobalDbPath));
+    try {
+      const all = store.getAll();
+      const names: string[] = [];
+      for (const meta of available) {
+        const tag = `pack:${meta.name}`;
+        if (all.some((e) => e.tags?.includes(tag))) names.push(meta.name);
+      }
+      return names.sort();
+    } finally {
+      store.close();
+    }
+  } catch {
+    return [];
+  }
 }
 
 // Step implementations
@@ -836,8 +983,9 @@ function finalize(
   dryRun: boolean,
   steps: InitStepResult[],
   summary: InitResult["summary"],
+  packPrompt = "",
 ): InitResult {
-  return { ok, dryRun, steps, summary };
+  return { ok, dryRun, steps, summary, packPrompt };
 }
 
 // CLI glue
@@ -859,6 +1007,13 @@ export function parseInitArgs(argv: string[]): InitOptions {
       opts.target = parseTarget(value);
     } else if (a.startsWith("--target=")) {
       opts.target = parseTarget(a.slice("--target=".length));
+    } else if (a === "--pack") {
+      const value = argv[++i];
+      if (!value)
+        throw new Error("--pack 需要 <all|name1,name2> 值");
+      opts.pack = value;
+    } else if (a.startsWith("--pack=")) {
+      opts.pack = a.slice("--pack=".length);
     }
   }
   return opts;
@@ -884,6 +1039,7 @@ export function renderInitResult(result: InitResult): string {
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
     { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills"] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
+    { icon: "📦", label: "Stack packs", stepKeys: ["load-pack", "pack-prompt"] },
   ];
 
   for (const group of stepGroups) {
@@ -933,6 +1089,14 @@ export function renderInitResult(result: InitResult): string {
     lines.push("   运行 teamagent doctor 获取诊断建议");
   }
 
+  // Pack prompt — versioned markdown block consumed by the user's coding agent
+  // (Claude Code / Codex) per ADR 0002. Empty when init was invoked with --pack
+  // or in dry-run mode.
+  if (result.packPrompt && result.packPrompt.length > 0) {
+    lines.push("");
+    lines.push(result.packPrompt);
+  }
+
   return lines.join("\n") + "\n";
 }
 
@@ -949,6 +1113,8 @@ function stepLabel(step: string): string {
     "install-plugins": "Plugin 安装",
     "compile-skills": "Skills",
     "link-codex-files": "Codex 软链接",
+    "load-pack": "Pack 安装",
+    "pack-prompt": "Pack 提示",
   };
   return map[step] ?? step;
 }

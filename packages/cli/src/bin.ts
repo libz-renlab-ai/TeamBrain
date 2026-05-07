@@ -150,6 +150,16 @@ import {
   parseRecordingArgs,
   renderRecordingResult,
 } from "./commands/recording.js";
+import {
+  executePackAdd,
+  executePackList,
+  executePackRemove,
+  packAddExitCode,
+  parsePackArgs,
+  renderPackAdd,
+  renderPackList,
+  renderPackRemove,
+} from "./commands/pack.js";
 
 function findPackageVersion(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
@@ -407,7 +417,7 @@ async function main(): Promise<void> {
       if (rest.includes("--help") || rest.includes("-h")) {
         process.stdout.write(
           "Usage: teamagent init [--dry-run] [--skip-import] [--skip-hook] [--install-plugins]\n" +
-          "                      [--target=claude|codex|both]\n" +
+          "                      [--target=claude|codex|both] [--pack <all|name1,name2>]\n" +
           "\n" +
           "Options:\n" +
           "  --dry-run            Preview what init would do without making changes\n" +
@@ -416,6 +426,8 @@ async function main(): Promise<void> {
           "  --skip-warmup        Skip embedding model warmup\n" +
           "  --install-plugins    Also install team plugins (superpowers/caveman/sales)\n" +
           "  --target=TARGET      claude (default), codex, or both\n" +
+          "  --pack=NAMES         Install stack packs without showing the agent prompt.\n" +
+          "                       NAMES may be 'all' or a comma-separated list (e.g. frontend-js,ops-safety).\n" +
           "\n" +
           "Scaffolds TeamAgent config in the current project:\n" +
           "  - Creates .teamagent/ directory and initializes knowledge DB\n" +
@@ -610,6 +622,48 @@ async function main(): Promise<void> {
       } catch (err) {
         process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
         process.exit(2);
+      }
+      return;
+    }
+    case "pack": {
+      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage:\n" +
+            "  teamagent pack list [--json]\n" +
+            "  teamagent pack add <names>      e.g. pack add frontend-js,ops-safety\n" +
+            "  teamagent pack remove <names>\n" +
+            "\n" +
+            "Manages stack packs (per ADR 0002 — agent-driven detection).\n" +
+            "Pack rules are written to ~/.teamagent/global.db with tag pack:<name>.\n",
+        );
+        return;
+      }
+      let args;
+      try {
+        args = parsePackArgs(rest);
+      } catch (err) {
+        process.stderr.write(
+          `${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(2);
+        return;
+      }
+      if (args.sub === "list") {
+        const result = executePackList({});
+        process.stdout.write(renderPackList(result, args.json));
+        return;
+      }
+      if (args.sub === "add") {
+        const result = executePackAdd(args.names, {});
+        process.stdout.write(renderPackAdd(result));
+        const code = packAddExitCode(result);
+        if (code !== 0) process.exit(code);
+        return;
+      }
+      if (args.sub === "remove") {
+        const result = executePackRemove(args.names, {});
+        process.stdout.write(renderPackRemove(result));
+        return;
       }
       return;
     }
@@ -1004,6 +1058,10 @@ async function main(): Promise<void> {
           "                                   迁移旧规则（trigger_description 为空）通过 LLM 生成双描述，并写入 vec0 和 FTS5",
           "  teamagent migrate-v7 [--dry-run] [--limit=N] [--db=<path>]",
           "                                   批量为存量规则生成 tool_context_description，并写入 knowledge_tool_vec",
+          "  teamagent pack list [--json]",
+          "                                   列出已安装 / 可用的 stack packs（ADR 0002 — agent 决定装哪些）",
+          "  teamagent pack add <names>       例 pack add frontend-js,ops-safety；从 seed/packs/<name>.{jsonl,meta.json} 读取并注入用户全局 store",
+          "  teamagent pack remove <names>    按 tag pack:<name> 过滤删除全局 store 中对应规则",
           "  teamagent ingest --from-insights <path> | --from-audit | --from-pr <n>",
           "                   | --from-git [--since=30d] | --from-ci [--since=30d] | --from-candidates <path>",
           "                                   多源摄入：Claude /insights / npm audit / PR review / git hotspot / CI failure",

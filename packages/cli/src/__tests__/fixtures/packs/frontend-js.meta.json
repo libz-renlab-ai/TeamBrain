@@ -1,0 +1,7 @@
+{
+  "name": "frontend-js",
+  "description": "Frontend JS / TS avoidance rules",
+  "tags": ["web", "react", "typescript"],
+  "file_hints": ["package.json", "tsconfig.json"],
+  "prompt_version": 1
+}

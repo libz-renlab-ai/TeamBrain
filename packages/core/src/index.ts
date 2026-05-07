@@ -207,3 +207,21 @@ export {
   type MergeResult,
 } from "./m5/lww-merge.js";
 export { teamRuleToKnowledgeEntry } from "./m5/team-rule-projection.js";
+export {
+  PROMPT_VERSION,
+  PROMPT_OPEN_MARKER,
+  PROMPT_CLOSE_MARKER,
+  OBSERVED_FILE_LIST,
+  PackMetaSchema,
+  parsePackMeta,
+  packTag,
+  entryHasPackTag,
+  diffPackRequest,
+  renderPackPromptBody,
+  type ObservedFile,
+  type ObservedFiles,
+  type PackMeta,
+  type DiffPackRequestInput,
+  type DiffPackRequestResult,
+  type RenderPackPromptInput,
+} from "./packs/index.js";

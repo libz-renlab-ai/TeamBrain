@@ -180,6 +180,9 @@ importers:
       web-tree-sitter:
         specifier: ^0.26.0
         version: 0.26.8
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
     devDependencies:
       vitest:
         specifier: ^2.1.0

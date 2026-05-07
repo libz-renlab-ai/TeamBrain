@@ -1,0 +1,109 @@
+---
+date: 2026-05-07
+audience: non-technical
+schema-version: 1
+---
+
+```text
+  git clone
+      |
+      v
+  pnpm install       <-- 下载所有依赖（约 30–60 秒）
+      |
+      v
+  pnpm build         <-- 把源码编译成可执行文件
+      |
+      v
+  pnpm teamagent skeleton-demo  <-- 验证安装成功
+      |
+  error? -------> fix 提示（见每个步骤的 common_errors）
+      |
+      v
+    done!
+```
+
+# INSTALL.md — TeamAgent 安装指南
+
+> 本文件同时被 **installer 脚本** 与 **AI 向导** 读取，是安装流程的唯一来源。
+> 修改这里的说明，脚本与 AI 向导会自动同步更新。
+
+---
+
+## Schema 说明（给开发者看）
+
+每个安装步骤写成一个 fenced YAML 代码块，格式如下：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | 字符串 | 步骤唯一标识，如 `step-1` |
+| `command` | 字符串 | 在终端里执行的命令（英文，可直接复制粘贴） |
+| `explanation` | 字符串 | 用中文解释"这一步在做什么"，面向非技术用户，不超过 200 字 |
+| `progress` | 字符串 | 当前步骤在整体流程中的位置，格式 `"i/N"`，如 `"1/3"` |
+| `common_errors` | 列表 | 常见错误，每项包含 `pattern`（错误关键词，正则表达式）和 `fix`（可直接复制粘贴的修复命令） |
+
+---
+
+## 安装步骤
+
+```yaml install-step
+id: step-1
+command: pnpm install
+explanation: |
+  这一步会自动下载 TeamAgent 运行所需的所有"配件"（技术上叫依赖包）。
+  类比：就像第一次用一台新电脑，系统要先下载并安装各种驱动程序，之后才能正常工作。
+  首次执行大约需要 1–3 分钟，速度取决于网络状况。请耐心等待，看到"Done"或没有红色报错就表示成功。
+progress: "1/3"
+common_errors:
+  - pattern: "command not found.*pnpm|pnpm.*not found|pnpm: No such file"
+    fix: "npm install -g pnpm"
+  - pattern: "EACCES|permission denied|access denied"
+    fix: "sudo chown -R $(whoami) ~/.npm && pnpm install"
+  - pattern: "ETIMEDOUT|network timeout|ECONNRESET|ENOTFOUND"
+    fix: "pnpm install --prefer-offline"
+```
+
+```yaml install-step
+id: step-2
+command: pnpm build
+explanation: |
+  这一步把源代码"翻译"成计算机能直接运行的形式（技术上叫编译）。
+  类比：就像把乐谱（源代码）演奏成实际能听的音乐（可执行程序）。
+  执行过程中你会看到一些文字滚动，大约需要 30 秒到 1 分钟。
+  执行完没有红色报错、最后看到类似"Build succeeded"的提示就表示成功。
+progress: "2/3"
+common_errors:
+  - pattern: "Cannot find module|Module not found|ERR_MODULE_NOT_FOUND"
+    fix: "pnpm install && pnpm build"
+  - pattern: "error TS|TypeScript.*error|Type error"
+    fix: "pnpm typecheck 2>&1 | head -40"
+  - pattern: "ENOMEM|JavaScript heap out of memory|out of memory"
+    fix: "NODE_OPTIONS=--max-old-space-size=4096 pnpm build"
+```
+
+```yaml install-step
+id: step-3
+command: pnpm teamagent skeleton-demo
+explanation: |
+  这一步运行一个"冒烟测试"，验证安装是否完全成功。
+  类比：就像新买了电视，开机看能不能播放画面——不是真的在看节目，只是确认设备工作正常。
+  成功时会在终端打印出一系列绿色的对勾（✓）和"demo complete"字样。
+  如果一切正常，恭喜你！TeamAgent 已经就绪，可以正常使用了。
+progress: "3/3"
+common_errors:
+  - pattern: "teamagent.*not found|cannot find.*teamagent|Unknown command.*teamagent"
+    fix: "pnpm build && pnpm teamagent skeleton-demo"
+  - pattern: "sqlite.*error|database.*locked|SQLITE_CANTOPEN"
+    fix: "rm -f .teamagent/knowledge.db && pnpm teamagent skeleton-demo"
+  - pattern: "ENOENT.*knowledge|no such file.*db"
+    fix: "mkdir -p .teamagent && pnpm teamagent skeleton-demo"
+```
+
+---
+
+## 遇到没见过的报错？
+
+如果遇到上面 `common_errors` 里没有覆盖的错误，请：
+
+1. 把终端里完整的报错文字复制下来。
+2. 在 Claude Code 里问：`我在执行 pnpm install/build/teamagent skeleton-demo 时遇到了以下报错：<粘贴报错>`。
+3. 或者直接提交 bug report：`bash scripts/bugreport-collect.sh > /tmp/bug.md`，再把 `/tmp/bug.md` 贴进 https://github.com/libz-renlab-ai/TeamBrain/issues/new。
