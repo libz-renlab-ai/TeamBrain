@@ -19,7 +19,7 @@ TeamBrain 的全局安装 (`teamagent` CLI) 会**在每次 Claude Code 会话开
 ## TL;DR
 
 - **触发**：每次 `SessionStart` hook（即每开一次 Claude Code 都可能跑），但有 1 小时节流。
-- **改什么**：`npm install -g github:libz-renlab-ai/TeamBrain#release`，跑 `migrate-auto` 升级 SQLite，写 `~/.teamagent/update-state.json` + 备份旧版到 `~/.teamagent/rollback/<sha>/`。
+- **改什么**：`npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz`，跑 `migrate-auto` 升级 SQLite，写 `~/.teamagent/update-state.json` + 备份旧版到 `~/.teamagent/rollback/<sha>/`。
 - **看哪里**：`~/.teamagent/update.log`（append-only），`update-state.json`（当前状态）。
 - **怎么关**：`touch ~/.teamagent/auto-update.disabled` **或** `export TEAMAGENT_AUTO_UPDATE=0`。
 
@@ -28,7 +28,7 @@ TeamBrain 的全局安装 (`teamagent` CLI) 会**在每次 Claude Code 会话开
 | 字段 | 内容 |
 |------|------|
 | trigger | 每次 `SessionStart` hook；`shouldCheckUpdate()` 通过条件：未被 disabled、距上次 check ≥ `interval_hours`（默认 1h）、连续失败 < 3 次（或 24h 后重试） |
-| impact scope | (a) global node_modules（`npm install -g github:libz-renlab-ai/TeamBrain#release`，**改你的 `npm root -g`**）<br>(b) `~/.teamagent/update-state.json`（last_installed_sha / installed_at / consecutive_install_failures / pending_banner / interval_hours）<br>(c) `~/.teamagent/rollback/<sha>/`（升级前 dist 快照，最近 3 个）<br>(d) `~/.teamagent/update.log`（append-only）<br>(e) 升级后跑 `migrate-auto` → `migrate-v6` + `migrate-v7` 改 SQLite knowledge.db / global.db |
+| impact scope | (a) global node_modules（`npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz`，**改你的 `npm root -g`**）<br>(b) `~/.teamagent/update-state.json`（last_installed_sha / installed_at / consecutive_install_failures / pending_banner / interval_hours）<br>(c) `~/.teamagent/rollback/<sha>/`（升级前 dist 快照，最近 3 个）<br>(d) `~/.teamagent/update.log`（append-only）<br>(e) 升级后跑 `migrate-auto` → `migrate-v6` + `migrate-v7` 改 SQLite knowledge.db / global.db |
 | audit trail | check 阶段静默；updater 子进程 `stdio:'ignore'`、`detached:true`；**全部** log 进 `~/.teamagent/update.log`；成功后 `pending_banner` 在**下次** SessionStart 由 stderr 提示 |
 | opt-out | 三种任选其一：<br>1. `touch ~/.teamagent/auto-update.disabled`（文件存在即关）<br>2. `export TEAMAGENT_AUTO_UPDATE=0`（env var）<br>3. 连续 3 次失败后自动 24h 节流（被动 opt-out） |
 | 关联 issue / 测试 | 实现 spec：`docs/superpowers/specs/2026-04-29-auto-update-design.md`<br>commit：`38e0a7e`、`fbcb4e1`、`312c419`、`043a947`<br>测试：`packages/cli/src/__tests__/updater-logic.test.ts` (7 case)、`session-start-update.test.ts`、`session-start-logic.test.ts` |
@@ -68,7 +68,7 @@ TeamBrain 的全局安装 (`teamagent` CLI) 会**在每次 Claude Code 会话开
                        │      → ~/.teamagent/rollback/<sha>/ 存旧 dist 快照
                        │
                        ├─► runNpmInstall()
-                       │      npm install -g github:libz-renlab-ai/TeamBrain#release
+                       │      npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz
                        │      失败 → restoreFromBackup → ++consecutive_install_failures → exit
                        │
                        ├─► runMigrateAuto()
@@ -121,7 +121,7 @@ lsof +D "$(npm root -g)/teamagent" 2>/dev/null   # 谁在拿 dist
 ls "$(npm root -g)" | grep teamagent              # 是否残留 .teamagent-XXXXX 临时目录
 ```
 
-修复：`rm -rf "$(npm root -g)/.teamagent-"*` 清理临时目录后下一次 SessionStart 重试；或手动 `npm install -g github:libz-renlab-ai/TeamBrain#release`。
+修复：`rm -rf "$(npm root -g)/.teamagent-"*` 清理临时目录后下一次 SessionStart 重试；或手动 `npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz`。
 
 ### 网络 / GitHub API 限流
 

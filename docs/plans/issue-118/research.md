@@ -96,10 +96,10 @@
 
 | 字段 | 内容 |
 |------|------|
-| trigger condition | 每次 SessionStart；`shouldCheckUpdate()` 通过（默认 24h debounce、`interval_hours` 字段可调）；`shouldSpawnUpdater()` 通过 → detached spawn |
+| trigger condition | 每次 SessionStart；`shouldCheckUpdate()` 通过（默认 1h debounce、`interval_hours` 字段可调；连续失败 ≥ 3 次时 24h backoff）；`shouldSpawnUpdater()` 通过 → detached spawn |
 | impact scope | (a) `npm install -g <tarball>`（**改 global node_modules**）<br>(b) `~/.teamagent/update-state.json`（last_installed_sha / installed_at / consecutive_install_failures / pending_banner）<br>(c) `~/.teamagent/rollback/<sha>/` 备份旧版<br>(d) `~/.teamagent/update.log` append<br>(e) 升级后 spawn `migrate-auto` → `migrate-v6` + `migrate-v7` 改 SQLite |
 | audit trail | check 阶段 silent；updater 进程 `stdio='ignore'`；**全部** log 进 `~/.teamagent/update.log`；成功后 `pending_banner` 在下次 SessionStart 由 stderr 显示；失败 24h 节流 alert |
-| opt-out | (a) 创建空文件 `~/.teamagent/auto-update.disabled`<br>(b) env `TEAMAGENT_AUTO_UPDATE_DISABLED=1` |
+| opt-out | (a) 创建空文件 `~/.teamagent/auto-update.disabled`<br>(b) env `TEAMAGENT_AUTO_UPDATE=0`（注意：env 变量是 `TEAMAGENT_AUTO_UPDATE`，值为 `"0"`，不是 `_DISABLED`） |
 | 关联 issue | 无；本 audit 首次系统化记录 |
 
 源码：`packages/cli/src/bin-updater.ts:41-45,109-123,187-206`；`packages/cli/src/updater-logic.ts:22-86,150-166`；`packages/cli/src/session-start-logic.ts:17,116,134-158,164-175,202-221`；`packages/teamagent/postinstall.mjs:186-212`；`packages/cli/src/commands/migrate-auto.ts:16-29`。**测试：未发现** auto-upgrade logic unit test（postinstall 不被单测）——本 issue 可能要求补 test。
