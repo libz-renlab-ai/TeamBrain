@@ -5,10 +5,19 @@ import {
   classifyScope,
   decideShareAction,
   mergeLwwBatch,
+  isSafeRuleId,
+  isSafeAuthor,
   type ShareAction,
   type TeamRuleFile,
 } from "@teamagent/core";
 import { FsTeamRuleStore } from "@teamagent/adapters/m5/fs-team-rule-store";
+
+export class M5ShareValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "M5ShareValidationError";
+  }
+}
 
 export interface M5ShareOptions {
   projectRoot: string;
@@ -50,6 +59,26 @@ export async function runM5Share(
   const author = opts.author ?? gitUserName() ?? "unknown";
   const now = opts.now ?? new Date().toISOString();
   const confidence = opts.confidence ?? 0.85;
+
+  // B-114/B-115: reject path-traversal / ANSI / shell-injection in rule_id and author
+  if (!isSafeRuleId(ruleId)) {
+    throw new M5ShareValidationError(
+      `--rule-id "${ruleId}" contains illegal characters; allowed: [A-Za-z0-9._-], length 1..200`,
+    );
+  }
+  if (!isSafeAuthor(author)) {
+    throw new M5ShareValidationError(
+      `--author "${author}" contains illegal characters; allowed: [A-Za-z0-9._-], length 1..100`,
+    );
+  }
+  // B-140: reject future timestamps (> now + 60s tolerance for clock skew)
+  const nowMs = Date.parse(now);
+  const realNowMs = Date.now();
+  if (Number.isFinite(nowMs) && nowMs > realNowMs + 60_000) {
+    throw new M5ShareValidationError(
+      `--now "${now}" is more than 60s in the future relative to system clock`,
+    );
+  }
 
   let written_path: string | undefined;
   if (action.kind === "promote_to_l2") {

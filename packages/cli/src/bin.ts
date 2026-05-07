@@ -255,8 +255,17 @@ async function main(): Promise<void> {
         );
         process.exit(1);
       }
-      const result = await runM5Share(opts);
-      process.stdout.write(renderM5ShareResult(result) + "\n");
+      try {
+        const result = await runM5Share(opts);
+        process.stdout.write(renderM5ShareResult(result) + "\n");
+      } catch (err) {
+        const { M5ShareValidationError } = await import("./commands/m5-share.js");
+        if (err instanceof M5ShareValidationError) {
+          process.stderr.write(`[m5-share] ${err.message}\n`);
+          process.exit(2);
+        }
+        throw err;
+      }
       return;
     }
     case "m5-sync": {
@@ -271,8 +280,17 @@ async function main(): Promise<void> {
         process.stderr.write("[m5-delete] 必须提供 --rule-id <id>\n");
         process.exit(1);
       }
-      const result = await runM5Delete(opts);
-      process.stdout.write(renderM5DeleteResult(result) + "\n");
+      try {
+        const result = await runM5Delete(opts);
+        process.stdout.write(renderM5DeleteResult(result) + "\n");
+      } catch (err) {
+        const { M5DeleteValidationError } = await import("./commands/m5-delete.js");
+        if (err instanceof M5DeleteValidationError) {
+          process.stderr.write(`[m5-delete] ${err.message}\n`);
+          process.exit(2);
+        }
+        throw err;
+      }
       return;
     }
     case "m5-status": {

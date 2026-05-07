@@ -30,6 +30,8 @@ export interface M5SyncResult {
     /** alive 时 content 摘要（前 60 字符） */
     summary?: string;
   }>;
+  /** B-129: corrupt or out-of-spec team-rule files surfaced (not silently dropped) */
+  skipped_files?: Array<{ path: string; reason: string }>;
   /** --apply 模式下实际写入的 KB 动作 */
   applied?: {
     upserted: string[];
@@ -38,9 +40,22 @@ export interface M5SyncResult {
   };
 }
 
+/**
+ * Strip ANSI/control bytes from a string before printing it as part of a sync
+ * summary (B-130). Only applied to user-controllable fields like rule_id and
+ * content summary.
+ */
+function sanitizeForTerminal(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "?").replace(/\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
 export async function runM5Sync(opts: M5SyncOptions): Promise<M5SyncResult> {
   const fsStore = new FsTeamRuleStore();
-  const claims = await fsStore.listAll(opts.projectRoot);
+  const skipped: Array<{ path: string; reason: string }> = [];
+  const claims = await fsStore.listAll(opts.projectRoot, {
+    onSkip: (entry) => skipped.push(entry),
+  });
   const merged = mergeLwwBatch(claims);
 
   const out: M5SyncResult["merged"] = [];
@@ -50,6 +65,9 @@ export async function runM5Sync(opts: M5SyncOptions): Promise<M5SyncResult> {
   out.sort((a, b) => a.rule_id.localeCompare(b.rule_id));
 
   const result: M5SyncResult = { total_claims: claims.length, merged: out };
+  if (skipped.length > 0) {
+    result.skipped_files = skipped;
+  }
 
   if (opts.apply) {
     const teamId = computeTeamId(opts.projectRoot);
@@ -148,7 +166,9 @@ function formatMerged(
     state: "alive",
     winner_claim_author: mr.winner_claim_author ?? "",
     original_author: mr.original_author ?? "",
-    summary: w.content.slice(0, 60),
+    // B-130: strip ANSI escapes / control chars so a malicious rule cannot
+    // clear the user's terminal or inject cursor sequences when printed.
+    summary: sanitizeForTerminal(w.content.slice(0, 60)),
   };
 }
 
@@ -182,6 +202,15 @@ export function renderM5SyncResult(r: M5SyncResult): string {
       lines.push(
         `  ✗ ${m.rule_id} (tombstone by ${m.winner_claim_author}, original=${m.original_author})`
       );
+    }
+  }
+  // B-129: surface skipped corrupt / out-of-spec files so users know data was dropped
+  if (r.skipped_files && r.skipped_files.length > 0) {
+    lines.push(
+      `[m5-sync] ⚠ skipped ${r.skipped_files.length} file(s) (corrupt JSON / schema violation / future timestamp):`,
+    );
+    for (const s of r.skipped_files) {
+      lines.push(`  - ${s.path}: ${s.reason}`);
     }
   }
   if (r.applied) {
