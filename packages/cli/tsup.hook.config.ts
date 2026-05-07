@@ -28,7 +28,11 @@ export default defineConfig({
   clean: false,
   sourcemap: false,
   splitting: false,
-  // 把所有 workspace 包 + zod 打进单文件，避免运行时模块解析
+  // 把所有 workspace 包 + zod 打进单文件，避免运行时模块解析。
+  // js-tiktoken: 纯 JS，bundle 能 inline；不加进来时 bin 被 stage 到
+  // ~/.teamagent/hooks/ 后离开 monorepo hoisted node_modules 就找不到 →
+  // SessionStart hook 启动时 MODULE_NOT_FOUND 静默崩（issue #131）。
+  // 与 packages/teamagent/tsup.config.ts 的发布配置行为对齐。
   noExternal: [
     "@teamagent/types",
     "@teamagent/ports",
@@ -36,6 +40,7 @@ export default defineConfig({
     "@teamagent/adapters",
     "zod",
     "@xenova/transformers",
+    "js-tiktoken",
   ],
   // sharp, onnxruntime-node, sqlite-vec: native .node addons cannot be bundled.
   // sqlite-vec in particular: when inlined, its loadablePath() resolves relative to the
