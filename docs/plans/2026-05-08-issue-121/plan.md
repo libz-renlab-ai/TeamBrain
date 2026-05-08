@@ -153,7 +153,7 @@ A reviewer (human or `/review`) can check off each line below.
 ### CLI / contract checks
 
 - `bash -n release/install.sh` exits 0.
-- `INSTALL_DRY_RUN=1 bash release/install.sh --dry-run` exits 0 and prints
+- `bash release/install.sh --dry-run` exits 0 and prints
   exactly 7 `[dry-run]` lines (the existing 6 + 1 new "fallback tarball
   archive" line).
 - `bash -n release/install-legacy.sh` exits 0 (legacy must still pass syntax).
@@ -214,7 +214,7 @@ Summary of what `judge.md` will document (full content lives there):
 - **§V1 RUN** — fixed tool list:
   - `bash -n release/install.sh`
   - `bash -n release/install-legacy.sh`
-  - `INSTALL_DRY_RUN=1 bash release/install.sh --dry-run`
+  - `bash release/install.sh --dry-run`
   - `release-prep/gen-sha256.sh release/install.sh /dev/null`
   - `shasum -a 256 -c release/install.sh.sha256` (cwd inside `release/`)
   - `grep -cE '\-\-tlsv1\.2' release/install.sh`

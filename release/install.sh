@@ -177,7 +177,11 @@ fi
 if [ ! -s "$TMPDIR_INSTALL/$TARBALL_NAME" ]; then
   printf '[install] release tarball not found; trying archive fallback: %s\n' "$ARCHIVE_FALLBACK_URL" >&2
   if _curl_safe "$ARCHIVE_FALLBACK_URL" -o "$TMPDIR_INSTALL/$TARBALL_NAME"; then
-    printf '[install] downloaded archive fallback (skipping SHA-256 — archive is unsigned)\n' >&2
+    # Emit the unsigned-tarball warning to BOTH stdout and stderr so it
+    # remains visible when one stream is redirected (e.g. `... 2>/dev/null`).
+    # P4-M02 trust-drop is acknowledged here, not silently absorbed.
+    printf '[install] WARNING: downloaded archive fallback — SHA-256 verification SKIPPED (archive is unsigned)\n'
+    printf '[install] WARNING: downloaded archive fallback — SHA-256 verification SKIPPED (archive is unsigned)\n' >&2
     SKIP_TARBALL_SHA=1
   else
     printf 'error: tarball, fallback, and archive all failed\n' >&2
@@ -195,12 +199,23 @@ fi
 # Display the re-fetched install.sh content (NOT $0) — under `curl|bash`, $0 is
 # /bin/bash so cat "$0" would dump the bash binary. The verified re-fetched
 # copy at $TMPDIR_INSTALL/install.sh is correct in both pipe and file modes.
+# Read prompt answer from /dev/tty (NOT stdin) — under `curl|bash`, stdin is
+# the pipe and is exhausted by the time we hit `read`, causing a silent
+# EOF→empty-answer→abort. /dev/tty bypasses the pipe and reads from the
+# user's terminal (homebrew/rustup pattern). When no terminal is available
+# (CI, docker exec, etc.), abort with clear guidance to use --auto.
 if [ "$SAFE_MODE" -eq 1 ] && [ "$AUTO_MODE" -eq 0 ]; then
   printf '\n[install] ---- install.sh contents (review before executing) ----\n'
   cat "$TMPDIR_INSTALL/install.sh"
   printf '\n[install] ---- end of script ----\n\n'
+  if [ ! -e /dev/tty ]; then
+    printf '[install] error: --safe mode requires an interactive terminal.\n' >&2
+    printf '[install] for non-interactive install, use --auto:\n' >&2
+    printf '[install]   curl -fsSL .../release/install.sh | bash -s -- --auto\n' >&2
+    exit 1
+  fi
   printf 'Proceed with installation of teamagent %s? [y/N] ' "$TEAMAGENT_VERSION"
-  read -r answer
+  read -r answer </dev/tty
   case "$answer" in
     [Yy]|[Yy][Ee][Ss]) ;;
     *) printf '[install] Installation aborted by user.\n'; exit 0 ;;
