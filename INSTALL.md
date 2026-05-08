@@ -16,6 +16,10 @@ schema-version: 1
       v
   pnpm teamagent skeleton-demo  <-- 验证安装成功
       |
+      v
+  pnpm teamagent init  <-- 注册 hook（AI 犯错前提醒等）+ 状态栏 + 预热向量模型
+      |                   ⚠ 跳过这一步会导致状态栏和 4 类 hook 都不生效
+      |
   error? -------> fix 提示（见每个步骤的 common_errors）
       |
       v
@@ -52,7 +56,7 @@ explanation: |
   这一步会自动下载 TeamAgent 运行所需的所有"配件"（技术上叫依赖包）。
   类比：就像第一次用一台新电脑，系统要先下载并安装各种驱动程序，之后才能正常工作。
   首次执行大约需要 1–3 分钟，速度取决于网络状况。请耐心等待，看到"Done"或没有红色报错就表示成功。
-progress: "1/3"
+progress: "1/4"
 common_errors:
   - pattern: "command not found.*pnpm|pnpm.*not found|pnpm: No such file"
     fix: "npm install -g pnpm"
@@ -70,7 +74,7 @@ explanation: |
   类比：就像把乐谱（源代码）演奏成实际能听的音乐（可执行程序）。
   执行过程中你会看到一些文字滚动，大约需要 30 秒到 1 分钟。
   执行完没有红色报错、最后看到类似"Build succeeded"的提示就表示成功。
-progress: "2/3"
+progress: "2/4"
 common_errors:
   - pattern: "Cannot find module|Module not found|ERR_MODULE_NOT_FOUND"
     fix: "pnpm install && pnpm build"
@@ -84,11 +88,12 @@ common_errors:
 id: step-3
 command: pnpm teamagent skeleton-demo
 explanation: |
-  这一步运行一个"冒烟测试"，验证安装是否完全成功。
+  这一步运行一个"冒烟测试"，验证编译是否完全成功。
   类比：就像新买了电视，开机看能不能播放画面——不是真的在看节目，只是确认设备工作正常。
   成功时会在终端打印出一系列绿色的对勾（✓）和"demo complete"字样。
-  如果一切正常，恭喜你！TeamAgent 已经就绪，可以正常使用了。
-progress: "3/3"
+  注意：到这一步只是"代码能跑"，真正的产品功能（AI 犯错前提醒、纠正一次下次记住、状态栏统计）
+  还没启用——下一步才会启用它们。
+progress: "3/4"
 common_errors:
   - pattern: "teamagent.*not found|cannot find.*teamagent|Unknown command.*teamagent"
     fix: "pnpm build && pnpm teamagent skeleton-demo"
@@ -96,6 +101,28 @@ common_errors:
     fix: "rm -f .teamagent/knowledge.db && pnpm teamagent skeleton-demo"
   - pattern: "ENOENT.*knowledge|no such file.*db"
     fix: "mkdir -p .teamagent && pnpm teamagent skeleton-demo"
+```
+
+```yaml install-step
+id: step-4
+command: pnpm teamagent init
+explanation: |
+  这一步把 TeamAgent 的"提醒贴纸"和状态栏正式贴到你这台机器的 Claude Code 配置里。
+  类比：到上一步为止你只是把微波炉接通了电；这一步才把 4 张提醒贴纸（AI 即将动手前提醒、
+  事后归因、经验自动注入上下文、每次结束自检）和门上的小屏幕（状态栏）都贴好。
+  执行过程：注册 4 类 hook → 写入状态栏 → 注入 universal pack（约 15 条跨语言经验）→
+  在后台预热语义匹配的向量模型（约 120MB，~10 分钟内静默完成）。
+  执行完成后请重启你的 Claude Code（输入 /clear 或关闭重开），然后状态栏和提醒就生效了。
+  ⚠ **跳过这一步**会导致：状态栏不显示、AI 犯错时不会提前提醒、纠正后下次还会犯同样的错——
+  也就是说产品的核心卖点全部哑掉。如果你只跑了 step-3，请务必再跑一次 step-4。
+progress: "4/4"
+common_errors:
+  - pattern: "Hook bundle not found|bin-pre-tool-use\\.cjs"
+    fix: "pnpm --filter @teamagent/cli build:hook && pnpm teamagent init"
+  - pattern: "EACCES|permission denied.*\\.claude"
+    fix: "ls -la .claude/ && chmod -R u+rw .claude/ && pnpm teamagent init"
+  - pattern: "warmup.*failed|onnxruntime|model.*download"
+    fix: "pnpm teamagent init --skip-warmup    # 先装 hook，向量模型晚点再热"
 ```
 
 ---
