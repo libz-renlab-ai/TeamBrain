@@ -6,6 +6,21 @@ import {
 import type { UpdateInstalledEvent } from "@teamagent/types";
 import type { FetchShaResult } from "./github-api.js";
 
+// Node prints ERR_UNKNOWN_FILE_EXTENSION as:
+//   TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".ts" for /path/to/foo.ts
+// Anchor on that exact phrasing — earlier W15-001 used /\.ts(\b|['"])/ which
+// matched any stderr substring containing `.ts` plus punctuation, masking
+// real migration failures whose messages happened to mention `.ts`.
+const TS_EXT_DEGRADE_RE = /Unknown file extension "\.ts" for [^\r\n]*\.ts(?:\b|['"`]|$)/m;
+
+export function isDevModeTsExtensionError(stderr: string): boolean {
+  if (!stderr) return false;
+  return (
+    stderr.includes("ERR_UNKNOWN_FILE_EXTENSION") &&
+    TS_EXT_DEGRADE_RE.test(stderr)
+  );
+}
+
 export interface UpdaterDeps {
   fetchRemoteSha(): Promise<FetchShaResult>;
   runNpmInstall(): Promise<{ ok: boolean; error?: string }>;

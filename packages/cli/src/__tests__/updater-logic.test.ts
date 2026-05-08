@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { runUpdater, type UpdaterDeps } from "../updater-logic.js";
+import { runUpdater, isDevModeTsExtensionError, type UpdaterDeps } from "../updater-logic.js";
 import { defaultUpdateState, type UpdateState } from "@teamagent/core";
 import type { FetchShaResult } from "../github-api.js";
 
@@ -385,5 +385,47 @@ describe("runUpdater", () => {
     });
     await expect(runUpdater(deps)).resolves.toBeUndefined();
     expect(deps.log).toHaveBeenCalledWith(expect.stringContaining("emitInstalled failed"));
+  });
+});
+
+describe("isDevModeTsExtensionError (W15-001)", () => {
+  it("matches real Node ERR_UNKNOWN_FILE_EXTENSION on .ts source file", () => {
+    const stderr = [
+      "node:internal/modules/esm/get_format:172",
+      'TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".ts" for /home/u/.npm-global/lib/node_modules/teamagent/dist/migrate-v6.ts',
+    ].join("\n");
+    expect(isDevModeTsExtensionError(stderr)).toBe(true);
+  });
+
+  it("matches Windows-path Node ERR_UNKNOWN_FILE_EXTENSION", () => {
+    const stderr =
+      'TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".ts" for C:\\Users\\u\\.npm-global\\node_modules\\teamagent\\dist\\bin.ts';
+    expect(isDevModeTsExtensionError(stderr)).toBe(true);
+  });
+
+  it("rejects ERR_UNKNOWN_FILE_EXTENSION mentioning .ts only as field/wrapper text", () => {
+    expect(
+      isDevModeTsExtensionError(
+        "ERR_UNKNOWN_FILE_EXTENSION: payload field user.created_at has .ts wrapper",
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects ERR_UNKNOWN_FILE_EXTENSION mentioning "index.ts" without "Unknown file extension" phrasing', () => {
+    expect(
+      isDevModeTsExtensionError(
+        'ERR_UNKNOWN_FILE_EXTENSION at line 5: cannot import "index.ts" — package main was rewritten',
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects stderr lacking the ERR_UNKNOWN_FILE_EXTENSION marker", () => {
+    expect(
+      isDevModeTsExtensionError('Unknown file extension ".ts" for foo.ts'),
+    ).toBe(false);
+  });
+
+  it("rejects empty stderr", () => {
+    expect(isDevModeTsExtensionError("")).toBe(false);
   });
 });

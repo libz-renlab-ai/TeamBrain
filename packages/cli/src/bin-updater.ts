@@ -49,7 +49,7 @@ import {
   defaultUpdateState,
   type UpdateState,
 } from "@teamagent/core";
-import { runUpdater } from "./updater-logic.js";
+import { runUpdater, isDevModeTsExtensionError } from "./updater-logic.js";
 import { fetchRemoteSha } from "./github-api.js";
 import { resolveGithubToken } from "./commands/update.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
@@ -267,15 +267,10 @@ function runMigrateAuto(): Promise<{ ok: boolean; error?: string }> {
     child.stderr?.on("data", (d) => { err += String(d); });
     child.on("exit", (code) => {
       if (code === 0) return resolve({ ok: true });
-      // B-151: when the global bin.js is a symlink/pnpm-link back to monorepo
-      // source, migrate-v6 / migrate-v7 import chains can hit ERR_UNKNOWN_FILE_EXTENSION
-      // on a `.ts` source file (node refusing to load TS without a loader). That
-      // is a dev/link installation artifact, not a real migration failure, so
-      // we degrade to ok without bumping consecutive_install_failures.
-      if (
-        err.includes("ERR_UNKNOWN_FILE_EXTENSION") &&
-        /\.ts(\b|['"])/.test(err)
-      ) {
+      // B-151 / W15-001: dev/link installs hit ERR_UNKNOWN_FILE_EXTENSION when
+      // node refuses to load a `.ts` source file. Earlier check was too broad
+      // (matched any `.ts` substring); delegate to the anchored helper.
+      if (isDevModeTsExtensionError(err)) {
         return resolve({ ok: true });
       }
       resolve({ ok: false, error: err.slice(-500) || `exit ${code}` });
