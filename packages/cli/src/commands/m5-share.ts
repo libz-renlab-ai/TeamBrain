@@ -59,6 +59,17 @@ export async function runM5Share(
   const author = opts.author ?? gitUserName() ?? "unknown";
   const now = opts.now ?? new Date().toISOString();
   const confidence = opts.confidence ?? 0.85;
+  // W15-010: defense-in-depth — internal callers can also pass an
+  // out-of-range value; validate here regardless of the parser path.
+  if (
+    !Number.isFinite(confidence) ||
+    confidence < 0 ||
+    confidence > 1
+  ) {
+    throw new M5ShareValidationError(
+      `confidence "${confidence}" is not a finite number in [0,1]`,
+    );
+  }
 
   // B-114/B-115: reject path-traversal / ANSI / shell-injection in rule_id and author
   if (!isSafeRuleId(ruleId)) {
@@ -166,6 +177,20 @@ export function parseM5ShareArgs(args: readonly string[]): M5ShareOptions {
     const ts = take("--now");
     if (ts !== undefined) {
       opts.now = ts;
+      continue;
+    }
+    // W15-010: parse --confidence (was previously silently ignored, so
+    // calls like `--confidence=0.42` ran with the default 0.85 fallback
+    // and `--confidence=NaN|2|-1` succeeded without complaint).
+    const c = take("--confidence");
+    if (c !== undefined) {
+      const n = Number(c);
+      if (!Number.isFinite(n) || n < 0 || n > 1) {
+        throw new M5ShareValidationError(
+          `--confidence "${c}" is not a finite number in [0,1]`,
+        );
+      }
+      opts.confidence = n;
       continue;
     }
   }

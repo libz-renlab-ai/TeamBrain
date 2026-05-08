@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { runM5Share } from "../commands/m5-share.js";
+import {
+  M5ShareValidationError,
+  parseM5ShareArgs,
+  runM5Share,
+} from "../commands/m5-share.js";
 import {
   renderM5SyncResult,
   runM5Sync,
@@ -303,6 +307,62 @@ describe("m5-sync command (LWW + tombstone)", () => {
       const r = sync.merged.find((m) => m.rule_id === "R-rez")!;
       expect(r.state).toBe("alive");
       expect(r.summary).toContain("改回");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("W15-010: --confidence is parsed and stored as the rule's confidence", async () => {
+    const root = await tmpProject();
+    try {
+      const opts = parseM5ShareArgs([
+        "--text=PR 后必须 fetch codex review",
+        "--rule-id=R-w15010",
+        "--scope=team",
+        "--author=tester",
+        "--confidence=0.42",
+        `--project-root=${root}`,
+      ]);
+      expect(opts.confidence).toBe(0.42);
+
+      const r = await runM5Share({
+        ...opts,
+        now: "2026-05-08T10:00:00Z",
+      });
+      expect(r.action.kind).toBe("promote_to_l2");
+
+      const written = JSON.parse(
+        await fs.readFile(
+          path.join(root, ".teamagent", "team", "tester", "R-w15010.json"),
+          "utf8",
+        ),
+      );
+      expect(written.current.confidence).toBe(0.42);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("W15-010: invalid --confidence values throw validation error", () => {
+    for (const bad of ["NaN", "2", "-1", "abc"]) {
+      expect(() => parseM5ShareArgs([`--confidence=${bad}`])).toThrow(
+        M5ShareValidationError,
+      );
+    }
+  });
+
+  it("W15-010: runM5Share rejects out-of-range confidence from internal caller", async () => {
+    const root = await tmpProject();
+    try {
+      await expect(
+        runM5Share({
+          projectRoot: root,
+          text: "x",
+          author: "tester",
+          confidence: 5,
+          now: "2026-05-08T10:00:00Z",
+        }),
+      ).rejects.toThrow(M5ShareValidationError);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
