@@ -41,6 +41,47 @@ export interface M5SyncResult {
 }
 
 /**
+ * Bucket a list of skipped-file diagnostics by short reason category so we
+ * can render a one-line-per-category summary alongside the per-file list
+ * (W15-014). Categories are heuristic (substring match on the underlying
+ * reason string).
+ */
+export function summarizeSkipReasons(
+  skipped: ReadonlyArray<{ path: string; reason: string }>,
+): Array<[string, number]> {
+  const buckets = new Map<string, number>();
+  for (const s of skipped) {
+    const cat = categorizeSkipReason(s.reason);
+    buckets.set(cat, (buckets.get(cat) ?? 0) + 1);
+  }
+  return [...buckets.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function categorizeSkipReason(reason: string): string {
+  const r = reason.toLowerCase();
+  if (
+    r.includes("json") &&
+    (r.includes("parse") ||
+      r.includes("unexpected") ||
+      r.includes("invalid"))
+  ) {
+    return "JSON parse error";
+  }
+  if (r.includes("future")) return "future timestamp";
+  if (
+    r.includes("schema") ||
+    r.includes("validation") ||
+    r.includes("required field") ||
+    r.includes("must be")
+  ) {
+    return "schema violation";
+  }
+  if (r.includes("eperm") || r.includes("eacces")) return "permission denied";
+  if (r.includes("enoent")) return "file vanished";
+  return "other";
+}
+
+/**
  * Strip ANSI/control bytes from a string before printing it as part of a sync
  * summary (B-130). Only applied to user-controllable fields like rule_id and
  * content summary.
@@ -204,11 +245,20 @@ export function renderM5SyncResult(r: M5SyncResult): string {
       );
     }
   }
-  // B-129: surface skipped corrupt / out-of-spec files so users know data was dropped
+  // B-129 / W15-014: surface every skipped corrupt / out-of-spec file so
+  // users know data was dropped. Add a reason-category breakdown when the
+  // list is long so the user can spot patterns at a glance.
   if (r.skipped_files && r.skipped_files.length > 0) {
     lines.push(
       `[m5-sync] ⚠ skipped ${r.skipped_files.length} file(s) (corrupt JSON / schema violation / future timestamp):`,
     );
+    if (r.skipped_files.length >= 5) {
+      const breakdown = summarizeSkipReasons(r.skipped_files);
+      for (const [cat, count] of breakdown) {
+        lines.push(`    · ${cat}: ${count}`);
+      }
+      lines.push("");
+    }
     for (const s of r.skipped_files) {
       lines.push(`  - ${s.path}: ${s.reason}`);
     }

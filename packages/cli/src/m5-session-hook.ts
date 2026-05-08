@@ -20,6 +20,8 @@ export interface M5SessionResult {
   synced: boolean;
   published_changes: number;
   pushed: boolean;
+  /** W15-014: number of team rule files skipped during sync (corrupt JSON / future ts / schema) */
+  skipped_count: number;
   errors: string[];
 }
 
@@ -69,6 +71,7 @@ export async function runM5Session(input: {
     synced: false,
     published_changes: 0,
     pushed: false,
+    skipped_count: 0,
     errors: [],
   };
 
@@ -120,6 +123,7 @@ export async function runM5Session(input: {
       r.synced =
         !!sync.applied &&
         (sync.applied.upserted.length > 0 || sync.applied.deleted.length > 0);
+      r.skipped_count = sync.skipped_files?.length ?? 0;
     } catch (e) {
       r.errors.push(`sync: ${(e as Error).message}`);
     }
@@ -149,6 +153,11 @@ export function renderM5SessionBanner(r: M5SessionResult): string | null {
   if (r.infected) parts.push("🦠 项目已自动 infect");
   if (r.bootstrapped) parts.push("📦 本机已自动补齐缺失项");
   if (r.synced) parts.push("🔄 已同步团队规则");
+  if (r.skipped_count > 0) {
+    parts.push(
+      `⚠ 同步时跳过 ${r.skipped_count} 个团队规则文件（运行 \`teamagent m5-sync\` 查看详情）`,
+    );
+  }
   if (r.published_changes > 0) {
     const pushNote = r.pushed ? " + push" : "（未 push）";
     parts.push(`📤 已 commit ${r.published_changes} 处 team 变化${pushNote}`);

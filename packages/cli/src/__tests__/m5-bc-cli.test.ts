@@ -3,7 +3,10 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { runM5Share } from "../commands/m5-share.js";
-import { runM5Sync } from "../commands/m5-sync.js";
+import {
+  renderM5SyncResult,
+  runM5Sync,
+} from "../commands/m5-sync.js";
 import { runM5Delete } from "../commands/m5-delete.js";
 import { runM5Status } from "../commands/m5-status.js";
 import { runM5Infect } from "../commands/m5-infect.js";
@@ -300,6 +303,33 @@ describe("m5-sync command (LWW + tombstone)", () => {
       const r = sync.merged.find((m) => m.rule_id === "R-rez")!;
       expect(r.state).toBe("alive");
       expect(r.summary).toContain("改回");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("W15-014: surfaces every skipped file (no truncation) + reason breakdown", async () => {
+    const root = await tmpProject();
+    try {
+      const dir = path.join(root, ".teamagent", "team", "alice");
+      await fs.mkdir(dir, { recursive: true });
+      // 30 corrupt JSON files — pre-fix only the first was listed.
+      for (let i = 0; i < 30; i++) {
+        await fs.writeFile(
+          path.join(dir, `corrupt-${String(i).padStart(2, "0")}.json`),
+          "this is not json",
+        );
+      }
+      const sync = await runM5Sync({ projectRoot: root });
+      expect(sync.skipped_files?.length).toBe(30);
+
+      const rendered = renderM5SyncResult(sync);
+      // every file path appears in the rendered output
+      for (let i = 0; i < 30; i++) {
+        expect(rendered).toContain(`corrupt-${String(i).padStart(2, "0")}.json`);
+      }
+      // reason-category breakdown surfaces the count by category
+      expect(rendered).toMatch(/skipped 30 file\(s\)/);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
