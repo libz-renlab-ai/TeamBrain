@@ -13,14 +13,33 @@ export interface M5InfectOptions {
   teamagentVersion?: string;
   /** 注入 manifest.json 的 created_at。默认 new Date().toISOString()。 */
   now?: string;
+  /**
+   * W15-002: 默认 m5-infect 拒绝覆盖一个已经设成非 .githooks 的
+   * core.hooksPath（例如 husky 的 .husky / lefthook 的 .lefthook 等），
+   * 并把 hookspath_blocked=true 报回。--force 显式同意覆盖。
+   */
+  force?: boolean;
 }
 
 export interface M5InfectResult {
   written_files: string[];
   written_dirs: string[];
+  /** existing user hook augmented with TeamAgent marker block (W15-003) */
+  chained_files?: string[];
+  /** files left untouched because content already on disk */
+  skipped_files?: string[];
   skipped: boolean;
   /** B-150: whether `git config core.hooksPath .githooks` was set on the local clone. */
   git_hookspath_set?: boolean;
+  /**
+   * W15-002: true when a preexisting non-.githooks core.hooksPath value
+   * (e.g. .husky) blocked us from setting .githooks. The caller / renderer
+   * should surface this loudly so the user can decide to merge or rerun
+   * with --force.
+   */
+  hookspath_blocked?: boolean;
+  /** the existing core.hooksPath value that blocked us, if any. */
+  hookspath_existing?: string;
 }
 
 export async function runM5Infect(
@@ -48,30 +67,55 @@ export async function runM5Infect(
     return { written_files: [], written_dirs: [], skipped: true };
   }
 
-  await port.applyInfection(opts.projectRoot, plan);
+  const writeRes = await port.applyInfection(opts.projectRoot, plan);
 
-  // B-150: viral propagation requires the local clone to honor `.githooks/`.
-  // Without `git config core.hooksPath .githooks`, the post-merge hook that
-  // pulls team rules after every `git pull` never fires. Setting it here
-  // closes the gap so that infect → bootstrap → publish → pull → sync
-  // is fully end-to-end on the same clone.
+  // B-150 + W15-002: viral propagation requires the local clone to honor
+  // `.githooks/`. But unconditionally writing `core.hooksPath = .githooks`
+  // would silently destroy a husky / lefthook / custom-hook framework that
+  // the user already configured. Read the current value first; only write
+  // when it is empty or already `.githooks`. Refuse otherwise (unless the
+  // caller passed --force) and surface the conflict in the result.
   let git_hookspath_set = false;
+  let hookspath_blocked = false;
+  let hookspath_existing: string | undefined;
+  let existingValue: string | null = null;
   try {
-    execSync("git config core.hooksPath .githooks", {
+    existingValue = execSync("git config --get core.hooksPath", {
       cwd: opts.projectRoot,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-    });
-    git_hookspath_set = true;
+    }).trim() || null;
   } catch {
-    // best-effort: not a git repo, or git absent — bootstrap --apply will retry.
+    // exit code 1 from `git config --get` means "not set" — treat as null.
+    existingValue = null;
+  }
+
+  const safeExisting = existingValue === null || existingValue === ".githooks";
+  if (safeExisting || opts.force) {
+    try {
+      execSync("git config core.hooksPath .githooks", {
+        cwd: opts.projectRoot,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      git_hookspath_set = true;
+    } catch {
+      // best-effort: not a git repo, or git absent — bootstrap --apply will retry.
+    }
+  } else {
+    hookspath_blocked = true;
+    hookspath_existing = existingValue ?? "";
   }
 
   return {
-    written_files: Object.keys(plan.files_to_create),
+    written_files: writeRes.written,
+    chained_files: writeRes.chained,
+    skipped_files: writeRes.skipped,
     written_dirs: plan.dirs_to_create,
     skipped: false,
     git_hookspath_set,
+    hookspath_blocked,
+    hookspath_existing,
   };
 }
 
@@ -113,6 +157,10 @@ export function parseM5InfectArgs(args: readonly string[]): M5InfectOptions {
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === undefined) continue;
+    if (a === "--force") {
+      opts.force = true;
+      continue;
+    }
     const take = (flag: string): string | undefined => {
       if (a === flag) return args[++i];
       if (a.startsWith(flag + "=")) return a.slice(flag.length + 1);
@@ -146,9 +194,27 @@ export function renderM5InfectResult(r: M5InfectResult): string {
     lines.push("  已写入文件:");
     for (const f of r.written_files) lines.push(`    - ${f}`);
   }
+  if (r.chained_files && r.chained_files.length) {
+    lines.push("  已 chain-load 进现有 hook (W15-003):");
+    for (const f of r.chained_files) lines.push(`    - ${f}`);
+  }
+  if (r.skipped_files && r.skipped_files.length) {
+    lines.push("  已存在内容、保留原文件 (idempotent):");
+    for (const f of r.skipped_files) lines.push(`    - ${f}`);
+  }
   if (r.written_dirs.length) {
     lines.push("  已建目录:");
     for (const d of r.written_dirs) lines.push(`    - ${d}`);
+  }
+  if (r.hookspath_blocked) {
+    lines.push("");
+    lines.push(
+      `⚠️  W15-002: core.hooksPath 已设为 "${r.hookspath_existing}"（疑似 husky / lefthook / 自定义 hook 框架），未覆盖。`,
+    );
+    lines.push(
+      "    → TeamAgent 的 .githooks/post-merge 不会自动触发；请手动把 hooks 目录链到 .githooks，",
+    );
+    lines.push("      或重跑 `teamagent m5-infect --force` 显式覆盖。");
   }
   return lines.join("\n");
 }

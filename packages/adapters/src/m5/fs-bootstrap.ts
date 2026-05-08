@@ -7,7 +7,10 @@ import type { LocalState, InfectionPlan } from "@teamagent/types";
  *
  * 实现约束：
  * - 所有写入必须幂等（同样输入跑两次结果一致）
- * - applyInfection 不得覆盖已存在的文件
+ * - 非 hook 文件 (e.g. .teamagent/manifest.json) 不得覆盖已存在内容
+ * - hook 文件 (.githooks/post-merge / pre-commit) 必须 chain-load 而非
+ *   静默跳过 (W15-003): 如果用户已有 hook，把 TeamAgent block 用
+ *   marker 包裹追加到末尾；下次 apply 时按 marker 替换 block
  * - readManifest 不存在时返回 null（不抛错）
  */
 export interface BootstrapPort {
@@ -18,15 +21,109 @@ export interface BootstrapPort {
   probeProject(projectRoot: string): Promise<ProjectProbe>;
 
   /**
-   * 把 InfectionPlan 写入项目。
+   * 把 InfectionPlan 写入项目，返回写入结果分类。
    * - dirs_to_create 中已存在的目录跳过
-   * - files_to_create 中已存在的文件跳过（不覆盖）
-   * - 创建的 .githooks/pre-commit 应该 chmod +x（Windows 上可能 no-op）
+   * - files_to_create 中非 hook 文件已存在则保留原内容（idempotency）
+   * - hook 文件 (.githooks/post-merge / .githooks/pre-commit) 用 marker
+   *   block 写入；已存在用户 hook 时把 TeamAgent block 追加到末尾
+   * - 创建的 hook 文件应该 chmod +x（Windows 上可能 no-op）
    */
-  applyInfection(projectRoot: string, plan: InfectionPlan): Promise<void>;
+  applyInfection(
+    projectRoot: string,
+    plan: InfectionPlan,
+  ): Promise<ApplyInfectionResult>;
 
   /** 探测本机 TeamAgent 状态。 */
   getLocalState(): Promise<LocalState>;
+}
+
+export interface ApplyInfectionResult {
+  /** files newly created on disk */
+  written: string[];
+  /** existing user hook augmented with TeamAgent marker block */
+  chained: string[];
+  /** non-hook file already present, kept as-is to preserve idempotency */
+  skipped: string[];
+}
+
+/** Marker delimiters used to chain-load TeamAgent logic into a user hook. */
+export const TEAMAGENT_HOOK_BLOCK_START =
+  "# >>> teamagent post-merge block >>>";
+export const TEAMAGENT_HOOK_BLOCK_END =
+  "# <<< teamagent post-merge block <<<";
+
+function isChainLoadableHook(rel: string): boolean {
+  const norm = rel.replace(/\\/g, "/");
+  return (
+    norm.endsWith("/post-merge") ||
+    norm.endsWith("/pre-commit") ||
+    norm.endsWith("/pre-push") ||
+    norm.endsWith("/post-checkout")
+  );
+}
+
+function extractShebang(content: string): string {
+  if (content.startsWith("#!")) {
+    const nl = content.indexOf("\n");
+    return content.slice(0, nl >= 0 ? nl : content.length);
+  }
+  return "#!/usr/bin/env bash";
+}
+
+function stripShebang(content: string): string {
+  if (content.startsWith("#!")) {
+    const nl = content.indexOf("\n");
+    return nl >= 0 ? content.slice(nl + 1) : "";
+  }
+  return content;
+}
+
+/** Wrap a hook payload with TeamAgent markers; used when no user hook yet. */
+export function wrapHookWithTeamagentBlock(content: string): string {
+  const shebang = extractShebang(content);
+  const body = stripShebang(content).replace(/\n+$/, "");
+  return (
+    `${shebang}\n` +
+    `${TEAMAGENT_HOOK_BLOCK_START}\n` +
+    `${body}\n` +
+    `${TEAMAGENT_HOOK_BLOCK_END}\n`
+  );
+}
+
+/**
+ * Insert/refresh the TeamAgent block in an existing user hook.
+ * Idempotent: running twice with the same `content` is a no-op.
+ */
+export function augmentHookWithTeamagentBlock(
+  existing: string,
+  content: string,
+): string {
+  const body = stripShebang(content).replace(/\n+$/, "");
+  const startIdx = existing.indexOf(TEAMAGENT_HOOK_BLOCK_START);
+  const endIdx = existing.indexOf(TEAMAGENT_HOOK_BLOCK_END);
+  if (startIdx >= 0 && endIdx > startIdx) {
+    const before = existing.slice(0, startIdx).replace(/\n+$/, "");
+    const after = existing
+      .slice(endIdx + TEAMAGENT_HOOK_BLOCK_END.length)
+      .replace(/^\n+/, "");
+    const head = before.length > 0 ? `${before}\n` : "";
+    const tail = after.length > 0 ? `\n${after}` : "";
+    return (
+      `${head}` +
+      `${TEAMAGENT_HOOK_BLOCK_START}\n` +
+      `${body}\n` +
+      `${TEAMAGENT_HOOK_BLOCK_END}\n` +
+      `${tail}`
+    );
+  }
+  // No marker yet — append after user content (preserve user's hook commands).
+  const trail = existing.endsWith("\n") ? "" : "\n";
+  return (
+    `${existing}${trail}` +
+    `${TEAMAGENT_HOOK_BLOCK_START}\n` +
+    `${body}\n` +
+    `${TEAMAGENT_HOOK_BLOCK_END}\n`
+  );
 }
 
 export interface ProjectProbe {
@@ -86,25 +183,58 @@ export class FsBootstrap implements BootstrapPort {
   async applyInfection(
     projectRoot: string,
     plan: InfectionPlan
-  ): Promise<void> {
+  ): Promise<ApplyInfectionResult> {
+    const result: ApplyInfectionResult = {
+      written: [],
+      chained: [],
+      skipped: [],
+    };
     for (const dir of plan.dirs_to_create) {
       await fs.mkdir(path.join(projectRoot, dir), { recursive: true });
     }
     for (const [rel, content] of Object.entries(plan.files_to_create)) {
       const p = path.join(projectRoot, rel);
       await fs.mkdir(path.dirname(p), { recursive: true });
+
+      let existing: string | null = null;
       try {
-        // wx 标记：已存在则报错，确保幂等不覆盖
-        await fs.writeFile(p, content, { flag: "wx" });
+        existing = await fs.readFile(p, "utf8");
       } catch (e) {
-        const code = (e as NodeJS.ErrnoException).code;
-        if (code !== "EEXIST") throw e;
-        // 已存在跳过
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      }
+
+      const chainable = isChainLoadableHook(rel);
+
+      if (existing === null) {
+        // Fresh write. Hook files get wrapped with TeamAgent markers so
+        // future re-applies can replace the block in-place (W15-003).
+        const payload = chainable
+          ? wrapHookWithTeamagentBlock(content)
+          : content;
+        await fs.writeFile(p, payload, "utf8");
+        result.written.push(rel);
+      } else if (chainable) {
+        // User already has a hook — chain-load by adding/refreshing the
+        // marker block instead of silently skipping (W15-003 root cause).
+        const augmented = augmentHookWithTeamagentBlock(existing, content);
+        if (augmented === existing) {
+          result.skipped.push(rel);
+        } else {
+          await fs.writeFile(p, augmented, "utf8");
+          result.chained.push(rel);
+        }
+      } else {
+        // Non-hook file (e.g. .teamagent/manifest.json) — keep idempotency
+        // contract: existing content wins.
+        result.skipped.push(rel);
         continue;
       }
+
       if (
         rel.endsWith("pre-commit") ||
         rel.endsWith("post-merge") ||
+        rel.endsWith("pre-push") ||
+        rel.endsWith("post-checkout") ||
         rel.endsWith(".sh")
       ) {
         try {
@@ -114,6 +244,7 @@ export class FsBootstrap implements BootstrapPort {
         }
       }
     }
+    return result;
   }
 
   async getLocalState(): Promise<LocalState> {

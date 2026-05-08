@@ -1,10 +1,29 @@
 import { describe, it, expect } from "vitest";
+import { execSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { runM5Infect } from "../commands/m5-infect.js";
+import {
+  parseM5InfectArgs,
+  runM5Infect,
+} from "../commands/m5-infect.js";
 import { runM5Bootstrap } from "../commands/m5-bootstrap.js";
 import { FsBootstrap } from "@teamagent/adapters/m5/fs-bootstrap";
+
+function gitAvailable(): boolean {
+  try {
+    execSync("git --version", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function initRepo(root: string): void {
+  execSync("git init -q", { cwd: root });
+  execSync("git config user.email tester@example.com", { cwd: root });
+  execSync("git config user.name tester", { cwd: root });
+}
 
 /** Stub port that reports "本机什么都没装"——测试需要确定性，不依赖实际机器配置。 */
 function makeStubPort(): FsBootstrap {
@@ -39,6 +58,128 @@ describe("m5-infect command", () => {
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+
+  it.skipIf(!gitAvailable())(
+    "W15-002: refuses to clobber non-default core.hooksPath (husky/lefthook)",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "m5-cli-husky-"));
+      try {
+        initRepo(root);
+        // Simulate husky setup.
+        execSync("git config core.hooksPath .husky", { cwd: root });
+
+        const r = await runM5Infect({
+          projectRoot: root,
+          author: "tester",
+          teamagentVersion: "0.9.4",
+          now: "2026-05-08T10:00:00Z",
+        });
+
+        expect(r.hookspath_blocked).toBe(true);
+        expect(r.hookspath_existing).toBe(".husky");
+        expect(r.git_hookspath_set).toBe(false);
+
+        // user's husky config preserved (W15-002 root cause)
+        const cur = execSync("git config --get core.hooksPath", {
+          cwd: root,
+          encoding: "utf8",
+        }).trim();
+        expect(cur).toBe(".husky");
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(!gitAvailable())(
+    "W15-002: --force overrides hookspath protection",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "m5-cli-force-"));
+      try {
+        initRepo(root);
+        execSync("git config core.hooksPath .husky", { cwd: root });
+
+        const r = await runM5Infect({
+          projectRoot: root,
+          author: "tester",
+          teamagentVersion: "0.9.4",
+          now: "2026-05-08T10:00:00Z",
+          force: true,
+        });
+
+        expect(r.hookspath_blocked).toBeFalsy();
+        expect(r.git_hookspath_set).toBe(true);
+
+        const cur = execSync("git config --get core.hooksPath", {
+          cwd: root,
+          encoding: "utf8",
+        }).trim();
+        expect(cur).toBe(".githooks");
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(!gitAvailable())(
+    "W15-002: empty/default hookspath proceeds without --force",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "m5-cli-default-"));
+      try {
+        initRepo(root);
+        // No core.hooksPath set.
+
+        const r = await runM5Infect({
+          projectRoot: root,
+          author: "tester",
+          teamagentVersion: "0.9.4",
+          now: "2026-05-08T10:00:00Z",
+        });
+
+        expect(r.hookspath_blocked).toBeFalsy();
+        expect(r.git_hookspath_set).toBe(true);
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(!gitAvailable())(
+    "W15-003: chain-loads into preexisting user post-merge hook (no silent skip)",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "m5-cli-chain-"));
+      try {
+        initRepo(root);
+        await fs.mkdir(path.join(root, ".githooks"), { recursive: true });
+        await fs.writeFile(
+          path.join(root, ".githooks", "post-merge"),
+          "#!/bin/sh\necho [user-custom-post-merge]\n",
+        );
+
+        const r = await runM5Infect({
+          projectRoot: root,
+          author: "tester",
+          teamagentVersion: "0.9.4",
+          now: "2026-05-08T10:00:00Z",
+        });
+
+        expect(r.chained_files).toContain(".githooks/post-merge");
+        const merged = await fs.readFile(
+          path.join(root, ".githooks", "post-merge"),
+          "utf8",
+        );
+        expect(merged).toContain("echo [user-custom-post-merge]");
+        expect(merged).toContain("teamagent");
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("parseM5InfectArgs accepts --force", () => {
+    expect(parseM5InfectArgs(["--force"]).force).toBe(true);
+    expect(parseM5InfectArgs([]).force).toBeUndefined();
   });
 
   it("is idempotent on already-infected project", async () => {

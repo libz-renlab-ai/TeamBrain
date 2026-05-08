@@ -18,10 +18,16 @@ export interface BootstrapPort {
   /**
    * 把 InfectionPlan 写入项目。
    * - dirs_to_create 中已存在的目录跳过
-   * - files_to_create 中已存在的文件跳过（不覆盖）
-   * - 创建的 .githooks/pre-commit 应该 chmod +x（Windows 上可能 no-op）
+   * - 非 hook 文件已存在则保留原内容（idempotency）
+   * - hook 文件 (.githooks/post-merge / .githooks/pre-commit) chain-load
+   *   via marker block，而非静默跳过 (W15-003)
+   * - 创建的 hook 文件应该 chmod +x（Windows 上可能 no-op）
+   *
+   * 返回类型 Promise<unknown> 是 archived contract 的宽口径——具体实现可
+   * return 任何分类结构（如 adapters 包的 ApplyInfectionResult），契约
+   * 自身只关心副作用。
    */
-  applyInfection(projectRoot: string, plan: InfectionPlan): Promise<void>;
+  applyInfection(projectRoot: string, plan: InfectionPlan): Promise<unknown>;
 
   /** 探测本机 TeamAgent 状态。 */
   getLocalState(): Promise<LocalState>;

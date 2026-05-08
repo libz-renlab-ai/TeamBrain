@@ -99,14 +99,21 @@ export function planInfection(
     files[".teamagent/shared-claude.md"] = SHARED_CLAUDE_MD;
   }
   if (!snap.has_githooks_dir) dirs.push(".githooks");
-  if (!snap.has_pre_commit_hook) {
+
+  const nonHookMissing =
+    Object.keys(files).length > 0 || dirs.length > 0;
+  const hookMissing =
+    !snap.has_pre_commit_hook || !snap.has_post_merge_hook;
+  const required = nonHookMissing || hookMissing;
+
+  // W15-003: always emit hook payloads when this is an infection — even if
+  // a user-authored hook of the same name already exists. The adapter
+  // (applyInfection) chain-loads via marker block, so a preexisting hook
+  // is augmented (not silently skipped).
+  if (required) {
     files[".githooks/pre-commit"] = PRE_COMMIT_HOOK;
-  }
-  if (!snap.has_post_merge_hook) {
     files[".githooks/post-merge"] = POST_MERGE_HOOK;
   }
-
-  const required = Object.keys(files).length > 0 || dirs.length > 0;
 
   return {
     required,

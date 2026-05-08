@@ -97,4 +97,43 @@ describe("planInfection", () => {
     });
     expect(plan.files_to_create[".githooks/pre-commit"]).toMatch(/^#!\/usr\/bin\/env bash/);
   });
+
+  it("W15-003: hooks emitted into plan even when has_post_merge_hook=true (so adapter can chain-load)", () => {
+    const plan = planInfection(
+      snapshot({
+        has_manifest: false,
+        has_post_merge_hook: true,
+        has_pre_commit_hook: true,
+      }),
+      {
+        author: "a",
+        now: "2026-05-06T10:00:00Z",
+        teamagent_version: "0.0.0",
+      },
+    );
+    expect(plan.required).toBe(true);
+    expect(plan.files_to_create[".githooks/post-merge"]).toBeDefined();
+    expect(plan.files_to_create[".githooks/pre-commit"]).toBeDefined();
+  });
+
+  it("W15-003: hook-only missing still requires infect", () => {
+    const plan = planInfection(
+      snapshot({
+        has_manifest: true,
+        has_team_dir: true,
+        has_shared_skills_dir: true,
+        has_shared_claude_md: true,
+        has_githooks_dir: true,
+        has_pre_commit_hook: true,
+        has_post_merge_hook: false,
+      }),
+      {
+        author: "a",
+        now: "2026-05-06T10:00:00Z",
+        teamagent_version: "0.0.0",
+      },
+    );
+    expect(plan.required).toBe(true);
+    expect(plan.files_to_create[".githooks/post-merge"]).toBeDefined();
+  });
 });
