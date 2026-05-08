@@ -107,6 +107,51 @@ export function isSafeAuthor(s: string): boolean {
   return SAFE_AUTHOR_RE.test(s);
 }
 
+/**
+ * W15-012: Windows traditional MAX_PATH is 260 chars; on installs without
+ * `LongPathsEnabled = 1` registry tweak, the absolute path written by
+ * m5-share (`<projectRoot>/.teamagent/team/<author>/<ruleId>.json`) must
+ * stay under that ceiling. We leave a 10-char margin for trailing
+ * separators / drive prefixes and surface this as a validator rather than
+ * tightening SAFE_RULE_ID_RE (which still accepts 200 chars on Linux/mac
+ * where path length is bounded by NAME_MAX, not absolute-path budget).
+ */
+export const WINDOWS_MAX_PATH_BUDGET = 250;
+
+/**
+ * Pure: estimate the absolute path length for a team-rule file under the
+ * canonical layout. Caller passes projectRoot as a *string only* — no IO.
+ */
+export function estimateTeamRulePathLength(
+  projectRoot: string,
+  author: string,
+  ruleId: string,
+): number {
+  // Layout: <projectRoot><sep>.teamagent<sep>team<sep><author><sep><ruleId>.json
+  // Use 4 separator chars regardless of platform — the byte count of "/"
+  // and "\\" is identical, so this is correct on both POSIX and Windows.
+  const FIXED = ".teamagent" + "team" + ".json";
+  return (
+    projectRoot.length +
+    1 + // sep
+    FIXED.length +
+    3 + // 3 more separators after .teamagent / team / <author>
+    author.length +
+    ruleId.length
+  );
+}
+
+export function isTeamRulePathLengthSafe(
+  projectRoot: string,
+  author: string,
+  ruleId: string,
+  budget: number = WINDOWS_MAX_PATH_BUDGET,
+): boolean {
+  return (
+    estimateTeamRulePathLength(projectRoot, author, ruleId) <= budget
+  );
+}
+
 function sortDeep(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortDeep);
   if (value && typeof value === "object") {

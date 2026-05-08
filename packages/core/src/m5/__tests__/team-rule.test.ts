@@ -3,6 +3,9 @@ import {
   serializeTeamRule,
   parseTeamRule,
   validateTeamRule,
+  estimateTeamRulePathLength,
+  isTeamRulePathLengthSafe,
+  WINDOWS_MAX_PATH_BUDGET,
   type TeamRuleFile,
 } from "../team-rule.js";
 
@@ -65,5 +68,30 @@ describe("team-rule serialize/parse/validate", () => {
       current: { ...alive.current, modified_ts: undefined },
     } as unknown as TeamRuleFile;
     expect(() => validateTeamRule(bad)).toThrow(/modified_ts/);
+  });
+});
+
+describe("path-length validation (W15-012)", () => {
+  it("estimateTeamRulePathLength counts projectRoot + author + ruleId + fixed layout", () => {
+    const len = estimateTeamRulePathLength("C:/proj", "alice", "R-001");
+    // "C:/proj" (7) + "/" (1) + ".teamagent" (10) + "/" (1) + "team" (4) +
+    // "/" (1) + "alice" (5) + "/" (1) + "R-001" (5) + ".json" (5) = 40
+    expect(len).toBe(40);
+  });
+
+  it("isTeamRulePathLengthSafe accepts short paths", () => {
+    expect(isTeamRulePathLengthSafe("/x", "a", "r")).toBe(true);
+  });
+
+  it("isTeamRulePathLengthSafe rejects 200-char rule_id under 60-char projectRoot", () => {
+    const root = "C:/Users/tester/projects/teamagent-trio-deep-worktree-x";
+    const author = "tester";
+    const ruleId = "a".repeat(200);
+    expect(isTeamRulePathLengthSafe(root, author, ruleId)).toBe(false);
+  });
+
+  it("WINDOWS_MAX_PATH_BUDGET leaves margin under 260", () => {
+    expect(WINDOWS_MAX_PATH_BUDGET).toBeLessThan(260);
+    expect(WINDOWS_MAX_PATH_BUDGET).toBeGreaterThanOrEqual(240);
   });
 });

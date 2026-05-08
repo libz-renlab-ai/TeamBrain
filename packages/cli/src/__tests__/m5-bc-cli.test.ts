@@ -368,6 +368,26 @@ describe("m5-sync command (LWW + tombstone)", () => {
     }
   });
 
+  it("W15-012: rule_id at 200 chars under a long projectRoot is rejected", async () => {
+    const longRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "m5-w15012-very-long-root-prefix-"),
+    );
+    try {
+      await expect(
+        runM5Share({
+          projectRoot: longRoot,
+          text: "x",
+          ruleId: "a".repeat(200),
+          scope: "team",
+          author: "tester",
+          now: "2026-05-08T10:00:00Z",
+        }),
+      ).rejects.toThrow(/Windows MAX_PATH/);
+    } finally {
+      await fs.rm(longRoot, { recursive: true, force: true });
+    }
+  });
+
   it("W15-014: surfaces every skipped file (no truncation) + reason breakdown", async () => {
     const root = await tmpProject();
     try {

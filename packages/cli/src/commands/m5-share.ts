@@ -7,6 +7,9 @@ import {
   mergeLwwBatch,
   isSafeRuleId,
   isSafeAuthor,
+  isTeamRulePathLengthSafe,
+  estimateTeamRulePathLength,
+  WINDOWS_MAX_PATH_BUDGET,
   type ShareAction,
   type TeamRuleFile,
 } from "@teamagent/core";
@@ -80,6 +83,17 @@ export async function runM5Share(
   if (!isSafeAuthor(author)) {
     throw new M5ShareValidationError(
       `--author "${author}" contains illegal characters; allowed: [A-Za-z0-9._-], length 1..100`,
+    );
+  }
+  // W15-012: rule_id at the SAFE_RULE_ID_RE boundary (200 chars) plus a
+  // long projectRoot prefix can produce an absolute path > Windows
+  // MAX_PATH (260) without long-path support. Refuse early so writeFile
+  // does not silently leave a half-formed file or an unreadable path.
+  if (!isTeamRulePathLengthSafe(opts.projectRoot, author, ruleId)) {
+    const len = estimateTeamRulePathLength(opts.projectRoot, author, ruleId);
+    throw new M5ShareValidationError(
+      `rule path would be ${len} chars long, exceeding the Windows MAX_PATH budget of ${WINDOWS_MAX_PATH_BUDGET}; ` +
+        `shorten --rule-id (currently ${ruleId.length} chars) or move the project to a shorter path`,
     );
   }
   // B-140: reject future timestamps (> now + 60s tolerance for clock skew)
