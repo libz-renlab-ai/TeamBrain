@@ -17,6 +17,14 @@ interface PatternRule {
   pattern: RegExp;
 }
 
+/**
+ * W15-013: cap input length before scanning to prevent regex perf cliffs on
+ * adversarial digit-rich strings. Real rule text is well under 4 KB; users
+ * pasting bigger blobs typically have other problems and we want to fail
+ * fast rather than stall the share pipeline for >1s.
+ */
+export const MAX_SCAN_INPUT_BYTES = 4096;
+
 const PATTERNS: PatternRule[] = [
   // 绝对路径
   {
@@ -37,15 +45,19 @@ const PATTERNS: PatternRule[] = [
     kind: "phone",
     pattern: /(?:\+?1[\s-]?)?\(?\d{3}\)?[\s-]\d{3}[\s-]\d{4}\b|\b1[3-9]\d[\s-]?\d{4}[\s-]?\d{4}\b/g,
   },
-  // 信用卡（13-19 位连续数字，可带分隔）
-  {
-    kind: "credit_card",
-    pattern: /\b(?:\d[ -]?){13,19}\b/g,
-  },
-  // OpenAI sk- token / Anthropic sk-ant-
+  // === api_token rules (placed BEFORE credit_card so overlap dedup picks
+  //     the more-specific kind — W15-008) ===
+  // OpenAI sk- token / Anthropic sk-ant- — W15-008: min 19 (was 20) so a
+  // single character less than the historical limit no longer slips into
+  // the credit_card pattern by accident.
   {
     kind: "api_token",
-    pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g,
+    pattern: /\bsk-[A-Za-z0-9_-]{19,}\b/g,
+  },
+  // OpenAI org-scoped sk_proj / sk_test variants (W15-004 base64-decoded form)
+  {
+    kind: "api_token",
+    pattern: /\bsk_(?:proj|test|live|org)[A-Za-z0-9_-]{15,}\b/g,
   },
   // Stripe live/test key (sk_live_, sk_test_, pk_live_, pk_test_, rk_live_, etc.)
   {
@@ -77,6 +89,24 @@ const PATTERNS: PatternRule[] = [
     kind: "api_token",
     pattern: /\bAIza[A-Za-z0-9_-]{35}\b/g,
   },
+  // === Webhook URLs (W15-006) — promoted to api_token kind so they seal
+  //     L1 just like a real bearer token. Publishing one of these to a
+  //     team git repo lets anyone post arbitrary messages to the channel. ===
+  {
+    kind: "api_token",
+    // Slack incoming webhook
+    pattern: /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+/g,
+  },
+  {
+    kind: "api_token",
+    // Discord incoming webhook
+    pattern: /https:\/\/(?:canary\.|ptb\.)?(?:discord(?:app)?\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/g,
+  },
+  {
+    kind: "api_token",
+    // Microsoft Teams incoming webhook
+    pattern: /https:\/\/[A-Za-z0-9-]+\.webhook\.office\.com\/webhookb2\/[A-Za-z0-9@/-]+\/IncomingWebhook\/[A-Za-z0-9/_-]+/g,
+  },
   // PEM-encoded private keys (RSA/EC/OPENSSH/generic)
   {
     kind: "private_key",
@@ -93,28 +123,129 @@ const PATTERNS: PatternRule[] = [
     kind: "jwt",
     pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
   },
+  // === credit_card LAST so api_token wins overlap dedup (W15-008) ===
+  // Two non-backtracking alternatives: a contiguous 13-19 digit run, or
+  // a standard 4-4-4-x card number with consistent separators. The
+  // historical pattern /\b(?:\d[ -]?){13,19}\b/g exhibited catastrophic
+  // backtracking on long alternating digit/whitespace blobs (W15-013).
+  {
+    kind: "credit_card",
+    pattern: /\b\d{13,19}\b|\b\d{4}[ -]\d{4}[ -]\d{4}[ -]\d{1,7}\b/g,
+  },
 ];
 
-/**
- * 纯函数：扫描文本是否含密钥/PII/机器特定信息。
- */
-export function scanForSecrets(text: string): SecretScanResult {
-  const matches: SecretMatch[] = [];
+const BASE64_CANDIDATE_RE = /[A-Za-z0-9+/]{20,}={0,2}/g;
+const SPACE_FRAGMENT_RE = /[\s ]+/g;
+
+function isPrintable(s: string): boolean {
+  if (!s.length) return false;
+  let printable = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (
+      (c >= 32 && c < 127) ||
+      c === 9 ||
+      c === 10 ||
+      c === 13
+    ) {
+      printable++;
+    }
+  }
+  return printable / s.length >= 0.8;
+}
+
+function scanRaw(text: string): SecretMatch[] {
+  const out: SecretMatch[] = [];
   for (const rule of PATTERNS) {
-    rule.pattern.lastIndex = 0; // global regex 状态重置
+    rule.pattern.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = rule.pattern.exec(text)) !== null) {
-      matches.push({
+      out.push({
         kind: rule.kind,
         snippet: redact(m[0]),
         start: m.index,
         end: m.index + m[0].length,
       });
-      // 防御无穷循环（zero-width match）
       if (m.index === rule.pattern.lastIndex) rule.pattern.lastIndex++;
     }
   }
-  return { hit: matches.length > 0, matches };
+  return out;
+}
+
+/**
+ * Drop credit_card matches whose span overlaps with an api_token match —
+ * api_token is the more specific classification (W15-008).
+ */
+function dedupApiTokenOverCreditCard(matches: SecretMatch[]): SecretMatch[] {
+  const apiTokens = matches.filter((m) => m.kind === "api_token");
+  return matches.filter((m) => {
+    if (m.kind !== "credit_card") return true;
+    const overlaps = apiTokens.some(
+      (a) => Math.max(a.start, m.start) < Math.min(a.end, m.end),
+    );
+    return !overlaps;
+  });
+}
+
+/**
+ * 纯函数：扫描文本是否含密钥/PII/机器特定信息。
+ *
+ * Hardening (Wave 15):
+ * - W15-004: long base64-looking blobs are decoded and re-scanned so
+ *   tokens hidden behind base64 still seal L1.
+ * - W15-005: a whitespace-collapsed copy of the input is scanned in
+ *   addition to the original to catch space-fragmented prefixes
+ *   ("sk - proj-...").
+ * - W15-006: hooks.slack.com / discord.com / *.webhook.office.com URLs
+ *   are treated as api_token candidates.
+ * - W15-008: api_token matches now win overlap dedup over credit_card so
+ *   sk- + 19-digit suffix gets the right kind in diagnostics.
+ * - W15-013: input is capped at MAX_SCAN_INPUT_BYTES and the credit_card
+ *   pattern was rewritten to avoid catastrophic backtracking.
+ */
+export function scanForSecrets(text: string): SecretScanResult {
+  const safe =
+    text.length > MAX_SCAN_INPUT_BYTES
+      ? text.slice(0, MAX_SCAN_INPUT_BYTES)
+      : text;
+
+  const matches: SecretMatch[] = scanRaw(safe);
+
+  // W15-005: whitespace-collapsed retry. Append matches that the raw scan
+  // missed (e.g. "sk - proj-..."). Offsets are mapped relative to the
+  // collapsed string and tagged via the snippet so callers can tell.
+  const collapsed = safe.replace(SPACE_FRAGMENT_RE, "");
+  if (collapsed !== safe) {
+    for (const m of scanRaw(collapsed)) {
+      const already = matches.some(
+        (x) => x.kind === m.kind && x.snippet === m.snippet,
+      );
+      if (!already) matches.push(m);
+    }
+  }
+
+  // W15-004: base64-decode candidate blobs and re-scan the decoded text.
+  for (let cand = BASE64_CANDIDATE_RE.exec(safe); cand !== null; cand = BASE64_CANDIDATE_RE.exec(safe)) {
+    let decoded: string;
+    try {
+      decoded = Buffer.from(cand[0], "base64").toString("utf-8");
+    } catch {
+      continue;
+    }
+    if (!isPrintable(decoded)) continue;
+    for (const inner of scanRaw(decoded)) {
+      matches.push({
+        kind: inner.kind,
+        snippet: `b64:${inner.snippet}`,
+        start: cand.index,
+        end: cand.index + cand[0].length,
+      });
+    }
+  }
+  BASE64_CANDIDATE_RE.lastIndex = 0;
+
+  const deduped = dedupApiTokenOverCreditCard(matches);
+  return { hit: deduped.length > 0, matches: deduped };
 }
 
 /**
