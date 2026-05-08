@@ -1,3 +1,14 @@
+/**
+ * ⚠️ ARCHIVED CONTRACT — frozen historical artifact.
+ *
+ * 见 docs/adr/0005-archive-hypothetical-port-seams.md。
+ * 此文件不再被 CI 跑，但保留以便未来 ≥2 production adapter
+ * 出现时可参考原 contract 设计。
+ *
+ * 不要在这里加新 case；如果当前 lone implementation
+ * 演化出 contract 偏差，请直接编辑 lone-impl 的 unit test，
+ * 不要"复活"这个 contract。
+ */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { BootstrapPort } from "../bootstrap-port.js";
 import type { InfectionPlan } from "@teamagent/types";

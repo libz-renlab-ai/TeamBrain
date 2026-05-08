@@ -9,7 +9,7 @@ This drawer holds port interfaces that previously lived in `packages/ports/src/`
 | `correction-detector.ts` | `ruleBasedCorrectionDetector` @ `packages/core/src/correction-detector/rule-based.ts` | Port had no contract test; callers always imported the impl directly |
 | `success-detector.ts` | `ruleBasedSuccessDetector` @ `packages/core/src/success-detector/rule-based.ts` | Same as above |
 | `candidate-queue.ts` | `SqliteCandidateQueue` @ `packages/adapters/src/storage/sqlite/sqlite-candidate-queue.ts` | Contract test exists but was only ever validated against the lone SQLite adapter |
-| `error-signal-collector.ts` | `CompositeErrorSignalCollector` @ `packages/adapters/src/error-collector/composite-error-signal-collector.ts` | Same as above |
+| `error-signal-collector.ts` | `CompositeErrorSignalCollector` @ `packages/adapters/src/error-collector/composite-error-signal-collector.ts` | Contract test exists but only ever validated against the lone Composite adapter |
 | `bootstrap-port.ts` | `FsBootstrap` @ `packages/adapters/src/m5/fs-bootstrap.ts` | M5 viral sync; CONTEXT.md states "git-backed transport is the唯一 channel" — second prod adapter is forbidden by domain rules |
 | `team-rule-store-port.ts` | `FsTeamRuleStore` @ `packages/adapters/src/m5/fs-team-rule-store.ts` | Same as above |
 

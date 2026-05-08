@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import type { TeamRuleFile } from "@teamagent/types";
+import { parseTeamRule, serializeTeamRule } from "@teamagent/core";
 
 /**
  * TeamRuleStorePort：对 .teamagent/team/<author>/<rule_id>.json 的读写抽象。
@@ -35,7 +36,6 @@ export interface TeamRuleClaim {
   claim_author: string;
   file: TeamRuleFile;
 }
-import { parseTeamRule, serializeTeamRule } from "@teamagent/core";
 
 /**
  * 文件系统 TeamRuleStorePort 实现：

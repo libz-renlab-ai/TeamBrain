@@ -66,7 +66,6 @@ export {
 export {
   CompositeErrorSignalCollector,
   type ErrorSignalCollector,
-  type RawErrorSignal,
 } from "./error-collector/composite-error-signal-collector.js";
 export { XenovaRuleEmbedder } from "./embedding/xenova-rule-embedder.js";
 export type { XenovaProgressEvent } from "./embedding/xenova-rule-embedder.js";
