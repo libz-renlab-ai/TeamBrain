@@ -43,10 +43,15 @@ async function main(): Promise<void> {
   //   2. stdin contains a JSON object with hook_event_name === "SessionStart"
   //      (the documented Claude Code hook payload shape)
   //   3. stdin is empty AND TEAMAGENT_ALLOW_BARE_SESSIONSTART=1 (manual dogfood)
-  let parsedInput: { cwd?: string; hook_event_name?: string; session_id?: string } | null = null;
+  type SessionStartPayload = {
+    cwd?: string;
+    hook_event_name?: string;
+    session_id?: string;
+  };
+  let parsedInput: SessionStartPayload | null = null;
   if (raw) {
     try {
-      parsedInput = JSON.parse(raw) as typeof parsedInput;
+      parsedInput = JSON.parse(raw) as SessionStartPayload;
       if (parsedInput && typeof parsedInput === "object" && parsedInput.cwd) {
         cwd = parsedInput.cwd;
       }
