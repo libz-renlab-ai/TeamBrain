@@ -1,16 +1,6 @@
 export type { KnowledgeStore, QueryOptions } from "./knowledge-store.js";
 export type { Compiler } from "./compiler.js";
 export type {
-  CorrectionDetector,
-  CorrectionMoment,
-  CorrectionSignal,
-} from "./correction-detector.js";
-export type {
-  SuccessDetector,
-  SuccessSignal,
-  SuccessSignalType,
-} from "./success-detector.js";
-export type {
   KnowledgeExtractor,
   ExtractionInput,
   ExtractionKind,
@@ -49,14 +39,8 @@ export type {
   ValidationLLMResult,
 } from "./validator.js";
 export type { SkillCompiler, SkillArtifact } from "./skill-compiler.js";
-export type {
-  ErrorSignalCollector,
-  RawErrorSignal,
-} from "./error-signal-collector.js";
-export type { CandidateQueue, RuleCandidate } from "./candidate-queue.js";
 export type { RuleEmbedder } from "./rule-embedder.js";
 export type { SemanticRetriever, SemanticCandidate } from "./semantic-retriever.js";
-export type { BootstrapPort, ProjectProbe } from "./bootstrap-port.js";
 export type {
   SecretScanPort,
   SecretScanResult,
@@ -66,7 +50,3 @@ export type {
   ScopeClassifierPort,
   ScopeClassification,
 } from "./scope-classifier-port.js";
-export type {
-  TeamRuleStorePort,
-  TeamRuleClaim,
-} from "./team-rule-store-port.js";

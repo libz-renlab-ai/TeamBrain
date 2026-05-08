@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
 import type {
   AttributionBus,
-  CorrectionDetector,
-  CorrectionMoment,
   KnowledgeExtractor,
   KnowledgeStore,
   Validator,
   ValidationL0Result,
 } from "@teamagent/ports";
+import type {
+  CorrectionDetector,
+  CorrectionMoment,
+} from "../correction-detector/rule-based.js";
 import type {
   KnowledgeEntry,
   ParsedSession,

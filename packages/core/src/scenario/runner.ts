@@ -1,8 +1,8 @@
 import type {
-  CorrectionDetector,
   KnowledgeExtractor,
   KnowledgeStore,
 } from "@teamagent/ports";
+import type { CorrectionDetector } from "../correction-detector/rule-based.js";
 import type { KnowledgeEntry, ParsedSession, Scope } from "@teamagent/types";
 import { computeEnforcement } from "@teamagent/types";
 import { matchRules } from "../matcher/legacy/keyword-matcher.js";

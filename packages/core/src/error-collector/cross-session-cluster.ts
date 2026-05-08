@@ -1,4 +1,20 @@
-import type { RawErrorSignal } from "@teamagent/ports";
+/** 采集到的原始错误信号。对应 spec v5.2 信号类型表。 */
+export interface RawErrorSignal {
+  /** 信号唯一 ID */
+  id: string;
+  /** 信号类型 */
+  signalType: "A" | "B" | "C" | "D" | "G" | "H";
+  /** 信号权重 0-1，用于 efficient mode 阈值过滤 */
+  weight: number;
+  /** 来源 session ID 列表（H 信号可能来自多个 session） */
+  sessionIds: string[];
+  /** 供 LLM 提取的原文上下文（纠正对话片段 / 错误日志 / 聚类摘要等）*/
+  context: string;
+  /** LLM 提取时推荐使用的 category（仅提示，可被 LLM 覆盖）*/
+  suggestedCategory?: "C" | "E" | "S" | "K";
+  /** ISO 8601 */
+  timestamp: string;
+}
 
 /**
  * H 信号聚类：从一批原始信号中找出在 ≥minSessions 个不同 session 里出现的关键词，

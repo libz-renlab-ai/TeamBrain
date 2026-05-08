@@ -1,4 +1,4 @@
-import type { RawErrorSignal } from "@teamagent/ports";
+import type { RawErrorSignal } from "./cross-session-cluster.js";
 
 export interface FilterOptions {
   /** 最低权重阈值，低于此值的信号被丢弃。默认 0.3。 */

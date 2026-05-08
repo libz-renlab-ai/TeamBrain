@@ -1,4 +1,4 @@
-import type { CorrectionSignal } from "@teamagent/ports";
+import type { CorrectionSignal } from "../correction-detector/rule-based.js";
 import type { KnowledgeEntry, ParsedSession } from "@teamagent/types";
 
 /**

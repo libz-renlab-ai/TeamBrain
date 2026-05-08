@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { CompositeErrorSignalCollector } from "../composite-error-signal-collector.js";
 import { runErrorSignalCollectorContract } from "@teamagent/ports/contracts";
 import type { PersistedEvent } from "@teamagent/types";
-import type { RawErrorSignal } from "@teamagent/ports";
+import type { RawErrorSignal } from "../composite-error-signal-collector.js";
 
 function makeEvent(
   kind: PersistedEvent["kind"],

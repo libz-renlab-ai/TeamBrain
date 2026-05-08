@@ -5,14 +5,16 @@ import {
   type ExtractPipelineDeps,
 } from "../extract-pipeline.js";
 import type {
-  CorrectionDetector,
-  CorrectionMoment,
   KnowledgeExtractor,
   KnowledgeStore,
   AttributionBus,
   Validator,
   ValidationL0Result,
 } from "@teamagent/ports";
+import type {
+  CorrectionDetector,
+  CorrectionMoment,
+} from "../../correction-detector/rule-based.js";
 import type {
   AttributionEvent,
   KnowledgeEntry,

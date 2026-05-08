@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildErrorBatches } from "../error-batch-builder.js";
-import type { RawErrorSignal } from "@teamagent/ports";
+import type { RawErrorSignal } from "../cross-session-cluster.js";
 
 function sig(
   id: string,

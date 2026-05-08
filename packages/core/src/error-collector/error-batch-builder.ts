@@ -1,4 +1,4 @@
-import type { RawErrorSignal } from "@teamagent/ports";
+import type { RawErrorSignal } from "./cross-session-cluster.js";
 import { buildBatchErrorExtractionPrompt } from "./error-extraction-prompt.js";
 
 export interface ErrorBatch {

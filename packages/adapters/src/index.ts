@@ -58,9 +58,27 @@ export {
   type StepOutcome,
 } from "./plugins/claude-plugin-installer.js";
 export type { SkillCompilerOptions } from "./compiler/skill-compiler.js";
-export { SqliteCandidateQueue } from "./storage/sqlite/sqlite-candidate-queue.js";
-export { CompositeErrorSignalCollector } from "./error-collector/composite-error-signal-collector.js";
+export {
+  SqliteCandidateQueue,
+  type CandidateQueue,
+  type RuleCandidate,
+} from "./storage/sqlite/sqlite-candidate-queue.js";
+export {
+  CompositeErrorSignalCollector,
+  type ErrorSignalCollector,
+  type RawErrorSignal,
+} from "./error-collector/composite-error-signal-collector.js";
 export { XenovaRuleEmbedder } from "./embedding/xenova-rule-embedder.js";
 export type { XenovaProgressEvent } from "./embedding/xenova-rule-embedder.js";
 export { SqliteSemanticRetriever } from "./retriever/sqlite-semantic-retriever.js";
 export { SqliteToolRetriever } from "./retriever/sqlite-tool-retriever.js";
+export {
+  FsBootstrap,
+  type BootstrapPort,
+  type ProjectProbe,
+} from "./m5/fs-bootstrap.js";
+export {
+  FsTeamRuleStore,
+  type TeamRuleStorePort,
+  type TeamRuleClaim,
+} from "./m5/fs-team-rule-store.js";

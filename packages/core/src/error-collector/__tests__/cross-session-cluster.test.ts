@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { clusterByTag } from "../cross-session-cluster.js";
-import type { RawErrorSignal } from "@teamagent/ports";
+import type { RawErrorSignal } from "../cross-session-cluster.js";
 
 function sig(
   id: string,

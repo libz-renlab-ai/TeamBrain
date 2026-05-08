@@ -1,4 +1,4 @@
-import type { RawErrorSignal } from "@teamagent/ports";
+import type { RawErrorSignal } from "./cross-session-cluster.js";
 
 /**
  * 为一批同类型（same category）错误信号构造 LLM 提取 prompt。
