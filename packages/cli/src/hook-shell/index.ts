@@ -45,6 +45,7 @@ import type {
   Visibility,
 } from "./types.js";
 import { assertEscapeNonEmpty, type RequireAtLeastOneEscape } from "./conditional-gate.js";
+import { findTeamagentRoot } from "../find-teamagent-root.js";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -66,8 +67,12 @@ function parseVisibility(env: Readonly<NodeJS.ProcessEnv>): Visibility {
 }
 
 function resolvePaths(cwd: string, home: string): HookDbPaths {
+  // Walk up from cwd to find the nearest ancestor with .teamagent/knowledge.db.
+  // Falls back to cwd if no ancestor has it (new project, not yet initialized).
+  // This mirrors git's .git/ ancestor-walk semantics (issue #161).
+  const projectRoot = findTeamagentRoot(cwd);
   return {
-    projectDbPath: path.join(cwd, ".teamagent", "knowledge.db"),
+    projectDbPath: path.join(projectRoot, ".teamagent", "knowledge.db"),
     globalDbPath: path.join(home, ".teamagent", "global.db"),
     eventsDbPath: path.join(home, ".teamagent", "events.db"),
   };

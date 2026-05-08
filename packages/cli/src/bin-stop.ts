@@ -68,6 +68,7 @@ import { runStopNarrativeScan, readLastInjected, lastInjectedFilePath } from "./
 import { rotateIfTooLarge } from "./log-rotate.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
 import type { AdvancedHookOptions } from "./hook-shell/index.js";
+import { findTeamagentRoot } from "./find-teamagent-root.js";
 
 /**
  * 用户可见进度事件的注入入口。
@@ -415,7 +416,7 @@ export async function runStopPipeline(
   }
 
   // Step 4.5: catch-up vectorization —补全缺向量的老规则（fire-and-forget，最多 15 条/次）
-  const catchUpDbPath = path.join(cwd, ".teamagent", "knowledge.db");
+  const catchUpDbPath = path.join(findTeamagentRoot(cwd), ".teamagent", "knowledge.db");
   if (existsSync(catchUpDbPath)) {
     catchUpVectorization(catchUpDbPath, getStopEmbedder(), emit).catch(() => {/* best-effort */});
   }
@@ -497,7 +498,7 @@ export async function runStopPipeline(
       // aiText alone silently skipped compliance scoring for tool-only turns.
       if (lastTurn) {
         const aiText = lastTurn.assistantText ?? "";
-        const projectDbPath = path.join(cwd, ".teamagent", "knowledge.db");
+        const projectDbPath = path.join(findTeamagentRoot(cwd), ".teamagent", "knowledge.db");
         const globalDbPath = path.join(os.homedir(), ".teamagent", "global.db");
         const eventsDbPath = path.join(os.homedir(), ".teamagent", "events.db");
         const sessionsDir = path.join(os.homedir(), ".teamagent", "sessions");

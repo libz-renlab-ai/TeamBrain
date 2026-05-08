@@ -13,6 +13,7 @@ import {
   type UpdateState,
 } from "@teamagent/core";
 import { rotateIfTooLarge } from "./log-rotate.js";
+import { findTeamagentRoot } from "./find-teamagent-root.js";
 
 export const DEFAULT_DEBOUNCE_HOURS = 24;
 
@@ -53,7 +54,11 @@ function autoInitDisabled(cwd: string): boolean {
 }
 
 export function decideAction(cwd: string, _now?: Date, _debounceHours?: number): Action {
-  const dbPath = join(cwd, ".teamagent", "knowledge.db");
+  // Walk up from cwd to find the nearest ancestor with .teamagent/knowledge.db.
+  // If found in any ancestor, treat this session as already initialized so we
+  // don't create a second fragmented .teamagent in the subfolder (issue #161).
+  const projectRoot = findTeamagentRoot(cwd);
+  const dbPath = join(projectRoot, ".teamagent", "knowledge.db");
   if (!existsSync(dbPath)) {
     // New project (no DB yet). Auto-init if it looks like a real project
     // and user hasn't opted out.
