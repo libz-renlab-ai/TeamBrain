@@ -40,7 +40,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   printf '[dry-run] install.sh source : %s/install.sh\n' "$PRIMARY_BASE"
   printf '[dry-run] tarball           : %s/%s\n' "$TARBALL_BASE" "$TARBALL_NAME"
   printf '[dry-run] fallback tarball  : %s/%s\n' "$FALLBACK_BASE" "$TARBALL_NAME"
-  printf '[dry-run] archive fallback : %s\n' "$ARCHIVE_FALLBACK_URL"
+  printf '[dry-run] archive fallback  : %s\n' "$ARCHIVE_FALLBACK_URL"
   printf '[dry-run] SHA-256 verified  : yes (install.sh.sha256 + tarball.sha256)\n'
   printf '[dry-run] No files written.\n'
   exit 0
@@ -66,7 +66,7 @@ _curl_safe() {
   local out_args=("$@")
 
   # Redirect domain guard: final URL must stay on allowed_hosts
-  local allowed_hosts="raw.githubusercontent.com|github.com|objects.githubusercontent.com"
+  local allowed_hosts="raw\.githubusercontent\.com|github\.com|objects\.githubusercontent\.com"
   local effective_url
   effective_url=$(curl \
     --tlsv1.2 \
@@ -115,7 +115,7 @@ _download_with_fallback() {
     return 0
   fi
   printf 'error: both primary and fallback download failed\n' >&2
-  exit 1
+  return 1
 }
 
 # ── SHA-256 verification ─────────────────────────────────────────────────────
@@ -146,10 +146,14 @@ SELF_SHA_URL="${PRIMARY_BASE}/install.sh.sha256"
 SELF_SHA_FALLBACK="${FALLBACK_BASE}/install.sh.sha256"
 
 printf '[install] Fetching SHA-256 checksum for install.sh...\n'
-_download_with_fallback "$SELF_SHA_URL" "$SELF_SHA_FALLBACK" "$TMPDIR_INSTALL/install.sh.sha256"
+_download_with_fallback "$SELF_SHA_URL" "$SELF_SHA_FALLBACK" "$TMPDIR_INSTALL/install.sh.sha256" || exit 1
 
-# Verify ourselves against the fetched checksum (file we are currently running)
-cp "$0" "$TMPDIR_INSTALL/install.sh"
+# Re-fetch install.sh from the SHA-anchored URL so self-verify works under
+# curl|bash (where $0 is /bin/bash, not the script). The self-fetch + checksum
+# pattern is the only way to verify the bytes the user actually executes.
+printf '[install] Re-fetching install.sh for self-verification...\n'
+_download_with_fallback "$SELF_URL" "${FALLBACK_BASE}/install.sh" "$TMPDIR_INSTALL/install.sh" || exit 1
+
 # Rewrite checksum file to use local filename
 sed "s|[^ ]*install.sh|$TMPDIR_INSTALL/install.sh|g" "$TMPDIR_INSTALL/install.sh.sha256" > "$TMPDIR_INSTALL/install.sh.sha256.local"
 _verify_sha256 "$TMPDIR_INSTALL/install.sh" "$TMPDIR_INSTALL/install.sh.sha256.local" "install.sh"
@@ -162,7 +166,9 @@ TARBALL_SHA_FALLBACK="${FALLBACK_BASE}/${TARBALL_NAME}.sha256"
 
 printf '[install] Downloading teamagent %s...\n' "$TEAMAGENT_VERSION"
 SKIP_TARBALL_SHA=0
-_download_with_fallback "$TARBALL_PRIMARY" "$TARBALL_FALLBACK" "$TMPDIR_INSTALL/$TARBALL_NAME"
+if ! _download_with_fallback "$TARBALL_PRIMARY" "$TARBALL_FALLBACK" "$TMPDIR_INSTALL/$TARBALL_NAME"; then
+  printf '[install] tarball download failed; will attempt archive fallback\n' >&2
+fi
 
 # Final degrade: archive tarball (legacy URL, BC for users pinning a pre-3a version)
 if [ ! -s "$TMPDIR_INSTALL/$TARBALL_NAME" ]; then
