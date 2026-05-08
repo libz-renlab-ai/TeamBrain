@@ -73,7 +73,7 @@ sh, so bash strict-parses it as a superset).
 ### V1.3 — install.sh dry-run line count + exit
 
 ```bash
-INSTALL_DRY_RUN=1 bash release/install.sh --dry-run \
+bash release/install.sh --dry-run \
   > "${EVIDENCE_DIR}/v1.3.out" 2> "${EVIDENCE_DIR}/v1.3.err"
 echo $? > "${EVIDENCE_DIR}/v1.3.exit"
 grep -c '^\[dry-run\]' "${EVIDENCE_DIR}/v1.3.out" \
@@ -252,10 +252,48 @@ user-served install.sh tracks the actual release tag, then regenerate
 the sha256 from the templated file (so the published `install.sh.sha256`
 matches what the user downloads).
 
+### V1.18 — workflow has semver guard for VERSION (PR-180 fix CRIT #2/#3)
+
+```bash
+( grep -cE '\$VERSION" =~|VERSION.*=~ \^\[0-9\]' .github/workflows/release-branch.yml; \
+  grep -c 'printf .tag=v%s' .github/workflows/release-branch.yml ) \
+  > "${EVIDENCE_DIR}/v1.18.out"
+```
+
+PASS if both counts are `≥ 1`. Guards against shell-injection / GITHUB_OUTPUT
+newline-injection via a malicious `packages/teamagent/package.json` version
+field; also avoids `echo`'s `\n`/`\\` interpretation in the GITHUB_OUTPUT
+write.
+
+### V1.19 — install.sh re-fetches itself for self-verify (PR-180 fix CRIT #1)
+
+```bash
+( grep -c '_download_with_fallback "\$SELF_URL\|_curl_safe "\$SELF_URL' \
+    release/install.sh; \
+  grep -c 'cp "\$0"' release/install.sh ) \
+  > "${EVIDENCE_DIR}/v1.19.out"
+```
+
+PASS if first count `≥ 1` AND second count `== 0`. The first re-confirms
+SELF_URL is now USED for re-download; the second confirms the broken
+`cp "$0"` self-verify pattern was REMOVED.
+
+### V1.20 — _download_with_fallback returns instead of exits (PR-180 fix CRIT #4)
+
+```bash
+awk '/^_download_with_fallback\(\)/{flag=1} flag && /^}/{flag=0} flag && /return 1/' \
+  release/install.sh \
+  | wc -l > "${EVIDENCE_DIR}/v1.20.out"
+```
+
+PASS if value `≥ 1`. Confirms the `exit 1` → `return 1` change inside the
+function body, making the archive-fallback `[ ! -s ]` guard at line ~168
+reachable.
+
 ### V1.13 — dry-run output JSON hard-match (cross-runner)
 
 ```bash
-INSTALL_DRY_RUN=1 bash release/install.sh --dry-run \
+bash release/install.sh --dry-run \
   | jq -R -s '{lines: split("\n") | map(select(length>0))}' \
   > "${EVIDENCE_DIR}/v1.13.bash.json"
 
@@ -263,7 +301,7 @@ INSTALL_DRY_RUN=1 bash release/install.sh --dry-run \
 claudefast -p \
   --output-format json \
   --permission-mode acceptEdits \
-  "Run: INSTALL_DRY_RUN=1 bash release/install.sh --dry-run.
+  "Run: bash release/install.sh --dry-run.
    Print only stdout, one [dry-run] line per output line." \
   | jq -r '.result' \
   | jq -R -s '{lines: split("\n") | map(select(length>0))}' \
@@ -291,7 +329,7 @@ After §V1 finishes, lead writes this exact schema to `${JUDGE_JSON}`:
   "tools_run": [
     "v1.1", "v1.2", "v1.3", "v1.4", "v1.5", "v1.6", "v1.7",
     "v1.8", "v1.9", "v1.10", "v1.11", "v1.12", "v1.13",
-    "v1.14", "v1.15", "v1.16", "v1.17"
+    "v1.14", "v1.15", "v1.16", "v1.17", "v1.18", "v1.19", "v1.20"
   ],
   "exit_codes": {
     "v1.1": <int>,
@@ -319,6 +357,9 @@ After §V1 finishes, lead writes this exact schema to `${JUDGE_JSON}`:
     "workflow_tarball_pattern_refs": <int>,
     "workflow_template_sed_refs": <int>,
     "workflow_staged_shasum_refs": <int>,
+    "workflow_semver_guard_refs": <int>,
+    "installer_self_url_used": <bool>,
+    "installer_fallback_returns": <bool>,
     "tests_passed": <int>,
     "tests_failed": <int>,
     "typecheck_clean": <bool>,
@@ -474,6 +515,9 @@ Lead identifies which Worker owns the affected file
    (V1.4/1.5 also touch Worker B's gen-sha256 output)
    (V1.9/1.10 → Worker A)
    (V1.11/1.12 → none — would be a regression in unrelated code)
+   (V1.18 → Worker A v3 — semver guard in workflow)
+   (V1.19 → Worker B v2 — SELF_URL re-download + removal of cp "$0")
+   (V1.20 → Worker B v2 — _download_with_fallback return-not-exit)
    ↓
 Lead sends focused fix instructions to that Worker via SendMessage
    ↓
