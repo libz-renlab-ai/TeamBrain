@@ -639,3 +639,342 @@ withdrawn (8) / wontfix-merged (1) /  open (0)。
 
 **Wave 14 收官**：本轮在 Windows 一台机器上达到综合覆盖率 ~92%，按 chaos-qa-hunter 95% 标准仍差 ~3%。剩余 3% 必须在不同平台/受控故障环境下补齐。
 
+
+---
+
+# Wave 15: Trio Deep Post-#149 Chaos Hunt
+
+> **Started:** 2026-05-08 ~14:00 +0800
+> **Baseline:** `origin/main` @ `96b9202` (PR #149 已 merged — B-150/151/152 已修)
+> **Branch:** `test/trio-deep`
+> **Sandbox tier:** **Tier 2** — only `/tmp/teambrain-trio-deep-*` + isolated HOME; no `~/.teamagent` / `~/.claude` / npm global mutation
+> **Mission:** chaos-qa-hunter adversarial mode — find ALL bugs in three modules, **report only, never fix**
+> **Modules under fire:**
+>   - **A.** SELF-UPDATE (bin-updater + updater-logic + session-start-logic + commands/update + commands/migrate-auto + postinstall)
+>   - **B.** Viral spread (m5-infect + m5-bootstrap + install-user-hook + m5-session-hook + m5-default-port + infect-planner + fs-bootstrap)
+>   - **C.** Team sync (m5-share + m5-publish + m5-sync + m5-delete + m5-status + secret-scanner + scope-classifier + lww-merge + team-rule + fs-team-rule-store)
+
+## Wave 15 Coverage Baseline (TBD after Phase 1)
+
+| dimension | covered | total | % |
+|---|---|---|---|
+| functions | 0 | TBD | 0% |
+| branches | 0 | TBD | 0% |
+| input entry-points | 0 | TBD | 0% |
+| error paths | 0 | TBD | 0% |
+| state transitions | 0 | TBD | 0% |
+| attack vectors | 0 | 7 | 0% |
+
+**Bugs found this wave:** 0
+
+---
+
+---
+## BUG-W15-001: bin-updater ts-ext degrade regex false-positive masks real install failures
+
+- **严重级别**: High
+- **错误类型**: Logic / Data
+- **复现步骤**:
+  1. Construct any migrate-v6/v7 stderr that contains both `ERR_UNKNOWN_FILE_EXTENSION` and the literal substring `.ts` followed by a word boundary, single quote, or double quote.
+  2. Run `runMigrateAuto()` (or any path that funnels stderr through `bin-updater.ts:185-191`).
+  3. Observe that `child.on("exit", ...)` returns `{ ok: true }` even though the real exit code was non-zero.
+
+- **精确输入值** (synthesized stderr, all match the degrade regex):
+  ```
+  ERR_UNKNOWN_FILE_EXTENSION: payload field user.created_at has .ts wrapper
+  ERR_UNKNOWN_FILE_EXTENSION at line 5: cannot import "index.ts" — package main was rewritten
+  ```
+- **期望行为**: Degrade should fire only when stderr indicates node refused to load a true TypeScript SOURCE file (dev/link install). Other appearances of the literal `.ts` should leave `ok: false` so `consecutive_install_failures` increments and the user sees a real error.
+- **实际行为**: The regex `/\.ts(\b|['"])/` matches any of: `.ts ` / `.ts.` / `.ts"` / `.ts'`. So any error message that mentions `.ts` followed by punctuation gets degraded.
+  ```
+  triggered=true :: ERR_UNKNOWN_FILE_EXTENSION: payload field user.created_at has .ts wrapper
+  triggered=true :: ERR_UNKNOWN_FILE_EXTENSION at line 5: cannot import "index.ts" — package main wa
+  ```
+- **代码位置**: `packages/cli/src/bin-updater.ts:185-191` — the regex was added in PR #149 to fix B-151, but is broader than intended.
+- **触发的代码路径**: `bin-updater.runUpdater` → `runMigrateAuto()` → `spawn(node, [bin.js, migrate-auto])` → child stderr → degrade check.
+- **攻击向量**: Logic — overly-permissive pattern.
+- **发现时间**: 2026-05-08T06:30Z
+
+
+---
+## BUG-W15-002: m5-infect silently clobbers user's existing core.hooksPath (husky/lefthook breakage)
+
+- **严重级别**: High
+- **错误类型**: Data / UX (silent destruction of user state)
+- **复现步骤**:
+  1. In a fresh git repo, set up husky: `mkdir .husky && echo "echo pre-commit" > .husky/pre-commit && chmod +x .husky/pre-commit && git config core.hooksPath .husky`
+  2. Verify: `git config core.hooksPath` → `.husky`
+  3. Run: `teamagent m5-infect --project-root=. --author=tester`
+  4. Re-check: `git config core.hooksPath` → `.githooks` (silently overwritten)
+
+- **期望行为**: Detect that `core.hooksPath` is already set to a non-`.githooks` value and either (a) abort with explicit error, (b) prompt for confirmation, or (c) at minimum warn loudly that the user's existing hook framework has been disabled.
+- **实际行为**: `m5-infect` executes `git config core.hooksPath .githooks` unconditionally (`m5-infect.ts:62-72` in PR #149). User's husky/lefthook/custom config is silently overwritten with no warning. The husky `pre-commit` file remains on disk but is now dead — git ignores it.
+- **代码位置**: `packages/cli/src/commands/m5-infect.ts:62-72` — `try { execSync("git config core.hooksPath .githooks") }` with no read-before-write check.
+- **触发的代码路径**: `runM5Infect` → `applyInfection` → `git config core.hooksPath .githooks`.
+- **攻击向量**: State machine — clobbers external state without consulting it.
+- **发现时间**: 2026-05-08T06:35Z
+
+---
+## BUG-W15-003: m5-infect silently skips post-merge hook when user has a pre-existing one (viral spread broken with zero warning)
+
+- **严重级别**: Critical
+- **错误类型**: Logic / UX (viral propagation silently severed)
+- **复现步骤**:
+  1. In a fresh git repo, pre-create a custom post-merge hook:
+     ```
+     mkdir .githooks
+     echo '#!/bin/sh' > .githooks/post-merge
+     echo 'echo [user-custom-post-merge]' >> .githooks/post-merge
+     chmod +x .githooks/post-merge
+     ```
+  2. Run: `teamagent m5-infect --project-root=. --author=tester`
+  3. Read m5-infect output — it lists `.githooks/pre-commit` written but **no `.githooks/post-merge`**.
+  4. Cat `.githooks/post-merge` — still the user's `[user-custom-post-merge]` content. **TeamAgent's auto-sync hook was never installed.**
+
+- **期望行为**: Either (a) merge TeamAgent's post-merge logic into the existing hook (chain-load), (b) refuse infection with clear error and instructions, or (c) at minimum print a prominent warning: "post-merge hook NOT installed because user version exists — team rules will NOT auto-sync after `git pull`".
+- **实际行为**: `applyInfection` writes files with `fs.writeFile(..., { flag: "wx" })` (`fs-bootstrap.ts`), which silently no-ops when the file already exists. The output simply omits the file from the "written files" list. The user has no idea the viral propagation contract is broken — `git pull` will never trigger `m5-sync`.
+- **代码位置**: `packages/adapters/src/m5/fs-bootstrap.ts:applyInfection` (`wx` flag) + `packages/cli/src/commands/m5-infect.ts:51-54` (silent file-list output, no diff between requested vs actually written).
+- **触发的代码路径**: `runM5Infect` → `port.applyInfection(plan)` → `fs.writeFile(.githooks/post-merge, content, { flag: 'wx' })` → throws EEXIST → silently caught → file unchanged.
+- **攻击向量**: Error path / state machine — required side-effect skipped without surfacing.
+- **复合后果**: When combined with BUG-W15-002, this means infect *both* destroys the user's husky setup *and* fails to install its own auto-sync hook. The repo is now in an unstable middle state: husky disabled, TeamAgent's sync also disabled, and the user has no way to detect either failure without `cat .githooks/post-merge`.
+- **发现时间**: 2026-05-08T06:35Z
+
+
+---
+## BUG-W15-004: secret-scanner misses base64-encoded API keys
+
+- **严重级别**: High
+- **错误类型**: Security
+- **复现步骤**:
+  1. `teamagent m5-share --project-root=<repo> --text="my secret token in b64: c2tfcHJvajEyMzQ1Njc4OTAxMjM0NTY3ODkw" --rule-id=test-b64 --scope=team --author=tester`
+  2. The base64 string decodes to `sk_proj1234567890123456789` — a recognizable OpenAI/Anthropic key prefix.
+- **期望行为**: Either decode and re-scan candidate base64 blobs, or refuse to share text containing long base64 strings without explicit confirmation.
+- **实际行为**: gate-1 returns 0 hits, gate-2 classifies as personal/uncertain, and because the user passed `--scope=team`, the rule is promoted to L2 and committed to `.teamagent/team/`. **A real API key is now propagating across the team, base64-disguised**.
+- **代码位置**: `packages/core/src/m5/secret-scanner.ts` — patterns operate on raw text, no base64 detection.
+- **攻击向量**: Injection / encoding bypass.
+- **发现时间**: 2026-05-08T06:40Z
+
+---
+## BUG-W15-005: secret-scanner misses space-fragmented secret prefixes
+
+- **严重级别**: High
+- **错误类型**: Security
+- **复现步骤**: `teamagent m5-share --text="key: sk - proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" --scope=team --author=tester` → gate-1: 0 hits, promoted.
+- **期望行为**: Detect token formats even when whitespace or punctuation is inserted between recognizable fragments (`sk` + `-` + spaces + `proj-...`).
+- **实际行为**: Pattern `\bsk-[A-Za-z0-9_-]{20,}` requires no whitespace inside the prefix; `sk - proj-` breaks the match. Rule promoted to L2.
+- **代码位置**: `packages/core/src/m5/secret-scanner.ts` — strict regex, no fuzzy matching, no whitespace-collapsed retry.
+- **攻击向量**: Injection / format bypass.
+- **发现时间**: 2026-05-08T06:40Z
+
+---
+## BUG-W15-006: secret-scanner has no Slack webhook URL detector
+
+- **严重级别**: High
+- **错误类型**: Security
+- **复现步骤**: `teamagent m5-share --text="webhook: https://hooks.slack.com/services/T012AB3C4/B567CD89EF/abcDEFghijklmnopqrstuvw" --scope=team --author=tester` → gate-1: 0 hits, promoted.
+- **期望行为**: Treat `https://hooks.slack.com/services/<team>/<channel>/<token>` as a credential and seal in L1 (publishing it lets anyone post arbitrary messages to the channel).
+- **实际行为**: No pattern in `secret-scanner.ts` matches `hooks.slack.com` URLs. Rule propagates to team via `.teamagent/team/<author>/`.
+- **代码位置**: `packages/core/src/m5/secret-scanner.ts` — pattern set covers OpenAI/Stripe/GitHub/GitLab/Slack OAuth-tokens but not webhook URLs (also missing: Discord webhooks, Sentry DSNs, Datadog API keys, Twilio SIDs, etc.).
+- **攻击向量**: Injection / coverage gap.
+- **发现时间**: 2026-05-08T06:40Z
+
+---
+## BUG-W15-007: scope-classifier misjudges Chinese-English mixed text with "personal context" markers
+
+- **严重级别**: Medium
+- **错误类型**: Logic / UX
+- **复现步骤**: `teamagent m5-share --text="这是我个人电脑上跑的 PR review 草稿" --rule-id=test-mixed --author=tester` (no `--scope`)
+- **期望行为**: Phrases like "我个人" / "我的电脑" / "草稿" should at minimum nudge the classifier toward `personal` or at least `uncertain` — not auto-promote to team.
+- **实际行为**: Classifier sees "PR review" → matches a shareable signal → returns `shareable` → action `promote_to_l2` is taken without user confirmation. The user's personal note is auto-shared with the team.
+- **代码位置**: `packages/core/src/m5/scope-classifier.ts` — only matches positive shareable signals; no negative signal scoring for personal markers (the existing personal-signal patterns are limited to file paths/emails/specific names, not free-text personal context).
+- **攻击向量**: Logic / oversight.
+- **复合后果**: Combined with BUG-W15-006, an absent-minded user typing "PR review notes — webhook https://hooks.slack.com/..." would have BOTH the secret AND the note auto-promoted to the team.
+- **发现时间**: 2026-05-08T06:40Z
+
+---
+## BUG-W15-008: secret-scanner pattern overlap — credit_card regex catches truncated API keys, masking which detector should have fired
+
+- **严重级别**: Low
+- **错误类型**: UX / Diagnostics
+- **复现步骤**: `teamagent m5-share --text="API key sk-1234567890123456789"` → gate-1: 1 hit, **type=credit_card** (not api_token).
+- **期望行为**: Either the api_token pattern should match `sk-` with 19+ chars (currently requires 20+), or the diagnostic should explain that a 19-digit numeric span looks credit-card-like.
+- **实际行为**: `sk-` + 19-char suffix slips under the api_token threshold, but the trailing 19-digit run gets caught by `\b(?:\d[ -]?){13,19}\b` (credit-card pattern). The rule is sealed correctly, but for the wrong reason. Users debugging "why was this blocked" will be misled into thinking the input contained a credit card.
+- **代码位置**: `packages/core/src/m5/secret-scanner.ts` — overlapping patterns; api_token min-length too tight.
+- **攻击向量**: Diagnostics / detector ambiguity.
+- **发现时间**: 2026-05-08T06:40Z
+
+
+---
+## BUG-W15-009: B-145 SessionStart validation can be bypassed by setting CLAUDE_PROJECT_DIR env var alone (cron-style hijack)
+
+- **严重级别**: Critical
+- **错误类型**: Security / Logic
+- **复现步骤**:
+  1. On a machine where the user has ever installed TeamAgent (so `~/.teamagent/global.db` exists), pick any unrelated git repo (e.g., a teammate's repo cloned for read-only review).
+  2. Run with no stdin and only the env var set:
+     ```bash
+     echo "" | CLAUDE_PROJECT_DIR=/path/to/victim-repo \
+       TEAMAGENT_M5_AUTOPUSH=0 \
+       node bin-session-start.cjs
+     ```
+  3. Observe TeamAgent output: `🦠 项目已自动 infect，📦 本机已自动补齐缺失项，📤 已 commit 2 处 team 变化（未 push）`.
+  4. Inspect the victim repo: `.teamagent/manifest.json`, `.githooks/`, and a fresh git commit `[teamagent-sync] sync N team rule(s)` are now present.
+
+- **期望行为**: B-145 was added to make `bin-session-start` refuse to run side-effects unless the input "looks like" a real Claude Code SessionStart event. An empty stdin payload is exactly the kind of payload a cron job, wrapper script, or unrelated process would emit, and the check should reject it.
+- **实际行为**: `bin-session-start.ts:61-64` accepts as legitimate any of three signals: (a) `CLAUDE_PROJECT_DIR` is set, (b) stdin contains JSON with `hook_event_name === "SessionStart"`, or (c) empty stdin + `TEAMAGENT_ALLOW_BARE_SESSIONSTART=1`. **Path (a) requires only the env var** — the check is OR, not AND — so any caller who can set one env var becomes indistinguishable from Claude Code, and the four-step hook pipeline (infect → bootstrap → sync → publish) runs to completion, including a `git commit` on the victim repo.
+- **实际终端输出**:
+  ```
+  ✨ TeamAgent: 新项目检测到 (无 .teamagent/knowledge.db)，后台自动 init 中...
+  [teamagent M5] 🦠 项目已自动 infect，📦 本机已自动补齐缺失项，📤 已 commit 2 处 team 变化（未 push）
+  ```
+- **代码位置**: `packages/cli/src/bin-session-start.ts:61-64` — `looksLikeClaudeInvocation` predicate uses OR across the three signals; `m5-session-hook.ts:48-125` then runs the full pipeline if `userHasTeamAgent(home) && isGitProject(cwd)`.
+- **触发的代码路径**: env-only invocation → `looksLikeClaudeInvocation = true` → `runM5Session` → `m5-infect` writes manifest+githooks → `m5-bootstrap --apply` sets `core.hooksPath` → `m5-publish` `git add + git commit`.
+- **攻击向量**: State machine / privilege boundary — any process able to set one env var triggers a full mutation pipeline.
+- **真实危害矩阵**:
+  - cron job that sets `CLAUDE_PROJECT_DIR=/path/to/repo` (e.g., to make Claude Code wrap a build) silently infects the repo every run.
+  - A wrapper script the user writes for Codex / GPT / any other tool that exports `CLAUDE_PROJECT_DIR` will infect every repo it touches.
+  - On shared dev machines or CI runners, a teammate's `CLAUDE_PROJECT_DIR` export in a sourced rc-file silently mutates someone else's git repo.
+- **可控参数 leakage**: `TEAMAGENT_M5_AUTOPUSH=1` would also push the unauthorized commit to origin without consent (default in normal SessionStart, only opt-out via env).
+- **发现时间**: 2026-05-08T06:42Z
+
+
+---
+## BUG-W15-010: m5-share silently ignores --confidence flag (interface ↔ parser mismatch)
+
+- **严重级别**: Medium
+- **错误类型**: UX / Logic
+- **复现步骤**:
+  1. `teamagent m5-share --text=x --rule-id=foo --scope=team --author=tester --confidence=0.42`
+  2. `cat .teamagent/team/tester/foo.json` → confidence is 0.85 (default), not 0.42.
+
+- **期望行为**: Either parse `--confidence` and validate it (0..1, finite number), or refuse the flag with a clear error so the user knows it's not honored.
+- **实际行为**: `parseM5ShareArgs` (`m5-share.ts:131-173`) recognizes only `--project-root / --text / --rule-id / --scope / --author / --now` — there is no branch for `--confidence`. The CLI silently swallows the flag, runs with `opts.confidence === undefined`, and `runM5Share` falls back to 0.85.
+- **复合行为**:
+  - `--confidence=NaN`, `--confidence=2`, `--confidence=-1` all "succeed" (m5-share prints `已写入: ...`) but the written rule has confidence 0.85.
+  - The confidence range validation that the attack-surface inventory describes (B-141: must be number, finite, in [0,1]) is in `validateTeamRule` but never reached for user-supplied input — only for *parsed file* input.
+- **代码位置**: `packages/cli/src/commands/m5-share.ts:131-173` — parser; `m5-share.ts:31` — interface field; `m5-share.ts:61` — fallback `?? 0.85`.
+- **攻击向量**: Missing input handling.
+- **发现时间**: 2026-05-08T06:48Z
+
+---
+## BUG-W15-011: m5-bootstrap returns exit code 0 even on hard manifest errors
+
+- **严重级别**: Medium
+- **错误类型**: Logic / Diagnostics
+- **复现步骤**:
+  1. Corrupt `.teamagent/manifest.json`: `echo "this is not json" > .teamagent/manifest.json`
+  2. `teamagent m5-bootstrap --apply; echo "exit=$?"` → prints `Error: manifest: invalid JSON: ...` and `exit=0`.
+
+- **期望行为**: Hard validation errors (corrupt JSON, unsupported schema_version, missing `created_by`) should produce a non-zero exit code so CI / pre-commit / wrapper scripts can detect the failure.
+- **实际行为**: The error is printed to stderr but the process exits 0. Any caller using `set -e` or `&& next-step` will treat this as success.
+- **代码位置**: `packages/cli/src/bin.ts` m5-bootstrap dispatch (or whichever `parseManifest` throw path) — the error is caught somewhere up the chain that maps it to exit 0.
+- **可重现的 4 个错误形态**: empty file, schema_version=99, plain text (not JSON), missing `created_by` — all four print errors but exit 0 in `--check` and `--apply`.
+- **攻击向量**: Diagnostics / state-machine UX.
+- **发现时间**: 2026-05-08T06:48Z
+
+---
+## BUG-W15-012: rule_id at boundary 200 chars produces 274-char absolute path → Windows MAX_PATH risk
+
+- **严重级别**: Medium
+- **错误类型**: Compatibility / Boundary
+- **复现步骤**:
+  1. `teamagent m5-share --text=x --rule-id="$(printf 'a%.0s' {1..200})" --scope=team --author=tester` (200-char id passes `isSafeRuleId`).
+  2. `node -e "console.log(require('path').join(process.cwd(), '.teamagent/team/tester/', 'a'.repeat(200) + '.json').length)"` → ~274 chars on this machine.
+
+- **期望行为**: Either reject `rule_id` length that pushes the *absolute* path over 260 (Windows traditional MAX_PATH) inside the share validator, OR document/test that the project requires Windows long-path support (`HKLM\System\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1`).
+- **实际行为**: `isSafeRuleId` enforces 1..200 chars on the id alone with no awareness of the surrounding path. On Windows installs without long-path support enabled, 200-char rule_ids become silently un-readable: writeFile may succeed in some shells but tools reading the path can fail with `ENAMETOOLONG`.
+- **代码位置**: `packages/core/src/m5/team-rule.ts` (SAFE_RULE_ID_RE max 200) — boundary chosen without considering the path prefix `.teamagent/team/<author>/` + `.json` overhead (~70 chars in this checkout).
+- **攻击向量**: Boundary value.
+- **发现时间**: 2026-05-08T06:48Z
+
+
+---
+## BUG-W15-013: secret-scanner has 1300ms+ latency on long digit-rich text (regex perf cliff)
+
+- **严重级别**: Medium (DoS-ish at scale)
+- **错误类型**: Performance
+- **复现步骤**:
+  1. `text="$(node -e "console.log('1 '.repeat(100) + '2 '.repeat(100) + '3 '.repeat(100))")"`  (~600 chars, ~300 digit tokens)
+  2. `time teamagent m5-share --text="$text" ... --scope=team --author=tester` → 1311ms on this Windows host (i7).
+
+- **期望行为**: A single share invocation should complete in <100ms; 1.3s is 13× over budget. Worse, regex-cost scales superlinearly with digit run length, so a 6KB digit blob (e.g., a hex-encoded payload pasted into a rule) could plausibly stall to multi-second range — and `m5-sync` invokes `parseTeamRule` per file, so a 100-rule team with bad inputs multiplies the cost.
+- **实际行为**: `secret-scanner.ts` `credit_card` pattern `\b(?:\d[ -]?){13,19}\b` exhibits regex backtracking on pathological inputs (long alternating digit-space sequences). No upper-bound guard, no input-length cap before scanning.
+- **代码位置**: `packages/core/src/m5/secret-scanner.ts` — `credit_card` pattern.
+- **攻击向量**: Performance — adversarial input.
+- **发现时间**: 2026-05-08T06:55Z
+
+---
+## BUG-W15-014: m5-sync truncates "skipped files" warning — only first file listed when many fail
+
+- **严重级别**: Medium
+- **错误类型**: UX / Data visibility
+- **复现步骤**:
+  1. Place 30+ corrupt JSON files in `.teamagent/team/<author>/`.
+  2. Run `teamagent m5-sync --project-root=.`.
+  3. Output: `[m5-sync] ⚠ skipped 33 file(s) (corrupt JSON / schema violation / future timestamp):` followed by **only one** file path.
+
+- **期望行为**: Either list all skipped files (user is responsible for inspecting them) or summarize by reason category and explicitly state "33 files; first listed: …; full list: <ledger path>".
+- **实际行为**: The renderer prints the count correctly but only the first file's diagnostic line. The user has no way (without manually iterating `.teamagent/team/`) to find which 32 other rules are missing — silent data loss for any team using m5-sync.
+- **代码位置**: `packages/cli/src/commands/m5-sync.ts` rendering block — likely caps display to first entry.
+- **攻击向量**: UX / observability.
+- **发现时间**: 2026-05-08T06:55Z
+
+
+---
+
+## Wave 15 Coverage Snapshot (after Round 4)
+
+| dimension | covered | total | % | comment |
+|---|---|---|---|---|
+| attack vectors applied | 6 | 7 | 86% | normal-path / boundary / state-machine / missing / error-path / large-data covered; concurrent NOT covered |
+| hypothesis verified | 14+ | 48 | ~30% | 14 confirmed bugs + ~5 negatives (LWW dict, future-ts reject, schema validation worked); ~30 still untested |
+| modules touched | 3 | 3 | 100% | A SELF-UPDATE / B viral / C team-sync all received probes |
+| user-input boundary | high | — | — | rule_id length, confidence, scope, author traversal, future-ts all probed |
+| concurrency | 0 | n/a | 0% | NOT TESTED (Tier 2 sandbox single-process; no multi-worktree race) |
+| network failure | partial | — | — | github-api regex-bypass observed analytically; not exercised end-to-end |
+
+**By severity:**
+| Severity | Count | IDs |
+|---|---|---|
+| Critical | 1 | W15-009 |
+| High | 6 | W15-001, W15-002, W15-003, W15-004, W15-005, W15-006 |
+| Medium | 6 | W15-007, W15-010, W15-011, W15-012, W15-013, W15-014 |
+| Low | 1 | W15-008 |
+
+**By module:**
+| Module | Count | IDs |
+|---|---|---|
+| A. SELF-UPDATE (bin-updater + postinstall) | 1 | W15-001 |
+| B. Viral spread (m5-infect / bootstrap / SessionStart) | 4 | W15-002, W15-003, W15-009, W15-011 |
+| C. Team sync (share / publish / sync / scanner / classifier) | 9 | W15-004, W15-005, W15-006, W15-007, W15-008, W15-010, W15-012, W15-013, W15-014 |
+
+## Wave 15 Test Summary
+
+- **Test rounds**: 4 (Round 1-4 probes per chaos-qa-hunter Phase 3)
+- **Attacks executed**: ~28 distinct probes
+- **Bugs found**: 14
+- **Time spent**: ~75 minutes (Phase 1 recon ~15min + Phase 2 attack-surface ~10min + Phase 3 attacks ~50min)
+- **Coverage estimate**: ~30% of hypothesis space; ~86% of attack-vector categories
+- **Unexplored / Tier-3+ surface**:
+  - Concurrent / multi-worktree races (BUG-15B-10 hypothesis)
+  - Real npm install -g / migrate chain (Tier 4)
+  - Real `~/.teamagent/global.db` corruption (Tier 3)
+  - Real GitHub API rate-limit / HTML 200 response
+  - Real time-skew from system clock manipulation
+  - Symlink loops / unicode NFD/NFC filename round-trip on macOS
+  - Real Codex-cycle review of these findings (connector unauthorized — same blocker as PR #149)
+
+## Recommended Triage Order (severity × user-blast-radius)
+
+Ranked by combined severity and scope of damage *if it fires* (not by likelihood).
+
+1. **W15-009 SessionStart env-var bypass** — Critical, any process setting `CLAUDE_PROJECT_DIR` on a TeamAgent-installed machine triggers full mutation pipeline including `git commit`. Highest blast radius.
+2. **W15-002 hookspath silent overwrite** — High. Destroys husky / lefthook / custom git hook frameworks with zero warning. Affects every user with a non-trivial git workflow.
+3. **W15-003 wx-skip post-merge silent dropout** — High. Viral propagation invisibly severed; teammate clones never auto-sync rules. Fundamental contract broken.
+4. **W15-001 ts-ext degrade regex too broad** — High. Any future migrate-v6/v7 stderr that mentions `.ts` will mask real failures, leaving users on broken versions without warning.
+5. **W15-004 / 005 / 006 secret-scanner bypasses** — High (security). Base64, space-fragmented, and Slack-webhook secrets all propagate to team via auto-share.
+6. **W15-007 mixed-language scope misjudge** — Medium. Personal notes auto-promoted on Chinese-English text containing English engineering keywords.
+7. **W15-010 / 011 CLI surface inconsistencies** — Medium. `--confidence` silently ignored; bootstrap exit 0 on hard error masks CI/script integration failures.
+8. **W15-012 / 013 / 014 boundary + perf + observability** — Medium. Long rule_ids, regex DoS-ish, sync-skipped-files truncation.
+9. **W15-008 credit_card pattern overlap** — Low. Diagnostic-only; the right thing happens but for the wrong reason.
+
