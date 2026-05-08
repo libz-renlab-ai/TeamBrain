@@ -9,6 +9,7 @@ PRIMARY_BASE="https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release
 FALLBACK_BASE="https://github.com/libz-renlab-ai/TeamBrain/releases/download/${TEAMAGENT_VERSION}"
 TARBALL_BASE="https://github.com/libz-renlab-ai/TeamBrain/releases/download/${TEAMAGENT_VERSION}"
 TARBALL_NAME="teamagent-${TEAMAGENT_VERSION}.tgz"
+ARCHIVE_FALLBACK_URL="https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz"
 
 SAFE_MODE=1
 DRY_RUN=0
@@ -39,6 +40,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   printf '[dry-run] install.sh source : %s/install.sh\n' "$PRIMARY_BASE"
   printf '[dry-run] tarball           : %s/%s\n' "$TARBALL_BASE" "$TARBALL_NAME"
   printf '[dry-run] fallback tarball  : %s/%s\n' "$FALLBACK_BASE" "$TARBALL_NAME"
+  printf '[dry-run] archive fallback : %s\n' "$ARCHIVE_FALLBACK_URL"
   printf '[dry-run] SHA-256 verified  : yes (install.sh.sha256 + tarball.sha256)\n'
   printf '[dry-run] No files written.\n'
   exit 0
@@ -159,11 +161,26 @@ TARBALL_SHA_PRIMARY="${TARBALL_BASE}/${TARBALL_NAME}.sha256"
 TARBALL_SHA_FALLBACK="${FALLBACK_BASE}/${TARBALL_NAME}.sha256"
 
 printf '[install] Downloading teamagent %s...\n' "$TEAMAGENT_VERSION"
+SKIP_TARBALL_SHA=0
 _download_with_fallback "$TARBALL_PRIMARY" "$TARBALL_FALLBACK" "$TMPDIR_INSTALL/$TARBALL_NAME"
-_download_with_fallback "$TARBALL_SHA_PRIMARY" "$TARBALL_SHA_FALLBACK" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256"
 
-sed "s|[^ ]*${TARBALL_NAME}|$TMPDIR_INSTALL/$TARBALL_NAME|g" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256" > "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256.local"
-_verify_sha256 "$TMPDIR_INSTALL/$TARBALL_NAME" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256.local" "$TARBALL_NAME"
+# Final degrade: archive tarball (legacy URL, BC for users pinning a pre-3a version)
+if [ ! -s "$TMPDIR_INSTALL/$TARBALL_NAME" ]; then
+  printf '[install] release tarball not found; trying archive fallback: %s\n' "$ARCHIVE_FALLBACK_URL" >&2
+  if _curl_safe "$ARCHIVE_FALLBACK_URL" -o "$TMPDIR_INSTALL/$TARBALL_NAME"; then
+    printf '[install] downloaded archive fallback (skipping SHA-256 — archive is unsigned)\n' >&2
+    SKIP_TARBALL_SHA=1
+  else
+    printf 'error: tarball, fallback, and archive all failed\n' >&2
+    exit 1
+  fi
+fi
+
+if [ "${SKIP_TARBALL_SHA:-0}" -ne 1 ]; then
+  _download_with_fallback "$TARBALL_SHA_PRIMARY" "$TARBALL_SHA_FALLBACK" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256"
+  sed "s|[^ ]*${TARBALL_NAME}|$TMPDIR_INSTALL/$TARBALL_NAME|g" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256" > "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256.local"
+  _verify_sha256 "$TMPDIR_INSTALL/$TARBALL_NAME" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256.local" "$TARBALL_NAME"
+fi
 
 # Step 3: Safe-mode review (P4 N-03: default two-step, no pipe-to-sh by default)
 if [ "$SAFE_MODE" -eq 1 ] && [ "$AUTO_MODE" -eq 0 ]; then

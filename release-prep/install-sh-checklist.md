@@ -11,6 +11,7 @@
 | P4-M05 | install.sh 内置 redirect URL 域名检查，防止 redirect 到外部恶意域 | `_curl_safe()` redirect guard: `allowed_hosts` regex + host check (lines 67–78) | `grep 'allowed_hosts' install.sh.draft` confirms domain allowlist | — |
 | P4-M06 | 提供至少一个 fallback 下载端点（Release asset 直链或 CDN 镜像） | `_download_with_fallback()` fn: PRIMARY + FALLBACK args for both install.sh.sha256 and tarball | `grep 'FALLBACK_BASE' install.sh.draft \| wc -l` ≥ 4 | H5 |
 | P4-M07 | install.sh 支持 --dry-run / --verify / --no-run 模式，用户可先查看 | Argument parsing section: `--dry-run`, `--verify`, `--no-run` aliases → `DRY_RUN=1` gate | `bash install.sh.draft --dry-run` exits 0 with "[dry-run]" prefix output only | — |
+| P4-M06b | Archive tarball fallback (legacy URL) for pre-3a versions | `ARCHIVE_FALLBACK_URL` constant + final-degrade block in tarball download | `grep -c 'archive/refs/heads/release' release-prep/install.sh.draft` ≥ 1 | — |
 
 ## P8 Route B + G4: URL Routing Table
 
@@ -28,7 +29,7 @@
 
 | ID | Question | Status in install.sh.draft |
 |----|----------|---------------------------|
-| H1 | SHA256 校验文件放 `release` 分支 vs GitHub Release asset | Dual-path: primary from `release` branch raw URL, fallback from Release asset. Not fully resolved — CI workflow must publish both. **Punt to R3.** |
+| H1 | SHA256 校验文件放 `release` 分支 vs GitHub Release asset | **RESOLVED — 3a landed**: workflow uploads install.sh.sha256 to both `release` branch (raw URL primary) AND GitHub Release asset (fallback). |
 | H5 | install.sh fallback URL: Release asset直链 vs 外置 CDN镜像 | Resolved as **GitHub Release asset** (`FALLBACK_BASE = releases/download/{tag}`). No external CDN needed for v1. |
 | H6 | Route B install.sh 的 self-update 机制是否本 PR 落地 | **Punt** — not implemented in draft. `TEAMAGENT_VERSION` env var allows users to pin a version; self-update is a follow-up. |
 
