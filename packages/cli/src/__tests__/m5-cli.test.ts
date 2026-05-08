@@ -210,6 +210,77 @@ describe("m5-infect command", () => {
   });
 });
 
+describe("m5-bootstrap manifest validation (W15-011)", () => {
+  const port = makeStubPort();
+  const corruptForms: Array<{ name: string; content: string; rxn: RegExp }> = [
+    { name: "empty file", content: "", rxn: /invalid JSON/ },
+    {
+      name: "non-JSON plain text",
+      content: "this is not json",
+      rxn: /invalid JSON/,
+    },
+    {
+      name: "schema_version=99",
+      content: JSON.stringify({
+        schema_version: 99,
+        teamagent_version: "0.0.0",
+        required_plugins: [],
+        required_project_skills: [],
+        required_hooks: [],
+        created_by: "x",
+        created_at: "2026-05-08T10:00:00Z",
+      }),
+      rxn: /unsupported schema_version/,
+    },
+    {
+      name: "missing created_by",
+      content: JSON.stringify({
+        schema_version: 1,
+        teamagent_version: "0.0.0",
+        required_plugins: [],
+        required_project_skills: [],
+        required_hooks: [],
+        created_at: "2026-05-08T10:00:00Z",
+      }),
+      rxn: /created_by/,
+    },
+  ];
+
+  for (const form of corruptForms) {
+    it(`runM5Bootstrap throws on ${form.name} (--check)`, async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "m5-cli-bad-"));
+      try {
+        await fs.mkdir(path.join(root, ".teamagent"), { recursive: true });
+        await fs.writeFile(
+          path.join(root, ".teamagent", "manifest.json"),
+          form.content,
+        );
+        await expect(
+          runM5Bootstrap({ projectRoot: root, checkOnly: true, port }),
+        ).rejects.toThrow(form.rxn);
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it(`runM5Bootstrap throws on ${form.name} (--apply)`, async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "m5-cli-bad-"));
+      try {
+        await fs.mkdir(path.join(root, ".teamagent"), { recursive: true });
+        await fs.writeFile(
+          path.join(root, ".teamagent", "manifest.json"),
+          form.content,
+        );
+        await expect(
+          runM5Bootstrap({ projectRoot: root, checkOnly: false, port }),
+        ).rejects.toThrow(form.rxn);
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 describe("m5-bootstrap command", () => {
   it("returns diff=null on uninfected project", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "m5-cli-"));

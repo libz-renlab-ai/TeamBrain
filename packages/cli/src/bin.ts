@@ -260,10 +260,22 @@ async function main(): Promise<void> {
     }
     case "m5-bootstrap": {
       const opts = parseM5BootstrapArgs(rest);
-      const result = await runM5Bootstrap(opts);
-      const { output, exitCode } = renderM5BootstrapResult(result);
-      process.stdout.write(output + "\n");
-      if (exitCode !== 0) process.exit(exitCode);
+      try {
+        const result = await runM5Bootstrap(opts);
+        const { output, exitCode } = renderM5BootstrapResult(result);
+        process.stdout.write(output + "\n");
+        if (exitCode !== 0) process.exit(exitCode);
+      } catch (err) {
+        // W15-011: hard manifest errors (corrupt JSON, schema_version
+        // unsupported, missing created_by, ...) must exit non-zero so
+        // CI / pre-commit / wrapper scripts can detect the failure.
+        // Use exit 2 to distinguish from the generic main() crash path
+        // (1) — same convention as m5-share validation errors.
+        process.stderr.write(
+          `[m5-bootstrap] ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(2);
+      }
       return;
     }
     case "m5-share": {

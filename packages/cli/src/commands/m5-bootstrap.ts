@@ -35,7 +35,10 @@ export async function runM5Bootstrap(
   const port = opts.port ?? createDefaultBootstrapPort(opts.projectRoot);
 
   const manifestRaw = await port.readManifest(opts.projectRoot);
-  if (!manifestRaw) {
+  if (manifestRaw === null) {
+    // No manifest file at all → project not infected; this is a normal,
+    // expected state (return ok). Distinguish from "" / corrupt content,
+    // which W15-011 requires we surface via parseManifest's throw.
     return { diff: null, reason: "no manifest (project not infected)" };
   }
   const manifest = parseManifest(manifestRaw);
