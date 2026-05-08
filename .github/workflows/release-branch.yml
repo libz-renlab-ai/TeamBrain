@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: '22'
 
-      - run: corepack enable
+      - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter teamagent build
 

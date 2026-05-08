@@ -6,6 +6,7 @@ import {
   executeCompile,
   parseCompileArgs,
   renderCompileResult,
+  CompileArgError,
   type CompileOptions,
 } from "../commands/compile.js";
 import { DualLayerStore, SqliteKnowledgeStore, openDb } from "@teamagent/adapters";
@@ -80,6 +81,17 @@ function entry(over: Partial<KnowledgeEntry> = {}): KnowledgeEntry {
 describe("parseCompileArgs", () => {
   it("parses --dry-run", () => {
     expect(parseCompileArgs(["--dry-run"])).toMatchObject({ dryRun: true });
+  });
+  // B-127: typo'd flags must be rejected, not silently ignored
+  it("rejects unknown flag (B-127)", () => {
+    expect(() => parseCompileArgs(["--bogus-xyz"])).toThrow(CompileArgError);
+    expect(() => parseCompileArgs(["--bogus-xyz"])).toThrow(/unknown flag/i);
+  });
+  it("rejects typo of --dry-run (B-127)", () => {
+    expect(() => parseCompileArgs(["--dyr-run"])).toThrow(CompileArgError);
+  });
+  it("rejects --dry-run= (CLI must reject value forms for boolean flags)", () => {
+    expect(() => parseCompileArgs(["--dry-runn"])).toThrow(CompileArgError);
   });
   it("parses --skills-only", () => {
     expect(parseCompileArgs(["--skills-only"])).toMatchObject({ skillsOnly: true });

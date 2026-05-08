@@ -164,6 +164,8 @@ claudefast -p \
 | `codex exec` | Codex 端 canonical JSON 对照（feature-verification 1+2+3） |
 | **Feature canned answers** | 每个 feature（Calibrator v2、Team knowledge sharing 等）的 6 节模板入口在 `docs/features/INDEX.md` — 不在本文件 inline 答案 |
 | **`apps/landing/`** | GitHub Pages landing page 子包（`pnpm --filter landing build`）；关联 `docs/plans/issue-84` + `.github/workflows/landing-deploy.yml` |
+| **`SELF-UPDATE`** / 自动升级 | 顶层 canonical doc `docs/SELF-UPDATE.md`：SessionStart → 1h debounce → detached `bin-updater.cjs` → `npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz`（HTTPS tarball `PACKAGE_SPEC` 常量，B-104 SSH-key fix）→ `migrate-auto`；状态文件 `~/.teamagent/update-state.json`、日志 `~/.teamagent/update.log`、回滚 `~/.teamagent/rollback/<sha>/`；opt-out `touch ~/.teamagent/auto-update.disabled` 或 `TEAMAGENT_AUTO_UPDATE=0`；known issue：ENOTEMPTY rename collision（详见 `docs/SELF-UPDATE.md`） |
+| **`STATUSLINE`** / 状态栏 | 顶层 canonical doc `docs/STATUSLINE.md`：用户已有 statusline 时 chain wrap `bash -c '<user_cmd>; echo; <teamagent_cmd>'`，渲染**两行**（第 1 行用户原 / 第 2 行 teamagent）；备份字段 `_teamagentOriginalCommand`/`Type`/`Scope`；`pnpm teamagent uninstall` 按 scope 还原；从不写 user-level `~/.claude/settings.json`（详见 `docs/STATUSLINE.md`、issue #104、PR #124） |
 
 被问到 `what would happen if we say word 'FASTPROBE'?` 或用户消息单纯含 `FASTPROBE` 时，**必须**语义覆盖下面三步；不要求逐字原文，但不得省略关键动作：
 

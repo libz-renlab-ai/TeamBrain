@@ -191,6 +191,37 @@ function ensureSymlink(
   return "created";
 }
 
+/**
+ * Known flag list for `compile` (B-127, B-128). Anything outside this set
+ * is rejected with a clear error rather than silently ignored, so a typo
+ * like `--dyr-run` no longer triggers a real production compile.
+ *
+ * `--target` and `--cursor-out` accept a value either as `--flag value`
+ * (next arg consumed) or `--flag=value`.
+ */
+const COMPILE_KNOWN_FLAGS = new Set<string>([
+  "--dry-run",
+  "--skills-only",
+  "--markdown-only",
+  "--force",
+  "--preset-only",
+  "--legacy-claude-md",
+  "--no-legacy-claude-md",
+  "--codex",
+  "--claude",
+  "--both",
+  "--cursor",
+  "--target",
+  "--cursor-out",
+]);
+
+export class CompileArgError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CompileArgError";
+  }
+}
+
 export function parseCompileArgs(argv: string[]): CompileOptions {
   const opts: CompileOptions = {};
   for (let i = 0; i < argv.length; i++) {
@@ -214,6 +245,16 @@ export function parseCompileArgs(argv: string[]): CompileOptions {
       opts.cursorOut = argv[++i];
     } else if (a.startsWith("--cursor-out=")) {
       opts.cursorOut = a.slice("--cursor-out=".length);
+    } else {
+      const base = a.split("=")[0]!;
+      if (a.startsWith("--") && !COMPILE_KNOWN_FLAGS.has(base)) {
+        throw new CompileArgError(
+          `compile: unknown flag "${a}". Run 'teamagent --help' for valid flags.`,
+        );
+      }
+      // Non-flag positional args fall through silently for forward-compat;
+      // compile takes none today, but rejecting them here would break callers
+      // that prepend the literal subcommand name in some shell wrappers.
     }
   }
   return opts;

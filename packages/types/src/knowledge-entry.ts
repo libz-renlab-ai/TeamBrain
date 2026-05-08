@@ -18,7 +18,21 @@ export const ScopeSchema = z.object({
 
 export type Scope = z.infer<typeof ScopeSchema>;
 
-export const DEFAULT_FIRE_THRESHOLD = 0.40;
+/**
+ * Default soft-AND score gate for the semantic matcher.
+ *
+ * Raised from 0.40 → 0.65 (B-125, B-139) to suppress widespread false
+ * positives observed in chaos-qa-hunter Wave 11/12: short natural-language
+ * shell commands (ls / pwd / echo / cd / git fetch / ps aux) embedded near
+ * many code-style rules in the multilingual-e5-small space, producing
+ * combined scores 0.45–0.79 against unrelated rules. With fire_threshold
+ * = 0.65, the matcher now only fires when at least one of triggerSim or
+ * patternSim is high (true semantic overlap), not on generic shell-vs-rule
+ * cosine drift.
+ *
+ * Individual rules can still override per-rule via `fire_threshold`.
+ */
+export const DEFAULT_FIRE_THRESHOLD = 0.65;
 
 /**
  * 支持证据：多少次验证过这条知识有效。

@@ -34,11 +34,39 @@ async function main(): Promise<void> {
   const raw = Buffer.concat(chunks).toString("utf-8").trim();
 
   let cwd = process.env["CLAUDE_PROJECT_DIR"] ?? process.cwd();
+  // B-145: validate input is a real Claude Code SessionStart payload before
+  // running side-effecting auto-init / M5 bootstrap. Any tool / cron / typo
+  // that pipes garbage to this binary will otherwise trigger heavy work and
+  // can write to ~/.claude/settings.json. We accept the call only when at
+  // least one of these signals is present:
+  //   1. CLAUDE_PROJECT_DIR env var (set by Claude Code before invoking hooks)
+  //   2. stdin contains a JSON object with hook_event_name === "SessionStart"
+  //      (the documented Claude Code hook payload shape)
+  //   3. stdin is empty AND TEAMAGENT_ALLOW_BARE_SESSIONSTART=1 (manual dogfood)
+  type SessionStartPayload = {
+    cwd?: string;
+    hook_event_name?: string;
+    session_id?: string;
+  };
+  let parsedInput: SessionStartPayload | null = null;
   if (raw) {
     try {
-      const input = JSON.parse(raw) as { cwd?: string };
-      if (input.cwd) cwd = input.cwd;
-    } catch { /* fallback to env/cwd */ }
+      parsedInput = JSON.parse(raw) as SessionStartPayload;
+      if (parsedInput && typeof parsedInput === "object" && parsedInput.cwd) {
+        cwd = parsedInput.cwd;
+      }
+    } catch { /* fall through to validation below */ }
+  }
+
+  const looksLikeClaudeInvocation =
+    typeof process.env["CLAUDE_PROJECT_DIR"] === "string" ||
+    (parsedInput !== null && parsedInput.hook_event_name === "SessionStart") ||
+    (raw === "" && process.env["TEAMAGENT_ALLOW_BARE_SESSIONSTART"] === "1");
+
+  if (!looksLikeClaudeInvocation) {
+    // Garbage / empty / non-SessionStart payload. Stay silent (Stop-hook
+    // contract: never block, never noise) and skip all side effects.
+    return;
   }
 
   // B-094: project-scoped db backup pruning once we know cwd.

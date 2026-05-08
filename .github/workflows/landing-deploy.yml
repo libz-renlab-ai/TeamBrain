@@ -24,8 +24,6 @@ jobs:
           node-version: 20
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Build landing
         run: pnpm install --filter landing && pnpm --filter landing build

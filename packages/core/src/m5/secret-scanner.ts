@@ -21,11 +21,11 @@ const PATTERNS: PatternRule[] = [
   // 绝对路径
   {
     kind: "absolute_path",
-    pattern: /(?:\/Users|\/home|\/root)\/[A-Za-z0-9._-]+/g,
+    pattern: /(?:\/Users|\/home|\/root|\/etc|\/var|\/opt|\/tmp|\/mnt|\/data|\/private\/var)\/[A-Za-z0-9._-]+/g,
   },
   {
     kind: "absolute_path",
-    pattern: /[A-Za-z]:\\(?:Users|Program Files|Program Files \(x86\))\\[A-Za-z0-9._\\-]+/g,
+    pattern: /[A-Za-z]:\\(?:Users|Program Files|Program Files \(x86\)|Windows|ProgramData)\\[A-Za-z0-9._\\-]+/g,
   },
   // 邮箱
   {
@@ -42,15 +42,25 @@ const PATTERNS: PatternRule[] = [
     kind: "credit_card",
     pattern: /\b(?:\d[ -]?){13,19}\b/g,
   },
-  // OpenAI sk- token
+  // OpenAI sk- token / Anthropic sk-ant-
   {
     kind: "api_token",
     pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g,
+  },
+  // Stripe live/test key (sk_live_, sk_test_, pk_live_, pk_test_, rk_live_, etc.)
+  {
+    kind: "api_token",
+    pattern: /\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{20,}\b/g,
   },
   // GitHub PAT
   {
     kind: "api_token",
     pattern: /\bgh[psuro]_[A-Za-z0-9_]{16,}\b/g,
+  },
+  // GitLab PAT
+  {
+    kind: "api_token",
+    pattern: /\bglpat-[A-Za-z0-9_-]{16,}\b/g,
   },
   // Slack tokens
   {
@@ -61,6 +71,22 @@ const PATTERNS: PatternRule[] = [
   {
     kind: "api_token",
     pattern: /\bAKIA[0-9A-Z]{16}\b/g,
+  },
+  // Google API Key (AIzaSy...)
+  {
+    kind: "api_token",
+    pattern: /\bAIza[A-Za-z0-9_-]{35}\b/g,
+  },
+  // PEM-encoded private keys (RSA/EC/OPENSSH/generic)
+  {
+    kind: "private_key",
+    pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  },
+  // Database connection string with embedded password
+  // postgres://user:password@host, mongodb://user:pass@host, mysql://, redis://
+  {
+    kind: "api_token",
+    pattern: /\b(?:postgres(?:ql)?|mongodb(?:\+srv)?|mysql|redis|amqp|amqps):\/\/[A-Za-z0-9._%+-]+:[^\s@]{4,}@[A-Za-z0-9.-]+/g,
   },
   // JWT 三段式（base64url. base64url. base64url）
   {

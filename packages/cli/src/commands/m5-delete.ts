@@ -1,7 +1,14 @@
 import { execSync } from "node:child_process";
 import type { TeamRuleFile } from "@teamagent/core";
 import { FsTeamRuleStore } from "@teamagent/adapters/m5/fs-team-rule-store";
-import { mergeLwwBatch } from "@teamagent/core";
+import { mergeLwwBatch, isSafeRuleId, isSafeAuthor } from "@teamagent/core";
+
+export class M5DeleteValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "M5DeleteValidationError";
+  }
+}
 
 export interface M5DeleteOptions {
   projectRoot: string;
@@ -24,16 +31,45 @@ export interface M5DeleteResult {
 export async function runM5Delete(
   opts: M5DeleteOptions
 ): Promise<M5DeleteResult> {
+  // B-114/B-115: reject path-traversal / ANSI / shell-injection in rule_id and by
+  if (!isSafeRuleId(opts.ruleId)) {
+    throw new M5DeleteValidationError(
+      `--rule-id "${opts.ruleId}" contains illegal characters; allowed: [A-Za-z0-9._-], length 1..200`,
+    );
+  }
+  const deletedByRaw = opts.deletedBy ?? gitUserName() ?? "unknown";
+  if (!isSafeAuthor(deletedByRaw)) {
+    throw new M5DeleteValidationError(
+      `--by "${deletedByRaw}" contains illegal characters; allowed: [A-Za-z0-9._-], length 1..100`,
+    );
+  }
+
   const store = new FsTeamRuleStore();
   const claims = await store.listAll(opts.projectRoot);
   const merged = mergeLwwBatch(claims);
   const cur = merged.get(opts.ruleId);
 
-  // 沿用 lineage：原 author 不变；如果完全没找到，用 deletedBy 做默认 author
-  const deletedBy =
-    opts.deletedBy ?? gitUserName() ?? "unknown";
-  const originalAuthor = cur?.original_author ?? deletedBy;
+  // B-119: reject tombstone for nonexistent rule_id (prevents lineage spoofing
+  // by writing tombstones for rules that never existed).
+  if (!cur) {
+    throw new M5DeleteValidationError(
+      `rule "${opts.ruleId}" does not exist; refusing to write tombstone for nonexistent rule`,
+    );
+  }
+
+  // 沿用 lineage：原 author 不变
+  const deletedBy = deletedByRaw;
+  const originalAuthor = cur.original_author ?? deletedBy;
   const now = opts.now ?? new Date().toISOString();
+
+  // B-140: reject future timestamps (> now + 60s tolerance for clock skew)
+  const nowMs = Date.parse(now);
+  const realNowMs = Date.now();
+  if (Number.isFinite(nowMs) && nowMs > realNowMs + 60_000) {
+    throw new M5DeleteValidationError(
+      `--now "${now}" is more than 60s in the future relative to system clock`,
+    );
+  }
 
   const tomb: TeamRuleFile = {
     rule_id: opts.ruleId,

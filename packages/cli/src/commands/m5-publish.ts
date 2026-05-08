@@ -11,9 +11,10 @@ import { execSync, execFileSync } from "node:child_process";
 export interface M5PublishOptions {
   projectRoot: string;
   /**
-   * 是否同时 push 到 origin。**默认 true**（spec §7 激进模式）。
+   * 是否同时 push 到 origin。**默认 false**（与 CLI help 文本"--push 同时推 origin"一致；
+   * 历史上曾默认 true 但与文档不符，2026-05 修正——见 BUGS.md B-111）。
    * push 失败会落到 result.push_error 上，不抛——commit 已在本地、下次再推。
-   * 关闭：传 push=false 或 CLI 参数 --no-push。
+   * 启用：传 push=true 或 CLI 参数 --push。
    */
   push?: boolean;
   /** 自定义 commit message 前缀；默认 [teamagent-sync] */
@@ -87,8 +88,8 @@ export async function runM5Publish(
     return result;
   }
 
-  // 默认 push（spec §7 激进模式）；失败落到 push_error，不抛
-  const shouldPush = opts.push ?? true;
+  // 默认不 push（与 CLI help "--push 同时推 origin" 一致；显式 --push 才推）
+  const shouldPush = opts.push ?? false;
   if (shouldPush) {
     try {
       execSync("git push", {

@@ -218,6 +218,8 @@ export {
   serializeTeamRule,
   parseTeamRule,
   validateTeamRule,
+  isSafeRuleId,
+  isSafeAuthor,
   type TeamRuleFile,
   type TeamRuleState,
   type TeamRuleAlive,

@@ -391,12 +391,16 @@ export function scheduleDocsPropagation(
 
     const bin = process.argv[1];
     if (bin?.endsWith(".ts")) {
+      // Windows: pnpm is pnpm.cmd; without shell:true child_process.spawn throws ENOENT.
+      // shell:true makes Windows resolve pnpm.cmd via PATHEXT.
       const child = spawn("pnpm", ["teamagent", "docs-propagate", ...ids.map((id) => `--rule-id=${id}`), `--cwd=${cwd}`], {
         cwd,
         stdio: "ignore",
         detached: true,
+        shell: process.platform === "win32",
         env: { ...process.env, ...env },
       });
+      child.on("error", () => { /* best-effort; pnpm may be absent in production tarball install */ });
       child.unref();
     } else if (bin) {
       const child = spawn(process.execPath, [bin, "docs-propagate", ...ids.map((id) => `--rule-id=${id}`), `--cwd=${cwd}`], {
@@ -405,6 +409,7 @@ export function scheduleDocsPropagation(
         detached: true,
         env: { ...process.env, ...env },
       });
+      child.on("error", () => { /* best-effort */ });
       child.unref();
     }
   } catch {

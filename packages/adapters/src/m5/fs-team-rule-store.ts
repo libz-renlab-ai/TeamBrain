@@ -4,6 +4,18 @@ import type { TeamRuleFile } from "@teamagent/types";
 import { parseTeamRule, serializeTeamRule } from "@teamagent/core";
 
 /**
+ * Diagnostic returned alongside listAll so m5-sync can warn the user about
+ * corrupt / non-conforming team-rule files instead of silently skipping them
+ * (B-129).
+ */
+export interface ListAllOptions {
+  /** Receives one entry per skipped file with the underlying reason. */
+  onSkip?: (entry: { path: string; reason: string }) => void;
+  /** Drop claims whose effective ts is more than this many ms in the future. */
+  futureSkewToleranceMs?: number;
+}
+
+/**
  * TeamRuleStorePort：对 .teamagent/team/<author>/<rule_id>.json 的读写抽象。
  *
  * 实现约束：
@@ -14,7 +26,7 @@ import { parseTeamRule, serializeTeamRule } from "@teamagent/core";
  */
 export interface TeamRuleStorePort {
   /** 列出 .teamagent/team/ 下所有 (claim_author, file)。 */
-  listAll(projectRoot: string): Promise<TeamRuleClaim[]>;
+  listAll(projectRoot: string, opts?: ListAllOptions): Promise<TeamRuleClaim[]>;
 
   /** 读单条；不存在返回 null。 */
   readRule(
@@ -44,7 +56,10 @@ export interface TeamRuleClaim {
  * writeRule 用 atomic write（写 .tmp 再 rename）确保不留半文件。
  */
 export class FsTeamRuleStore implements TeamRuleStorePort {
-  async listAll(projectRoot: string): Promise<TeamRuleClaim[]> {
+  async listAll(
+    projectRoot: string,
+    opts: ListAllOptions = {},
+  ): Promise<TeamRuleClaim[]> {
     const teamDir = path.join(projectRoot, ".teamagent", "team");
     const out: TeamRuleClaim[] = [];
 
@@ -55,6 +70,9 @@ export class FsTeamRuleStore implements TeamRuleStorePort {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") return out;
       throw e;
     }
+
+    const realNowMs = Date.now();
+    const skewMs = opts.futureSkewToleranceMs ?? 60_000;
 
     for (const claimAuthor of authors) {
       const authorDir = path.join(teamDir, claimAuthor);
@@ -78,9 +96,26 @@ export class FsTeamRuleStore implements TeamRuleStorePort {
         try {
           const raw = await fs.readFile(filePath, "utf8");
           const file = parseTeamRule(raw);
+          // B-140: reject claims whose effective ts is too far in the future
+          const cur = file.current as { deleted?: boolean; modified_ts?: string; deleted_ts?: string };
+          const effTs = cur.deleted ? cur.deleted_ts : cur.modified_ts;
+          if (typeof effTs === "string") {
+            const tsMs = Date.parse(effTs);
+            if (Number.isFinite(tsMs) && tsMs > realNowMs + skewMs) {
+              opts.onSkip?.({
+                path: filePath,
+                reason: `effective timestamp "${effTs}" is more than ${Math.round(skewMs / 1000)}s in the future`,
+              });
+              continue;
+            }
+          }
           out.push({ claim_author: claimAuthor, file });
-        } catch {
-          // 跳过非法/损坏文件，不阻塞其他规则同步
+        } catch (e) {
+          // B-129: surface skip reason instead of silently dropping
+          opts.onSkip?.({
+            path: filePath,
+            reason: (e as Error).message ?? String(e),
+          });
         }
       }
     }
