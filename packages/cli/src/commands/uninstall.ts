@@ -198,5 +198,18 @@ export function renderUninstallResult(r: UninstallResult): string {
   lines.push("");
   for (const a of r.actions) lines.push(`  ${a}`);
   lines.push("");
+
+  // Real uninstall + we actually removed something => leave a clear path back.
+  // 否则用户跑完只看到一片"已移除"，不知道 statusline 和 4 类 hook 怎么找回来。
+  // 详见 bugs.md B-155、PR fix/install-md-and-uninstall-hint。
+  const removedSomething =
+    !r.dryRun && r.actions.some((a) => a.startsWith("已"));
+  if (removedSomething) {
+    lines.push("🔁 想恢复（重新启用 statusline + PreToolUse / PostToolUse / UserPromptSubmit / Stop hooks）？跑：");
+    lines.push("    pnpm teamagent install-hook    # 仅重装 hook + statusline，最小改动");
+    lines.push("    pnpm teamagent init             # 顺便重新预热向量模型 + 注入 universal pack");
+    lines.push("");
+  }
+
   return lines.join("\n") + "\n";
 }

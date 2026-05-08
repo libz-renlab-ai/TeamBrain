@@ -246,4 +246,38 @@ describe("renderUninstallResult", () => {
     expect(out).toContain("dry-run");
     expect(out).toContain("would remove X");
   });
+
+  // 真实卸载且确实移除了 hook 时，必须给用户一行 reinstall 路径。
+  // 否则用户跑完 uninstall 后 statusline + 三类 hook 全没了、却完全不知道
+  // 怎么恢复——这就是触发本次 fix 的 UX 盲区（详见 bugs.md B-155）。
+  it("appends reinstall hint when teamagent artifacts were actually removed", () => {
+    const out = renderUninstallResult({
+      dryRun: false,
+      actions: [
+        "已移除 hook 注册: /tmp/.claude/settings.local.json",
+        "已从 CLAUDE.md 移除 TEAMAGENT 区块",
+      ],
+    });
+    expect(out).toContain("install-hook");
+    expect(out).toMatch(/恢复|重新启用|reinstall/);
+  });
+
+  it("does not show reinstall hint on dry-run (user is just inspecting)", () => {
+    const out = renderUninstallResult({
+      dryRun: true,
+      actions: ["(dry-run) 会从 .../settings.local.json 移除 TeamAgent hook"],
+    });
+    expect(out).not.toContain("install-hook");
+  });
+
+  it("does not show reinstall hint when nothing was removed", () => {
+    const out = renderUninstallResult({
+      dryRun: false,
+      actions: [
+        "无 .claude/settings.local.json，跳过 hook 卸载",
+        "无 CLAUDE.md，跳过区块清理",
+      ],
+    });
+    expect(out).not.toContain("install-hook");
+  });
 });
