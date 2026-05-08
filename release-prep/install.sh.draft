@@ -208,7 +208,7 @@ if [ "$SAFE_MODE" -eq 1 ] && [ "$AUTO_MODE" -eq 0 ]; then
   printf '\n[install] ---- install.sh contents (review before executing) ----\n'
   cat "$TMPDIR_INSTALL/install.sh"
   printf '\n[install] ---- end of script ----\n\n'
-  if [ ! -e /dev/tty ]; then
+  if [ ! -c /dev/tty ]; then
     printf '[install] error: --safe mode requires an interactive terminal.\n' >&2
     printf '[install] for non-interactive install, use --auto:\n' >&2
     printf '[install]   curl -fsSL .../release/install.sh | bash -s -- --auto\n' >&2

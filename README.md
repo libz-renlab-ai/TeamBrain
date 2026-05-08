@@ -28,13 +28,13 @@ TeamAgent 解决这件事：从你纠正它的每一次对话里，自动**提�
 # 推荐：先下载 install.sh，确认内容后再执行
 curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh -o /tmp/teambrain-install.sh
 cat /tmp/teambrain-install.sh          # 建议先 review，确认脚本内容符合预期
-sh /tmp/teambrain-install.sh
+bash /tmp/teambrain-install.sh
 ```
 
 也支持直接执行（适合已熟悉该脚本、或在 CI 中使用）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash
 ```
 
 校验文件（SHA256）：**TBD H1** — SHA256 校验文件位置待 H1 open question 决定后填入。
@@ -74,8 +74,8 @@ GIF 演示同样展示这两个时刻（[见 landing page](https://libz-renlab-a
 ## 5–10 分钟上手
 
 ```bash
-# 1. 装（一行 curl|sh：先校验 node ≥ 22 + npm/pnpm，再 npm install -g release tarball）
-curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh
+# 1. 装（一行 curl|bash：先校验 node ≥ 22 + npm/pnpm，再 npm install -g release tarball）
+curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash
 cd your-project                                          # 2. 进项目
 teamagent init                                           # 3. 初始化（注册 hook + 预热向量模型）
 # 如果同一个项目也要给 Codex 读取规则：
