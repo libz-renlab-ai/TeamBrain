@@ -29,6 +29,18 @@ const PERSONAL_SIGNALS: Array<{ pattern: RegExp; reason: string }> = [
     pattern: /(?:张|李|王|刘|陈|杨|赵|周|吴|徐|孙|马|朱|胡|郭|何|高|林|罗|郑)[一-龥]{1,3}(?:之前|之前在|说过|告诉|认为|说不行|说行)/,
     reason: "包含具体人名 + 上下文",
   },
+  // W15-007: free-text personal-context markers — these mean "this is my
+  // own working note", which the historical classifier ignored on
+  // mixed-language input that also contained an engineering keyword
+  // ("PR", "review", "CI", ...) and got auto-promoted to L2.
+  {
+    pattern: /我个人|我的电脑|我自己|我本机|私人(?:笔记|记录|草稿)?|本地草稿|草稿(?:版|本)?(?![一-鿿]*(?:协议|流程|约定))/,
+    reason: "出现个人/本机/草稿等私人上下文标记",
+  },
+  {
+    pattern: /\b(?:my\s+(?:personal|local|own|private)|just\s+for\s+me|local\s+note|draft\s+note)\b/i,
+    reason: "出现 personal / local / draft 等英文私人标记",
+  },
 ];
 
 /** shareable 强信号：通用工程经验/规则/流程 */
