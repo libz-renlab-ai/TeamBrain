@@ -85,7 +85,7 @@ teamagent init --target=both
 # → 它每次被你纠正，都会自动入库
 ```
 
-> **`curl … | sh` 做了什么？** 校验 `node -v` ≥ 22 → 选 `npm`（或 `pnpm`）→ 跑 `npm install -g <release-tarball>`。失败时给确定的退出码（10 = node 缺失，11 = node 太老，20 = 包管理器都没有，30 = 安装失败），不会偷偷把别的东西塞进 PATH。脚本源码：[`release/install.sh`](./release/install.sh)，验证 harness：[`docs/features/install-sh/run-judge.sh`](./docs/features/install-sh/run-judge.sh)（utility，retained per docs/legacy/judge-scripts/README.md exemption）。
+> **`curl … | bash` 做了什么？** 校验 `node -v` ≥ 22 → 通过 SHA-256 双文件校验 + redirect domain guard 下载 release tarball → 解压到 `~/.local/lib/teamagent` 并把 `dist/bin.js` 软链到 `~/.local/bin/teamagent`。默认 `--safe` 模式会先打印脚本内容再 prompt y/N（输入 `--auto` 跳过）。失败时给确定的退出码（10 = node 缺失，11 = node 太老，20 = 包管理器都没有，30 = 安装失败）。脚本源码：[`release/install.sh`](./release/install.sh)，POSIX-sh 兼容版本（legacy）：[`release/install-legacy.sh`](./release/install-legacy.sh)。
 
 <details>
 <summary>不能 curl 的环境（离线、Windows PowerShell、CI 容器）— 用 tarball URL 直装</summary>

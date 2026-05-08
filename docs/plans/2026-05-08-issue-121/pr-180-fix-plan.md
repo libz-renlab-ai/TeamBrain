@@ -214,3 +214,39 @@ D1, D3, D4, D5, D8, D9, D10, D11, D12 — all carried forward from round 1.
 ### Termination criterion
 
 Round 2 satisfies `/review pass` for the merge gate: 0 unresolved CRITICAL findings, 0 mechanically-fixable INFO findings remaining (4 fixed inline above; rest deferred with named reasons). Loop terminates at /review round 3 IF round 3 surfaces only deferred items or new INFO items below the merge bar.
+
+---
+
+## Round 4-5 update (2026-05-08T18:30Z) — canonical /review skill iterations
+
+User invoked `/review` skill canonically. Two NEW CRITICAL findings surfaced that all 3 prior rounds missed:
+
+### Round 4 fix (commit `3381acb`)
+
+R4-CRIT-1. **install.sh:203 silent abort under curl|bash** — Adversarial subagent caught it: `read -r answer` reads from exhausted pipe stdin, gets empty answer, falls through to abort. Every CTA user gets no-op install in default --safe mode. Fixed: `read -r answer </dev/tty` (homebrew/rustup pattern) + `[ ! -e /dev/tty ]` precheck for CI/docker contexts.
+
+R4-INFO-1. install.sh:177 archive-fallback unsigned warning emits to stderr only — fixed: dual-stream (stdout + stderr) so `2>/dev/null` doesn't hide it.
+
+R4-INFO-2/3/4. plan.md / research.md doc consistency cleanup (gen-sha256.sh refs no longer accurate; Risk 1 marked RESOLVED instead of "out of scope").
+
+### Round 5 fix (commit `477d634`)
+
+R5-CRIT-2. **CTAs broken on Linux dash** — Adversarial subagent (iter 2) caught it: `release/install.sh` is `#!/usr/bin/env bash` with `local out_args=("$@")` array, but landing page + README CTAs all use `| sh`. On Ubuntu/Debian where `/bin/sh` is dash, every Linux user gets `syntax error near unexpected token '('` before any installer logic runs. Fixed: `| sh` → `| bash` in `apps/landing/src/index.html`, `apps/landing/dist/index.html` (rebuilt artifact), `README.md` (3 locations: lines 31/37/77/78).
+
+R5-INFO-1. install.sh:211 `[ ! -e /dev/tty ]` → `[ ! -c /dev/tty ]` — `-c` is the semantically-correct character-device check (Security specialist conf 6).
+
+### Round 6 update (this commit)
+
+R6-INFO-1. README.md:88 FAQ blockquote — `curl … | sh` → `curl … | bash` AND replace stale "npm install -g release-tarball" description with the actual tar-extract + symlink behavior of the new install.sh.
+
+### Round 6 deferrals (3 new D-items)
+
+| # | Finding | Reason for deferral |
+|---|---------|---------------------|
+| D20 | Landing page UX surprise — 242-line script display + y/N prompt without prior warning to first-time users | Working as designed (P4-M04 SAFE_MODE intent). UX hint can be added to landing page in a follow-up. |
+| D21 | Archive fallback symlink mismatch — source archive tarball lacks `dist/` directory; post-extract `ln -sf $INSTALL_DIR/dist/bin.js` would silently fail. Warning is printed, exit not abort. | Edge case (both primary AND Release-asset fallback must fail simultaneously); 3a Release pipeline ensures primary is always available post-merge; documented in R6-INFO. Track for `_curl_safe` refactor (sibling to D3). |
+| D22 | install.sh `docker run -t` (PTY, no -i) blocks forever on `read </dev/tty` | Unusual invocation; `docker run` (no flags) hits the `[ ! -c /dev/tty ]` precheck. Adding a `read -t 60` timeout is a separate hardening pass. |
+
+### Final termination criterion
+
+Adversarial subagent iteration 3 verdict: **`Recommendation: Ship as-is because all load-bearing install paths are correct`**. /review loop terminates at round 6 with 0 unresolved CRITICAL, 0 mechanically-fixable INFO, all D-items (D1-D22) logged with named reasons.
