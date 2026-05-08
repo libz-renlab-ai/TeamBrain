@@ -20,3 +20,13 @@ export {
   type MockServerOptions,
   type MockServerHandle,
 } from './mock-server.js';
+
+export {
+  tapSession,
+  projectDirForCwd,
+  claudeTranscriptPath,
+  type TapSessionInput,
+  type TapSessionDeps,
+  type TapSessionResult,
+  type TapSessionStatus,
+} from './hooks/tap-session.js';

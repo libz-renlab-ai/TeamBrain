@@ -9,6 +9,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/self-report-fused.sh\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/packages/cli/dist/bin-digital-twin-tap.cjs\"",
+            "timeout": 5
           }
         ]
       }

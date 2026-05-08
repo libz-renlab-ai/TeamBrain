@@ -140,6 +140,9 @@ importers:
       '@teamagent/core':
         specifier: workspace:*
         version: link:../core
+      '@teamagent/digital-twin':
+        specifier: workspace:*
+        version: link:../digital-twin
       '@teamagent/ports':
         specifier: workspace:*
         version: link:../ports
@@ -158,6 +161,9 @@ importers:
       sqlite-vec:
         specifier: 0.1.9
         version: 0.1.9
+      ulid:
+        specifier: ^2.3.0
+        version: 2.4.0
     devDependencies:
       vitest:
         specifier: ^2.1.0

@@ -20,6 +20,7 @@ export default defineConfig({
     "bin-session-end":        "src/bin-session-end.ts",
     "bin-pre-compact":        "src/bin-pre-compact.ts",
     "bin-updater":            "src/bin-updater.ts",
+    "bin-digital-twin-tap":   "src/bin-digital-twin-tap.ts",
   },
   format: ["cjs"],
   platform: "node",
@@ -38,9 +39,11 @@ export default defineConfig({
     "@teamagent/ports",
     "@teamagent/core",
     "@teamagent/adapters",
+    "@teamagent/digital-twin",
     "zod",
     "@xenova/transformers",
     "js-tiktoken",
+    "ulid",
   ],
   // sharp, onnxruntime-node, sqlite-vec: native .node addons cannot be bundled.
   // sqlite-vec in particular: when inlined, its loadablePath() resolves relative to the
