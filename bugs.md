@@ -52,7 +52,7 @@ Self-tests cover synthetic data only — they miss everything below.
 | B-037 | **P0** | `uninstall-user-hook --dry-run` | Same: silent write. | **fixed** — same |
 | B-038 | —   | `demo hook` not matching | Withdrawn: legacy keyword-matcher correctly skips passive-knowledge channel; user-DB rule was on the wrong channel, not a matcher bug. | **withdrawn** |
 | B-039 | P2  | uninstall CLAUDE.md residue | Left a 1-byte CLAUDE.md when stripped block was the only content. | **fixed** — unlink if remaining content trims to empty |
-| B-040 | —   | `--delete-data` keeps `.claude` | Withdrawn: uninstall must not touch `.claude/` (user owns that dir). | **withdrawn** |
+| B-040 | —   | `--delete-data` keeps `.claude` | Withdrawn: `--delete-data` is scoped to data stores (`~/.teamagent/`, `./.teamagent/`); the `.claude/` **directory** is correctly untouched. NOTE: the regular uninstall path **does** modify `.claude/settings.local.json` (removes tagged hook entries + statusline) — see B-155 for the silent-uninstall UX gap that the original-reasoning glossed over. | **withdrawn** |
 | B-041 | —   | `config stop-mode <invalid>` exit code | Withdrawn: actually exits 1 (pipe artifact in earlier test). | **withdrawn** |
 | B-042 | P2  | `wiki:add` no-url message | English `Usage: ...`. (Inline in bin.ts, not yet localized.) | **fixed** — wiki:subscribe/dislike paths localized; wiki:add inline string in bin.ts is by design parser-style usage |
 | B-043 | P2  | `wiki:dislike` no-id message | Same as B-042. | **fixed** — same |
@@ -560,6 +560,7 @@ withdrawn (8) / wontfix-merged (1) /  open (0)。
 | B-152 | **P3** | `portal/` package 是空骨架 | 14.13：`packages/portal/src/` 只有 `index.ts` + `__tests__/`，无 web UI server / Express 入口 / 前端代码。package.json 没 `bin` / `start` script。**整个 package 是空 skeleton**，但仓库里 ship 出去了（pnpm-workspace 包含）。如果不打算实现，应从 workspace 移除以避免 npm publish 时 ship 空包。 | **open** |
 | B-153 | **P3** | duck-mode `TEAMAGENT_EXPLAIN_LIKE_CEO_DUCK=1` 在 stats / --help 命令里没生效 | 14.16-14.18：设 env 后 `pnpm teamagent --help` / `stats` / `stats --explain=test` 输出和不设 env 完全一致（无鸭语注释）。CLAUDE.md 说 #130 "cute-duck explain mode + humane hook prompts"，但**explain mode 在哪里激活不明确**。命令 help 文本不带鸭语，DB explain 找不到规则就直接 `rule test not found` 不带鸭语。可能是 explain mode 仅在某个特定命令（review？analyze --commit？）激活，需要查源码确认。复现：见 14.16-18。 | **open** |
 | B-154 | **P3** | Wave 8 的 B-073/B-076 等多条"exit code 0" bug 实际是 pnpm wrapper 问题 | 14.15 直接 tsx 调用：`config stop-mode invalid` exit=1 / `init --target=invalid` exit=1 / `m5-share` 无 text exit=1 / `m5-delete` 无 rule-id exit=1 / `pitfall --level=galactic` exit=1，**全部正确返回 1**。但通过 `pnpm teamagent <cmd>` 调用，外层 shell 看到 exit=0。**意味着**：Wave 8 的 B-073/B-076/B-077/B-078/B-079/B-080/B-081/B-082/B-083 + Wave 11 的 B-118/B-120 中相当一部分**根因是 pnpm wrapper（不是命令本身）**——用户用 npm 全局安装的 `teamagent` binary 应该是正确的 exit 1。**但 B-110 (pitfall spawn pnpm ENOENT) 仍是真 P0**——那是命令源码自己 spawn 了 pnpm 子进程的问题。需要重新审计 Wave 8 的 exit-code bug，分别用 pnpm vs 直接 tsx 调用复测。**降级建议**：B-118/B-120 等"通过 pnpm 看到 exit 0" bug 可降到 P3 或 wontfix（建议用户用 npm 全局 binary，或在 CI 用 `tsx <bin>` 直接调用）。 | **open** |
+| B-155 | **P1** | 双重 onboarding 盲区：(a) `INSTALL.md` 缺 `pnpm teamagent init` step → 按 INSTALL.md 装的新手 statusline + PreToolUse / PostToolUse / UserPromptSubmit hook 全部不生效；(b) `pnpm teamagent uninstall` 跑完后**不提示如何 reinstall**，用户卸载后产品哑掉、无任何线索找回 | 实测时间线：本机 `.claude/settings.local.json` 在 2026-05-07 20:25:38 被改成 `{}` (3 字节)；同时段 `~/.teamagent/bug-reports/teamagent-bug-report-20260507T122554Z.md` 自捕获 "no hooks configured"；同期 chaos-qa Wave 11-14 在测 B-127/B-149 (uninstall unknown-flag fuzz) 必然反复跑 `pnpm teamagent uninstall`。文档侧根因：commit `d725c46` (PR #119, 2026-05-07 15:01) 引入 INSTALL.md 时只写 3 step，README.md 的 canonical 路径（`teamagent init`）没被复制过来。命令侧根因：`renderUninstallResult` 只打印 actions，没有 reinstall 路径提示。**这是 PRESHIP CSV 已声明产品功能"AI 犯错前提醒""纠正一次下次记住""主动记录坑点"对应的 hook 是否生效的入口**——所有按 INSTALL.md 装的新手 100% 命中。注意区分：原 B-040 的 withdraw reasoning "uninstall must not touch `.claude/`" 在概念上是对的（`.claude/` 目录本身没被删），但**遮蔽了 `.claude/settings.local.json` 文件被合规清空**这一事实，让此 UX 盲区在 chaos-qa 之前一直没单独成案。 | **fixed** — branch `fix/install-md-and-uninstall-hint`：(a) INSTALL.md 加 step-4 `pnpm teamagent init` + explanation/common_errors + ASCII flow 更新；(b) `renderUninstallResult` 在真正移除了 teamagent artifact 时追加 reinstall hint（`pnpm teamagent install-hook` / `pnpm teamagent init` 二选一）；(c) 修正 B-040 reasoning 指向本条；新增 3 条 vitest 用例锁住 hint 的"显示/不显示"边界（移除时显示、dry-run 不显示、空 project 不显示）。 |
 
 ### Wave 14 覆盖率快照
 
@@ -572,8 +573,8 @@ withdrawn (8) / wontfix-merged (1) /  open (0)。
 | MCP server / portal package 状态 | 2 | 2 | 100% |
 | duck-mode 集成验证 | 3 | 5 | 60%（仅 CLI 输出层；attribution bus 集成 / 长 input / Unicode 边界未测） |
 
-**Wave 14 新发现 Bug 数**: 10 (P0: 3, P1: 2, P2: 2, P3: 3)
-**Wave 11+12+13+14 累计**: 45 条新 bug (P0: 8, P1: 14, P2: 10, P3: 13)
+**Wave 14 新发现 Bug 数**: 11 (P0: 3, P1: 3, P2: 2, P3: 3)（含 2026-05-08 post-mortem 增补的 B-155 onboarding/uninstall UX）
+**Wave 11+12+13+14 累计**: 46 条新 bug (P0: 8, P1: 15, P2: 10, P3: 13)
 
 ### 综合覆盖率（Wave 11+12+13+14 累计）
 
