@@ -1,0 +1,61 @@
+name: claudefast anchors smoke
+
+# 端到端验证 claudefast canned answers (FASTPROBE / TEAMWORK / PR-PLAN / POSTPR
+# 等) 在真实 MiniMax-backed Claude Code session 里仍然命中。
+#
+# 默认 manual trigger; token 消耗每次 ~1 short -p 调用。要改成 push/PR trigger
+# 前先评估 secret 配额。
+#
+# 依赖 repo secret: MINIMAX_API_KEY (MiniMax fast profile token, 见
+# scripts/claudefast-ci.sh)。secret 缺失时整个 job skip (warning, 不当 fail)。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  anchors:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secret
+        id: has_key
+        run: |
+          if [ -z "${{ secrets.MINIMAX_API_KEY }}" ]; then
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::MINIMAX_API_KEY not set; skipping claudefast anchors smoke"
+          else
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.has_key.outputs.has_key == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.has_key.outputs.has_key == 'true'
+        with:
+          node-version: 22
+
+      - name: Install Claude Code CLI
+        if: steps.has_key.outputs.has_key == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Verify project tools anchors
+        if: steps.has_key.outputs.has_key == 'true'
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        run: |
+          set -euo pipefail
+          out="$(bash scripts/claudefast-ci.sh -p 'what project tools we have?')"
+          echo "----- claudefast output -----"
+          echo "$out"
+          echo "----- anchor check -----"
+          missing=()
+          for anchor in FASTPROBE TEAMWORK PR-PLAN POSTPR; do
+            if ! grep -qF "$anchor" <<<"$out"; then
+              missing+=("$anchor")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::canned answer anchors missing: ${missing[*]}"
+            exit 1
+          fi
+          echo "all anchors present"

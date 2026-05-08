@@ -173,3 +173,58 @@ pnpm smoke:claudefast -- --out=/tmp/teamagent-stream-json
 - TeamAgent warn reason。
 - TeamAgent block / deny reason。
 - partial message chunks。
+
+## CI parity (`scripts/claudefast-ci.sh`)
+
+GitHub Actions runners 跑 bash，不跑 zsh —— `~/.zshrc` 里的 `claudefast` 函数在
+runner 上不存在。`scripts/claudefast-ci.sh` 是该函数的 portable bash 版本：保持
+完全相同的环境变量集（MiniMax fast profile）和 `claude --dangerously-skip-permissions
+--add-dir "$PWD"` exec 调用，但 API key 改为从 `$MINIMAX_API_KEY` 环境变量读，
+而不是 inline 字面量。token 不进文件、不进 commit、不进 argv。
+
+### CI 用法
+
+```yaml
+- name: claudefast smoke
+  env:
+    MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+  run: bash scripts/claudefast-ci.sh -p "what project tools we have?"
+```
+
+repo secret `MINIMAX_API_KEY` 已在 `libz-renlab-ai/TeamBrain` 上配好。轮换：
+
+```bash
+# 从某个安全源（例如 ~/.zshrc 的 minimax_token=）pipe 进 stdin，token 不出屏
+grep -oE 'minimax_token="[^"]+"' ~/.zshrc \
+  | head -n 1 \
+  | sed -E 's/^minimax_token="(.+)"$/\1/' \
+  | tr -d '\n' \
+  | gh secret set MINIMAX_API_KEY --repo libz-renlab-ai/TeamBrain
+```
+
+### Fail-fast 行为
+
+脚本对前置条件失败立刻退出，便于 CI 早报错：
+
+| 条件 | exit code |
+|------|-----------|
+| `MINIMAX_API_KEY` empty/unset | 64 |
+| `claude` CLI 不在 PATH | 65 |
+| 上面都满足，正常 exec | claude 自身的退出码 |
+
+本地 dry-run（不消耗 token、不需要登录）：
+
+```bash
+MINIMAX_API_KEY="" bash scripts/claudefast-ci.sh -p "noop" || echo "exit $?"
+# 期望: ERROR: MINIMAX_API_KEY env var is empty or unset
+#       exit 64
+```
+
+### Anchor smoke workflow
+
+`.github/workflows/claudefast-anchors.yml` 是 manual-trigger workflow，跑这个
+wrapper 并断言 `what project tools we have?` 的 canned answer 仍然包含
+`FASTPROBE`、`TEAMWORK`、`PR-PLAN`、`POSTPR` 四个锚点 —— 这是 `CLAUDE.md` 里
+canned-answer 政策在 live MiniMax-backed Claude Code session 里的端到端
+回归测试。改成 `on: pull_request` / `on: push` 之前先评估每次 PR 消耗的 token
+配额。
