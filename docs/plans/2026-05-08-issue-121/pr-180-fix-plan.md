@@ -175,3 +175,42 @@ After this plan is committed, lead spawns:
 Each runs 2 claudefast probes after edit. Reporter v2 (opus 1M) consolidates + re-runs §V1.1/3/5/7/8/10/14-20 + spawns §V3.1 to grade fixes against /review CRIT findings.
 
 On Reporter PASS, lead pushes commits to same `worktree-issue121` branch (NOT a new branch). `/review` round 2 fires; loop until PASS.
+
+---
+
+## Round 2 update (2026-05-08T17:30Z)
+
+Round 1 fix commits pushed (`0af9460`, `c9a605b`, `b5c2a89`). Round 2 specialist re-grade:
+
+- **Security**: 4/4 round-1 CRIT resolved. 3 new INFO (1 fixable below; 2 deferred D16/D17).
+- **Maintainability**: 7/7 round-1 resolved. 4 new INFO (2 fixable below; 2 deferred D18/D19).
+- **Testing**: 4/4 resolved or properly deferred. 1 new INFO (deferred D15).
+- **Performance**: skipped (round 1 findings all deferred D1/D3/D4/D5; round 1 fixes don't introduce new perf issues beyond the documented SELF_URL re-fetch tradeoff).
+
+### Round 2 fixes applied inline (this commit)
+
+R2-F1. **install.sh:194 SAFE_MODE display** — replace `cat "$0"` with `cat "$TMPDIR_INSTALL/install.sh"` (the verified re-fetched copy). Owner: lead inline. Round 1 CRIT #1 fix only addressed the self-verify path; the SAFE_MODE display path was a related regression introduced by the same root cause.
+
+R2-F2. **install.sh:149 `|| exit 1` intent comment** — add inline comment explaining the explicit form is defense-in-depth alongside `set -e` for self-verify mandatory-path documentation. Owner: lead inline.
+
+R2-F3. **judge.md:V1.13 ordering** — add HTML comment above §V1.13 explaining the V1.13-after-V1.20 placement (V1.13 was inserted post-V1.14-20 numbering; renumbering would invalidate committed §V2 metric keys). Owner: lead inline.
+
+R2-F4. **workflow Pack step glob safety** — add `rm -rf /tmp/release-assets` before pack so the `mv teamagent-*.tgz` glob never expands to multiple files from stale prior runs. Owner: lead inline.
+
+### Round 2 deferrals (4 new D-items)
+
+| # | Finding | Reason for deferral |
+|---|---------|---------------------|
+| D15 | install.sh:169 three-tier degrade chain untested (Testing) | Project has no `bats` infrastructure (consistent with D9-D11); functional correctness verified by §V1.20 grep + manual reading; tests pending bats introduction. |
+| D16 | install.sh:79 redirect-guard probe `\|\| true` allows guard skip on probe failure (Security INFO conf 7) | Pre-existing pattern (not introduced by this PR); the SSRF window requires a flaky probe. Tracked for `_curl_safe` refactor (D3 sibling). |
+| D17 | install.sh:186 bare `_download_with_fallback` for SHA file lacks call-site error message (Maintainability INFO conf 8) | Set -e + the function's internal error printf already produce a clear failure; explicit wrapper is style-only. Defer until pattern is consistent across all callers. |
+| D18 | judge.md V1.13 numbering (Maintainability INFO conf 9) | Resolved by R2-F3 ordering comment — no longer a finding. |
+| D19 | workflow:47 sequential `cd` in Pack step (Maintainability INFO conf 6) | YAML refactor for absolute paths is style-only; CWD inheritance within a single `run:` block is documented GitHub Actions behaviour. Defer to follow-up if future refactor introduces multi-line `run:` complexity. |
+
+### What's still NOT in scope (per round 1 deferrals)
+
+D1, D3, D4, D5, D8, D9, D10, D11, D12 — all carried forward from round 1.
+
+### Termination criterion
+
+Round 2 satisfies `/review pass` for the merge gate: 0 unresolved CRITICAL findings, 0 mechanically-fixable INFO findings remaining (4 fixed inline above; rest deferred with named reasons). Loop terminates at /review round 3 IF round 3 surfaces only deferred items or new INFO items below the merge bar.

@@ -40,6 +40,9 @@ jobs:
 
       - name: Pack tarball
         run: |
+          # Clean stale artefacts from any prior workflow run before pack, so
+          # the `mv teamagent-*.tgz` glob never expands to multiple files.
+          rm -rf /tmp/release-assets
           mkdir -p /tmp/release-assets
           cd packages/teamagent
           pnpm pack --pack-destination /tmp/release-assets

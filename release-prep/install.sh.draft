@@ -146,6 +146,9 @@ SELF_SHA_URL="${PRIMARY_BASE}/install.sh.sha256"
 SELF_SHA_FALLBACK="${FALLBACK_BASE}/install.sh.sha256"
 
 printf '[install] Fetching SHA-256 checksum for install.sh...\n'
+# Explicit `|| exit 1` is intentional defense-in-depth (set -euo pipefail at
+# top would also abort on `return 1`, but the explicit form documents that
+# self-verify download is mandatory and cannot soft-fail to archive fallback).
 _download_with_fallback "$SELF_SHA_URL" "$SELF_SHA_FALLBACK" "$TMPDIR_INSTALL/install.sh.sha256" || exit 1
 
 # Re-fetch install.sh from the SHA-anchored URL so self-verify works under
@@ -189,9 +192,12 @@ if [ "${SKIP_TARBALL_SHA:-0}" -ne 1 ]; then
 fi
 
 # Step 3: Safe-mode review (P4 N-03: default two-step, no pipe-to-sh by default)
+# Display the re-fetched install.sh content (NOT $0) — under `curl|bash`, $0 is
+# /bin/bash so cat "$0" would dump the bash binary. The verified re-fetched
+# copy at $TMPDIR_INSTALL/install.sh is correct in both pipe and file modes.
 if [ "$SAFE_MODE" -eq 1 ] && [ "$AUTO_MODE" -eq 0 ]; then
   printf '\n[install] ---- install.sh contents (review before executing) ----\n'
-  cat "$0"
+  cat "$TMPDIR_INSTALL/install.sh"
   printf '\n[install] ---- end of script ----\n\n'
   printf 'Proceed with installation of teamagent %s? [y/N] ' "$TEAMAGENT_VERSION"
   read -r answer

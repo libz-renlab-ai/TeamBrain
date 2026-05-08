@@ -290,6 +290,14 @@ PASS if value `≥ 1`. Confirms the `exit 1` → `return 1` change inside the
 function body, making the archive-fallback `[ ! -s ]` guard at line ~168
 reachable.
 
+<!--
+Ordering note: §V1.13 below is appended AFTER §V1.20 instead of between
+§V1.12 and §V1.14 because V1.13 was inserted into the playbook AFTER
+V1.14-V1.20 were already numbered (Worker C v2 round 1). Re-numbering
+would invalidate §V2 metric keys committed in pr-180-fix-plan.md and
+break run_id replays. New step IDs append at the end of §V1.
+-->
+
 ### V1.13 — dry-run output JSON hard-match (cross-runner)
 
 ```bash
