@@ -73,7 +73,15 @@ export class XenovaRuleEmbedder implements RuleEmbedder {
   private async ensureLoaded(): Promise<void> {
     if (this.pipeline) return;
     if (this.loadPromise) return this.loadPromise;
-    this.loadPromise = this.loadModel();
+    // Issue #189 follow-up (review finding): a transient network failure
+    // during loadModel must not poison the singleton. If loadPromise is
+    // cached as rejected, every subsequent embed() in the process re-throws
+    // forever (bin-stop._stopEmbedder is module-scoped). Clear the cached
+    // promise on rejection so the next caller can retry.
+    this.loadPromise = this.loadModel().catch((err) => {
+      this.loadPromise = null;
+      throw err;
+    });
     return this.loadPromise;
   }
 
@@ -90,11 +98,73 @@ export class XenovaRuleEmbedder implements RuleEmbedder {
     if (this.progressCallback) {
       pipelineOpts.progress_callback = this.progressCallback;
     }
-    this.pipeline = (await pipeline(
-      "feature-extraction",
-      this.modelId,
-      pipelineOpts,
-    )) as unknown as XenovaPipeline;
+    // Issue #189: @xenova/transformers internally calls Node's built-in
+    // fetch() with no AbortSignal when downloading model weights from
+    // huggingface.co. If the upstream is slow / blocked / rate-limited,
+    // fetch hangs forever inside an undici worker thread; SIGTERM cannot
+    // interrupt the worker; the event loop never drains; the hook process
+    // refuses to exit. Repeated Stop events accumulate orphan node
+    // processes (observed: 71 concurrent, 5+ GB RAM, OOM on 8 GB Macs).
+    // Wrap globalThis.fetch with AbortSignal so each fetch can be aborted
+    // when the timeout fires; an aborted fetch releases its socket and
+    // the loop drains. Restore the original fetch on either path so we
+    // don't affect unrelated runtime fetches.
+    //
+    // Default 90s — multilingual-e5-small ONNX is ~115MB; 15s would abort
+    // legitimate first-time downloads on residential / mobile networks.
+    // Override via env for slow networks (warmup CLI uses 600s). Use
+    // `unref()` so the timer doesn't keep the event loop alive after
+    // fetch resolves.
+    const fetchTimeoutMs = ((): number => {
+      const v = parseInt(
+        process.env["TEAMAGENT_EMBEDDER_FETCH_TIMEOUT_MS"] ?? "",
+        10,
+      );
+      return Number.isFinite(v) && v > 0 ? v : 90_000;
+    })();
+    const origFetch = globalThis.fetch;
+    if (typeof origFetch === "function") {
+      const wrappedFetch: typeof globalThis.fetch = (input, init) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), fetchTimeoutMs);
+        // Don't keep the event loop alive after fetch resolves.
+        if (typeof timer === "object" && timer !== null && "unref" in timer) {
+          (timer as { unref: () => void }).unref();
+        }
+        // Compose: if the caller already passed a signal, both their
+        // signal AND our timeout signal can fire — whichever first wins.
+        // AbortSignal.any is in Node ≥20.3 (project requires 22.5+, OK).
+        // This preserves the caller's intent (e.g. user cancellation)
+        // while keeping our deadline as a backstop. If AbortSignal.any
+        // is unavailable for any reason, fall back to our signal alone.
+        let signal: AbortSignal = controller.signal;
+        if (init?.signal) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const any = (AbortSignal as any).any;
+          if (typeof any === "function") {
+            signal = any.call(AbortSignal, [init.signal, controller.signal]);
+          }
+        }
+        return origFetch(input, { ...(init ?? {}), signal })
+          .finally(() => clearTimeout(timer));
+      };
+      globalThis.fetch = wrappedFetch;
+    }
+    try {
+      this.pipeline = (await pipeline(
+        "feature-extraction",
+        this.modelId,
+        pipelineOpts,
+      )) as unknown as XenovaPipeline;
+    } finally {
+      // Only restore if we still own the slot. If a concurrent loadModel
+      // call from a sibling instance also wrapped fetch and finishes after
+      // us, restoring blindly would re-install its wrapper as the "real"
+      // fetch. Best-effort identity check.
+      if (typeof origFetch === "function" && globalThis.fetch !== origFetch) {
+        globalThis.fetch = origFetch;
+      }
+    }
     console.error(`Rule embedder ready (${this.modelId}, dim=${this.dim}).`);
   }
 }

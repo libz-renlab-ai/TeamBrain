@@ -51,6 +51,64 @@ describe("parseDemoHookArgs", () => {
     ]);
     expect(out?.toolInput!.url).toBe("https://x.com");
   });
+
+  // Issue 174 — multi-form input parsing
+  it("Form 1 (space): parses Write file_path=... content=... across argv slots", () => {
+    const out = parseDemoHookArgs([
+      "Write",
+      "file_path=test.js",
+      "content=console.log(1)",
+    ]);
+    expect(out).not.toBeNull();
+    expect(out!.toolName).toBe("Write");
+    expect(out!.toolInput).toMatchObject({
+      file_path: "test.js",
+      content: "console.log(1)",
+    });
+  });
+
+  // PR #183 fix: ';' / '&' magic separators were dropped because they
+  // collide with real shell metacharacters and URL query strings (see
+  // docs/plans/2026-05-09-pr-183-fix-plan.md). The two regression tests
+  // below pin the pre-PR-#183 behaviour: semi/amp inside a value MUST be
+  // preserved verbatim, not silently re-split.
+  it("URL with '&' query separators stays intact (regression: PR #183 #1)", () => {
+    const out = parseDemoHookArgs([
+      "Fetch",
+      "url=https://x.com/?a=1&b=2",
+    ]);
+    expect(out).not.toBeNull();
+    expect(out!.toolName).toBe("Fetch");
+    // The URL must survive byte-for-byte; no spurious 'b' top-level key.
+    expect(out!.toolInput).toEqual({
+      url: "https://x.com/?a=1&b=2",
+    });
+  });
+
+  it("Bash command with ';' chain stays intact (regression: PR #183 #1)", () => {
+    const out = parseDemoHookArgs([
+      "Bash",
+      "command=echo hi; rm -rf /",
+    ]);
+    expect(out).not.toBeNull();
+    expect(out!.toolName).toBe("Bash");
+    expect(out!.toolInput).toEqual({
+      command: "echo hi; rm -rf /",
+    });
+  });
+
+  it("Form 2 (json): parses single JSON object slot as toolInput", () => {
+    const out = parseDemoHookArgs([
+      "Write",
+      '{"file_path":"test.js","content":"console.log(1)"}',
+    ]);
+    expect(out).not.toBeNull();
+    expect(out!.toolName).toBe("Write");
+    expect(out!.toolInput).toMatchObject({
+      file_path: "test.js",
+      content: "console.log(1)",
+    });
+  });
 });
 
 describe("executeDemoHook", () => {

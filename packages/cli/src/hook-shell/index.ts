@@ -45,7 +45,7 @@ import type {
   Visibility,
 } from "./types.js";
 import { assertEscapeNonEmpty, type RequireAtLeastOneEscape } from "./conditional-gate.js";
-import { findTeamagentRoot } from "../find-teamagent-root.js";
+import { findTeamagentRoot } from "../lib/walk-up.js";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -66,11 +66,61 @@ function parseVisibility(env: Readonly<NodeJS.ProcessEnv>): Visibility {
     : "verbose";
 }
 
+/**
+ * Hook-level verbose opt-in (issue #174 W3).
+ *
+ * Default visibility for hook channels is `verbose`, which makes
+ * `StdoutRenderer` append the `--- raw events ---` JSON dump and the
+ * `counterfactual` line to every rendered AttributionEvent on stderr. That
+ * trailing block is noisy for end users — they only need the three-line
+ * highlight/warning summary that `smart` mode already produces.
+ *
+ * This helper opts users into the noisy verbose tail explicitly via
+ * `TEAMAGENT_HOOK_VERBOSE=1` (or `=true`). When unset, the shell
+ * downgrades the renderer's mode from `verbose` to `smart` for hook
+ * channels only, preserving the JSON envelope on stdout (returned to
+ * Claude Code) untouched.
+ *
+ * Non-hook commands (`pitfall`, `skeleton-demo`) continue to honour
+ * `TEAMAGENT_VISIBILITY` directly because they construct their own
+ * renderer outside this shell.
+ */
+export function shouldShowVerboseHookOutput(env: Readonly<NodeJS.ProcessEnv>): boolean {
+  const raw = env.TEAMAGENT_HOOK_VERBOSE;
+  return raw === "1" || raw === "true";
+}
+
+/**
+ * Effective hook-channel visibility — downgrades `verbose` to `smart` unless
+ * `TEAMAGENT_HOOK_VERBOSE=1` is set. `silent` and `smart` pass through
+ * unchanged.
+ *
+ * PR #183 fix: the original W3 commit only used this for the
+ * `StdoutRenderer` mode (stderr human-prose), but `ctx.visibility` was still
+ * forwarded to handlers as the raw `verbose` and pre-tool-use-handler.ts:120
+ * went on to write `◈ TeamAgent: ✓ <tool> 放行 (检查 N 条规则)` into the
+ * stdout JSON envelope's `systemMessage` on every clean pass. That stdout
+ * leak defeated the user-visible promise of the W3 slice. We now thread
+ * this single effective value into BOTH the renderer mode AND `ctx.visibility`
+ * so the gate covers stdout + stderr together.
+ */
+export function effectiveHookVisibility(
+  visibility: Visibility,
+  env: Readonly<NodeJS.ProcessEnv>,
+): Visibility {
+  if (visibility === "verbose" && !shouldShowVerboseHookOutput(env)) {
+    return "smart";
+  }
+  return visibility;
+}
+
 function resolvePaths(cwd: string, home: string): HookDbPaths {
-  // Walk up from cwd to find the nearest ancestor with .teamagent/knowledge.db.
-  // Falls back to cwd if no ancestor has it (new project, not yet initialized).
-  // This mirrors git's .git/ ancestor-walk semantics (issue #161).
-  const projectRoot = findTeamagentRoot(cwd);
+  // Issue #161: walk up from cwd to find the nearest ancestor with
+  // .teamagent/knowledge.db (a hook fired from a sub-directory must still
+  // resolve to the project root's DB). Falls back to cwd itself if no
+  // ancestor contains one — preserves the legacy "create new project
+  // here" path for first-run.
+  const projectRoot = findTeamagentRoot(cwd) ?? cwd;
   return {
     projectDbPath: path.join(projectRoot, ".teamagent", "knowledge.db"),
     globalDbPath: path.join(home, ".teamagent", "global.db"),
@@ -187,16 +237,20 @@ export async function runHook<TInput, TOutput>(
 
   const rt = resolveRuntime(pickRawCwd(raw));
 
+  // Lazy resources — opened only when handler actually reads ctx.store /
+  // ctx.eventLog. Handlers that don't touch them incur zero sqlite cost.
+  // Always closed in finally iff opened (null check inside closeIfPresent).
   let store: DualLayerStore | null = null;
   let eventLog: SqliteEventLog | null = null;
-  try {
-    ensureDirsForPaths(rt.paths);
-    store = new DualLayerStore({
-      projectDbPath: rt.paths.projectDbPath,
-      userGlobalDbPath: rt.paths.globalDbPath,
-    });
-    eventLog = new SqliteEventLog(openDb(rt.paths.eventsDbPath));
+  let dirsEnsured = false;
 
+  const ensureDirsOnce = (): void => {
+    if (dirsEnsured) return;
+    ensureDirsForPaths(rt.paths);
+    dirsEnsured = true;
+  };
+
+  try {
     const bus = new InMemoryAttributionBus();
     const visibility = parseVisibility(rt.env);
     const mirror = makeMirror(rt.env);
@@ -205,27 +259,71 @@ export async function runHook<TInput, TOutput>(
     // become user-visible stderr lines (per visibility). bin handlers can
     // emit `bus.emit({ kind, ... })` and trust the rendering reaches the
     // terminal — no need for each bin to wire its own renderer.
+    //
+    // Issue #174 W3 + PR #183 fix: gate `verbose` behind `TEAMAGENT_HOOK_VERBOSE=1`
+    // for BOTH the StdoutRenderer mode (stderr human-prose) and ctx.visibility
+    // (the value handlers consume to decide whether to emit a verbose
+    // `systemMessage` into the stdout JSON envelope). Computing once and
+    // threading it everywhere keeps stdout + stderr in lockstep — the W3
+    // commit only gated the renderer, leaving the stdout systemMessage leak
+    // (`◈ TeamAgent: ✓ <tool> 放行`) on by default. The JSON envelope SHAPE
+    // is unchanged; only the human-prose `systemMessage` field is suppressed
+    // when verbose isn't opted in.
+    const effectiveVisibility = effectiveHookVisibility(visibility, rt.env);
     const renderer = new StdoutRenderer();
     const unsubscribeRenderer = bus.subscribe((event) => {
-      if (visibility === "silent") return;
-      const text = renderer.render([event], visibility);
+      if (effectiveVisibility === "silent") return;
+      const text = renderer.render([event], effectiveVisibility);
       if (text && text.length > 0) {
         try { process.stderr.write(`${text}\n`); } catch { /* best-effort */ }
       }
     });
 
-    const ctx: DefaultHookContext<TInput> = {
+    // Build ctx with lazy accessor properties for store and eventLog.
+    // Property API is preserved (ctx.store / ctx.eventLog, not functions),
+    // so existing callers like `ctx.store as unknown as DualLayerStore` work
+    // unchanged. The getter memoises: second read returns same instance.
+    // Cast through unknown: the store/eventLog properties are defined below
+    // via Object.defineProperty; the literal itself omits them intentionally.
+    const ctx = {
       input,
       cwd: rt.cwd,
       home: rt.home,
       env: rt.env,
       paths: rt.paths,
-      store: store as HookKnowledgeStore,
-      eventLog: eventLog as HookEventLog,
       bus,
-      visibility,
+      visibility: effectiveVisibility,
       mirrorSystemMessage: mirror,
-    };
+    } as unknown as DefaultHookContext<TInput>;
+
+    // non-enumerable: prevents accidental eager-open via {...ctx} spread / JSON.stringify
+    Object.defineProperty(ctx, "store", {
+      enumerable: false,
+      configurable: false,
+      get(): HookKnowledgeStore {
+        if (store === null) {
+          ensureDirsOnce();
+          store = new DualLayerStore({
+            projectDbPath: rt.paths.projectDbPath,
+            userGlobalDbPath: rt.paths.globalDbPath,
+          });
+        }
+        return store as DualLayerStore;
+      },
+    });
+
+    // non-enumerable: prevents accidental eager-open via {...ctx} spread / JSON.stringify
+    Object.defineProperty(ctx, "eventLog", {
+      enumerable: false,
+      configurable: false,
+      get(): HookEventLog {
+        if (eventLog === null) {
+          ensureDirsOnce();
+          eventLog = new SqliteEventLog(openDb(rt.paths.eventsDbPath));
+        }
+        return eventLog as SqliteEventLog;
+      },
+    });
 
     try {
       const out = await opts.handler(ctx);
@@ -295,11 +393,23 @@ export async function runAdvancedHook<
   //    / ctx.eventLog(). Always closed in finally if opened.
   let store: DualLayerStore | null = null;
   let eventLog: SqliteEventLog | null = null;
+  let dirsEnsured = false;
   const manual = advOpts.escape.manualResources === true;
+
+  // Hoist ensureDirsForPaths into a single guarded call (perf-specialist
+  // /review on PR #152): previously each lazy getter called it
+  // independently, so an eager-open caller incurred 6 mkdirSync syscalls
+  // (3 paths × 2 getters) when 3 would suffice. With manualResources the
+  // helper still defers correctly: it only runs if either getter fires.
+  const ensureDirsOnce = (): void => {
+    if (dirsEnsured) return;
+    ensureDirsForPaths(rt.paths);
+    dirsEnsured = true;
+  };
 
   const lazyStore = (): HookKnowledgeStore => {
     if (store === null) {
-      ensureDirsForPaths(rt.paths);
+      ensureDirsOnce();
       store = new DualLayerStore({
         projectDbPath: rt.paths.projectDbPath,
         userGlobalDbPath: rt.paths.globalDbPath,
@@ -310,7 +420,7 @@ export async function runAdvancedHook<
   };
   const lazyEventLog = (): HookEventLog => {
     if (eventLog === null) {
-      ensureDirsForPaths(rt.paths);
+      ensureDirsOnce();
       eventLog = new SqliteEventLog(openDb(rt.paths.eventsDbPath));
     }
     return eventLog as SqliteEventLog;
@@ -338,10 +448,19 @@ export async function runAdvancedHook<
   // emits ~12 user-visible AttributionEvents through ctx.bus; the renderer
   // ensures each lands on stderr per visibility mode without each handler
   // managing its own subscription.
+  //
+  // Issue #174 W3 + PR #183 fix: same `TEAMAGENT_HOOK_VERBOSE=1` gate as the
+  // default layer — downgrade `verbose` to `smart` for BOTH the renderer
+  // (stderr) AND ctx.visibility (which advanced handlers consume to gate
+  // verbose `systemMessage` writes into the stdout JSON envelope). The W3
+  // commit only gated the renderer; PR #183 closes the stdout half too. The
+  // JSON envelope SHAPE on stdout is unchanged; only the verbose
+  // `systemMessage` field is suppressed when the env opt-in is missing.
+  const effectiveVisibility = effectiveHookVisibility(visibility, rt.env);
   const renderer = new StdoutRenderer();
   const unsubscribeRenderer = bus.subscribe((event) => {
-    if (visibility === "silent") return;
-    const text = renderer.render([event], visibility);
+    if (effectiveVisibility === "silent") return;
+    const text = renderer.render([event], effectiveVisibility);
     if (text && text.length > 0) {
       try { process.stderr.write(`${text}\n`); } catch { /* best-effort */ }
     }
@@ -366,7 +485,7 @@ export async function runAdvancedHook<
     env: rt.env,
     paths: rt.paths,
     bus,
-    visibility,
+    visibility: effectiveVisibility,
     mirrorSystemMessage: mirror,
     store: lazyStore,
     eventLog: lazyEventLog,

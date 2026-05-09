@@ -41,25 +41,78 @@ describe("decideAction", () => {
   });
 
   it("已存在 knowledge.db → skip-already-initialized", () => {
+    // PR #181: walk-up now requires BOTH knowledge.db AND a project-marker.
+    // Plant a `.git/` dir alongside the DB so the new contract matches.
     mkdirSync(join(cwd, ".teamagent"), { recursive: true });
     writeFileSync(join(cwd, ".teamagent", "knowledge.db"), "");
+    mkdirSync(join(cwd, ".git"), { recursive: true });
     expect(decideAction(cwd, new Date())).toBe("skip-already-initialized");
   });
 
-  it("walk-up: autoInitDisabled reads flag from parent when cwd is a subfolder (#161)", () => {
-    // Parent has .teamagent/auto-init.disabled (no db) and package.json
-    writeFileSync(join(cwd, "package.json"), "{}");
-    mkdirSync(join(cwd, ".teamagent"), { recursive: true });
-    writeFileSync(join(cwd, ".teamagent", "auto-init.disabled"), "");
-    // Subfolder: user is in cwd/sub
-    const sub = join(cwd, "sub");
-    mkdirSync(sub, { recursive: true });
-    // When running from sub, autoInitDisabled should still find the parent flag.
-    // Note: findTeamagentRoot looks for knowledge.db — since none exists it
-    // returns sub unchanged, meaning the flag won't be found at sub/.teamagent.
-    // This test documents current walk-up behaviour for the disabled flag.
-    // Direct call from cwd (not sub) verifies flag is read correctly at root.
-    expect(decideAction(cwd, new Date())).toBe("skip-auto-init-disabled");
+  // Issue #161: walk-up logic — decideAction must honour an ancestor's
+  // .teamagent/knowledge.db so SessionStart from a sub-directory does not
+  // spawn a duplicate child auto-init.
+  describe("issue #161 ancestor-aware walk-up", () => {
+    let root: string;
+    let sub: string;
+
+    beforeEach(() => {
+      root = mkdtempSync(join(tmpdir(), "teamagent-w4-"));
+      sub = join(root, "sub");
+      mkdirSync(sub, { recursive: true });
+    });
+    afterEach(() => {
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it("ancestor 有 .teamagent/knowledge.db + project-marker，子目录调用 → skip-already-initialized", () => {
+      // PR #181: walk-up requires both knowledge.db AND project-marker.
+      mkdirSync(join(root, ".teamagent"), { recursive: true });
+      writeFileSync(join(root, ".teamagent", "knowledge.db"), "");
+      mkdirSync(join(root, ".git"), { recursive: true });
+      // sub itself has no .teamagent/knowledge.db
+      expect(decideAction(sub, new Date())).toBe("skip-already-initialized");
+    });
+
+    it("无任何 ancestor 有 db + cwd 是项目目录 → auto-init", () => {
+      // No .teamagent anywhere along the chain; cwd has package.json marker.
+      writeFileSync(join(sub, "package.json"), "{}");
+      expect(decideAction(sub, new Date())).toBe("auto-init");
+    });
+
+    it("无 ancestor db + cwd 有 .teamagent/auto-init.disabled → skip-auto-init-disabled", () => {
+      // No knowledge.db anywhere; only the per-cwd disabled marker exists.
+      mkdirSync(join(sub, ".teamagent"), { recursive: true });
+      writeFileSync(join(sub, ".teamagent", "auto-init.disabled"), "");
+      expect(decideAction(sub, new Date())).toBe("skip-auto-init-disabled");
+    });
+
+    // ─── PR #181 fix-cycle (Worker E) — autoInitDisabled walk-up ──────────
+    //
+    // PR-PLAN finding #8: autoInitDisabled was asymmetric vs decideAction's
+    // walk-up — only checked cwd & $HOME. After the WD fix, autoInitDisabled
+    // walks up too, so an ancestor's `auto-init.disabled` is honoured from a
+    // child cwd. Scenario: ancestor has .git + .teamagent/auto-init.disabled
+    // but NO knowledge.db (user opted out before ever initializing). Child
+    // cwd has a package.json marker. Pre-fix: "auto-init"; post-fix:
+    // "skip-auto-init-disabled".
+    it("PR #181: ancestor's auto-init.disabled marker is honored from a child cwd (no ancestor knowledge.db)", () => {
+      // Plant ancestor: .git + .teamagent/auto-init.disabled, NO knowledge.db.
+      mkdirSync(join(root, ".git"), { recursive: true });
+      mkdirSync(join(root, ".teamagent"), { recursive: true });
+      writeFileSync(join(root, ".teamagent", "auto-init.disabled"), "");
+      // Child cwd is a project dir on its own (has package.json marker).
+      writeFileSync(join(sub, "package.json"), "{}");
+
+      // Pre-fix would return "auto-init" because:
+      //   - sub has no knowledge.db
+      //   - sub has package.json (project dir)
+      //   - autoInitDisabled only checked cwd + $HOME, neither of which had
+      //     the disabled marker.
+      // Post-fix: autoInitDisabled walks up; finds the ancestor's disabled
+      // marker → returns true → decideAction yields skip-auto-init-disabled.
+      expect(decideAction(sub, new Date())).toBe("skip-auto-init-disabled");
+    });
   });
 });
 

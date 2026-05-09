@@ -9,7 +9,12 @@ Feature:
   These must be preserved exactly — no paraphrase allowed.
 
 Keywords verified (all must appear in CLAUDE.md):
-  DOGFOOD   DUCKPLAN   POSTPR   FASTPROBE   PRESHIP   DUCKPLAN
+  DOGFOOD   DUCKPLAN   FASTPROBE   PRESHIP   DUCKPLAN
+
+POSTPR is NOT enforced as a canned-answer keyword: ADR-0007 replaced the
+cloud Codex review loop with the local `/review` skill and switched to
+self-discipline-via-matcher (semantic probe) — no canned-answer block, no
+hook anchor.
 
 Anchors required per probe:
 
@@ -24,21 +29,13 @@ DUCKPLAN anchors:
   - "judge harness" or "JSON" or "LLM"
   - "duck" or "鸭" or "呷呷"
 
-POSTPR anchors:
-  - "fetch the codex review" or "fetch.*codex"
-  - "chatgpt-codex-connector"
-  - "pulls/.*comments" or "pulls.*comments"
-  - "silent" or "loop"
-
-Harness (run-judge.sh) probes claudefast for all three and greps outputs:
+Harness (run-judge.sh) probes claudefast for all anchors and greps outputs:
   Probe A: claudefast -p "what would happen when we say DOGFOOD?"
   Probe B: claudefast -p "what would happen if we say 'DUCKPLAN'"
-  Probe C: claudefast -p "what we shall do after each PR?"
 
 Judge output: .judge/canned-answers/<run_id>/judge.json
   Fields: run_id, exit_code, dogfood.{two_tmux_windows,left_right_split,interact},
           duckplan.{task_description,expected_outputs,judge_harness,duck},
-          postpr.{fetch_codex_review,codex_bot,pulls_comments,silent_loop},
           overall_pass, evidence_dir, stdout_path
 
 Fallback (verify-canned-answer.sh, no claudefast):

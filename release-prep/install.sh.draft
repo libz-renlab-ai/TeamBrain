@@ -9,6 +9,7 @@ PRIMARY_BASE="https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release
 FALLBACK_BASE="https://github.com/libz-renlab-ai/TeamBrain/releases/download/${TEAMAGENT_VERSION}"
 TARBALL_BASE="https://github.com/libz-renlab-ai/TeamBrain/releases/download/${TEAMAGENT_VERSION}"
 TARBALL_NAME="teamagent-${TEAMAGENT_VERSION}.tgz"
+ARCHIVE_FALLBACK_URL="https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz"
 
 SAFE_MODE=1
 DRY_RUN=0
@@ -39,6 +40,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   printf '[dry-run] install.sh source : %s/install.sh\n' "$PRIMARY_BASE"
   printf '[dry-run] tarball           : %s/%s\n' "$TARBALL_BASE" "$TARBALL_NAME"
   printf '[dry-run] fallback tarball  : %s/%s\n' "$FALLBACK_BASE" "$TARBALL_NAME"
+  printf '[dry-run] archive fallback  : %s\n' "$ARCHIVE_FALLBACK_URL"
   printf '[dry-run] SHA-256 verified  : yes (install.sh.sha256 + tarball.sha256)\n'
   printf '[dry-run] No files written.\n'
   exit 0
@@ -64,7 +66,7 @@ _curl_safe() {
   local out_args=("$@")
 
   # Redirect domain guard: final URL must stay on allowed_hosts
-  local allowed_hosts="raw.githubusercontent.com|github.com|objects.githubusercontent.com"
+  local allowed_hosts="raw\.githubusercontent\.com|github\.com|objects\.githubusercontent\.com"
   local effective_url
   effective_url=$(curl \
     --tlsv1.2 \
@@ -113,7 +115,7 @@ _download_with_fallback() {
     return 0
   fi
   printf 'error: both primary and fallback download failed\n' >&2
-  exit 1
+  return 1
 }
 
 # ── SHA-256 verification ─────────────────────────────────────────────────────
@@ -144,10 +146,17 @@ SELF_SHA_URL="${PRIMARY_BASE}/install.sh.sha256"
 SELF_SHA_FALLBACK="${FALLBACK_BASE}/install.sh.sha256"
 
 printf '[install] Fetching SHA-256 checksum for install.sh...\n'
-_download_with_fallback "$SELF_SHA_URL" "$SELF_SHA_FALLBACK" "$TMPDIR_INSTALL/install.sh.sha256"
+# Explicit `|| exit 1` is intentional defense-in-depth (set -euo pipefail at
+# top would also abort on `return 1`, but the explicit form documents that
+# self-verify download is mandatory and cannot soft-fail to archive fallback).
+_download_with_fallback "$SELF_SHA_URL" "$SELF_SHA_FALLBACK" "$TMPDIR_INSTALL/install.sh.sha256" || exit 1
 
-# Verify ourselves against the fetched checksum (file we are currently running)
-cp "$0" "$TMPDIR_INSTALL/install.sh"
+# Re-fetch install.sh from the SHA-anchored URL so self-verify works under
+# curl|bash (where $0 is /bin/bash, not the script). The self-fetch + checksum
+# pattern is the only way to verify the bytes the user actually executes.
+printf '[install] Re-fetching install.sh for self-verification...\n'
+_download_with_fallback "$SELF_URL" "${FALLBACK_BASE}/install.sh" "$TMPDIR_INSTALL/install.sh" || exit 1
+
 # Rewrite checksum file to use local filename
 sed "s|[^ ]*install.sh|$TMPDIR_INSTALL/install.sh|g" "$TMPDIR_INSTALL/install.sh.sha256" > "$TMPDIR_INSTALL/install.sh.sha256.local"
 _verify_sha256 "$TMPDIR_INSTALL/install.sh" "$TMPDIR_INSTALL/install.sh.sha256.local" "install.sh"
@@ -159,19 +168,54 @@ TARBALL_SHA_PRIMARY="${TARBALL_BASE}/${TARBALL_NAME}.sha256"
 TARBALL_SHA_FALLBACK="${FALLBACK_BASE}/${TARBALL_NAME}.sha256"
 
 printf '[install] Downloading teamagent %s...\n' "$TEAMAGENT_VERSION"
-_download_with_fallback "$TARBALL_PRIMARY" "$TARBALL_FALLBACK" "$TMPDIR_INSTALL/$TARBALL_NAME"
-_download_with_fallback "$TARBALL_SHA_PRIMARY" "$TARBALL_SHA_FALLBACK" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256"
+SKIP_TARBALL_SHA=0
+if ! _download_with_fallback "$TARBALL_PRIMARY" "$TARBALL_FALLBACK" "$TMPDIR_INSTALL/$TARBALL_NAME"; then
+  printf '[install] tarball download failed; will attempt archive fallback\n' >&2
+fi
 
-sed "s|[^ ]*${TARBALL_NAME}|$TMPDIR_INSTALL/$TARBALL_NAME|g" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256" > "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256.local"
-_verify_sha256 "$TMPDIR_INSTALL/$TARBALL_NAME" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256.local" "$TARBALL_NAME"
+# Final degrade: archive tarball (legacy URL, BC for users pinning a pre-3a version)
+if [ ! -s "$TMPDIR_INSTALL/$TARBALL_NAME" ]; then
+  printf '[install] release tarball not found; trying archive fallback: %s\n' "$ARCHIVE_FALLBACK_URL" >&2
+  if _curl_safe "$ARCHIVE_FALLBACK_URL" -o "$TMPDIR_INSTALL/$TARBALL_NAME"; then
+    # Emit the unsigned-tarball warning to BOTH stdout and stderr so it
+    # remains visible when one stream is redirected (e.g. `... 2>/dev/null`).
+    # P4-M02 trust-drop is acknowledged here, not silently absorbed.
+    printf '[install] WARNING: downloaded archive fallback — SHA-256 verification SKIPPED (archive is unsigned)\n'
+    printf '[install] WARNING: downloaded archive fallback — SHA-256 verification SKIPPED (archive is unsigned)\n' >&2
+    SKIP_TARBALL_SHA=1
+  else
+    printf 'error: tarball, fallback, and archive all failed\n' >&2
+    exit 1
+  fi
+fi
+
+if [ "${SKIP_TARBALL_SHA:-0}" -ne 1 ]; then
+  _download_with_fallback "$TARBALL_SHA_PRIMARY" "$TARBALL_SHA_FALLBACK" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256"
+  sed "s|[^ ]*${TARBALL_NAME}|$TMPDIR_INSTALL/$TARBALL_NAME|g" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256" > "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256.local"
+  _verify_sha256 "$TMPDIR_INSTALL/$TARBALL_NAME" "$TMPDIR_INSTALL/${TARBALL_NAME}.sha256.local" "$TARBALL_NAME"
+fi
 
 # Step 3: Safe-mode review (P4 N-03: default two-step, no pipe-to-sh by default)
+# Display the re-fetched install.sh content (NOT $0) — under `curl|bash`, $0 is
+# /bin/bash so cat "$0" would dump the bash binary. The verified re-fetched
+# copy at $TMPDIR_INSTALL/install.sh is correct in both pipe and file modes.
+# Read prompt answer from /dev/tty (NOT stdin) — under `curl|bash`, stdin is
+# the pipe and is exhausted by the time we hit `read`, causing a silent
+# EOF→empty-answer→abort. /dev/tty bypasses the pipe and reads from the
+# user's terminal (homebrew/rustup pattern). When no terminal is available
+# (CI, docker exec, etc.), abort with clear guidance to use --auto.
 if [ "$SAFE_MODE" -eq 1 ] && [ "$AUTO_MODE" -eq 0 ]; then
   printf '\n[install] ---- install.sh contents (review before executing) ----\n'
-  cat "$0"
+  cat "$TMPDIR_INSTALL/install.sh"
   printf '\n[install] ---- end of script ----\n\n'
+  if [ ! -c /dev/tty ]; then
+    printf '[install] error: --safe mode requires an interactive terminal.\n' >&2
+    printf '[install] for non-interactive install, use --auto:\n' >&2
+    printf '[install]   curl -fsSL .../release/install.sh | bash -s -- --auto\n' >&2
+    exit 1
+  fi
   printf 'Proceed with installation of teamagent %s? [y/N] ' "$TEAMAGENT_VERSION"
-  read -r answer
+  read -r answer </dev/tty
   case "$answer" in
     [Yy]|[Yy][Ee][Ss]) ;;
     *) printf '[install] Installation aborted by user.\n'; exit 0 ;;

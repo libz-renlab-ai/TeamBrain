@@ -1,42 +1,42 @@
 # canary skill verification
 
-Three-way verification that the `canary` skill (copied verbatim from
+Verification that the `canary` skill (copied verbatim from
 `https://github.com/garrytan/gstack/blob/main/canary/`) is correctly
-installed and discoverable by both project-level skill loaders.
+installed and discoverable by the project-level Claude Code skill loader.
 
 ```
                 +-------------------------+
                 |  .claude/skills/canary/ |
-                |  .codex/skills/canary/  |
                 +-----------+-------------+
                             |
-        +-------------------+-------------------+
-        |                   |                   |
-        v                   v                   v
-  [1] verify-       [2] verify-          [3] tmux-export.sh
-  claudefast.sh     codex.sh             (claudefast TUI -> /export)
-        |                   |                   |
-        v                   v                   v
-  runs/claudefast.json   runs/codex.json    exports/canary-session.txt
-        \                  /                  (full transcript)
-         \                /
-          v              v
-         hardmatch.sh  (jq -S deep-equal)
-                |
-                v
-            PASS / FAIL
+                +-----------+-----------+
+                |                       |
+                v                       v
+        [1] verify-              [2] tmux-export.sh
+        claudefast.sh            (claudefast TUI -> /export)
+                |                       |
+                v                       v
+        runs/claudefast.json     exports/canary-session.txt
+                                 (full transcript)
+                |                       |
+                +-----------+-----------+
+                            |
+                            v
+                       PASS / FAIL
 ```
+
+The Codex hardmatch leg of this harness was retired in the 2026-05-09
+codex review-stage cleanup; only the project-level Claude Code path is
+verified here now.
 
 ## Layout
 
 | File | Purpose |
 | ---- | ------- |
-| `schema.json` | JSON Schema both verifiers must produce. |
-| `prompt.tmpl` | Same registry-only prompt sent to both runtimes. |
+| `schema.json` | JSON Schema the verifier must produce. |
+| `prompt.tmpl` | Registry-only prompt sent to claudefast. |
 | `verify-claudefast.sh` | Verifier 1: `claude --help`, then `claudefast -p --output-format json --json-schema ...`. |
-| `verify-codex.sh` | Verifier 2: `codex --help`, then `codex debug prompt-input` registry assertion. |
-| `hardmatch.sh` | Verifier 3a: `diff <(jq -S claudefast.json) <(jq -S codex.json)`. |
-| `tmux-export.sh` | Verifier 3b: launches `claudefast` in tmux, asks about canary, runs `/export`. |
+| `tmux-export.sh` | Verifier 2: launches `claudefast` in tmux, asks about canary, runs `/export`. |
 | `runs/` | Help dumps, verifier JSON outputs, and selected raw logs. |
 | `exports/` | `/export` transcript + tmux pane snapshot. |
 
@@ -48,28 +48,22 @@ Use the corresponding md playbooks via subagent or `claudefast -p` probe:
 | Step | md playbook |
 |------|-------------|
 | verify-claudefast | `docs/plans/docs--canary-verify--verify-claudefast/judge.md` |
-| verify-codex | `docs/plans/docs--canary-verify--verify-codex/judge.md` |
-| hardmatch | `docs/plans/docs--canary-verify--hardmatch/judge.md` |
 | tmux-export | `docs/plans/docs--canary-verify--tmux-export/judge.md` |
 
 Historical command reference (archived; no longer at these paths):
 
 ```text
 zsh   docs/canary-verify/verify-claudefast.sh   # -> docs/legacy/judge-scripts/...
-bash  docs/canary-verify/verify-codex.sh
-bash  docs/canary-verify/hardmatch.sh
 bash  docs/canary-verify/tmux-export.sh
 ```
 
-Each verifier first runs `MODULE --help` (claude or codex), so the harness
-proves the binary is reachable before any model call.
+The verifier first runs `claude --help`, so the harness proves the binary
+is reachable before any model call.
 
-## Pass criteria (all four MUST pass)
+## Pass criteria (both MUST pass)
 
 1. `runs/claudefast.json` validates against `schema.json`.
-2. `runs/codex.json` satisfies the same `registered/name/status` contract.
-3. `hardmatch.sh` exits 0 (canonical jq-sorted JSON is byte-equal).
-4. `tmux-export.sh` produces `exports/canary-session.txt` containing
+2. `tmux-export.sh` produces `exports/canary-session.txt` containing
    registry-only JSON from `claudefast` interactively.
 
 ## Current canonical JSON (last run)
@@ -86,11 +80,8 @@ proves the binary is reachable before any model call.
 
 - The model prompt deliberately forbids reading files and asks only about the
   in-memory registered skill list. The JSON contract avoids description text,
-  because Claude Code and Codex may summarize registered descriptions
-  differently even when the skill is loaded.
-- `verify-codex.sh` does not invoke a model. It inspects Codex's generated
-  prompt input for the project-level registry entry, so file reads by an agent
-  cannot create a false pass.
+  because Claude Code may summarize registered descriptions differently
+  across versions even when the skill is loaded.
 - `verify-claudefast.sh` also writes `runs/claudefast.debug.log` and asserts
   the debug line `Loading skills from:` contains this repo's
   `.claude/skills` directory. That proves Claude Code's project skill loader

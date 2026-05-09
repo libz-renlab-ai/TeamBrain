@@ -43,7 +43,7 @@ It pulls together rules that already live in this repo:
   `*report*.md`).
 - `~/.claude/CLAUDE.md` — DUCKPLAN / `plan-content.md` three-part rule for
   `plan.md`.
-- `docs/feature-verification.md` — the 1+2+3 feature-verification gate.
+- `docs/feature-verification.md` — the feature-verification gate.
 - `docs/FASTPROBE.md` — the `claudefast -h` → parallel `-p` → stream-json
   audit recipe.
 - `docs/POSTPR.md` — the post-PR `/review` loop.
@@ -132,14 +132,13 @@ grade without trusting the author. Two layers:
 
 ### 3a. Project-wide gate (always required)
 
-`docs/feature-verification.md` defines the **1+2+3 flow**. Every feature/fix
+`docs/feature-verification.md` defines the verification flow. Every feature/fix
 PR must pass it before merge:
 
-1. `!claudefast -p` runs `{MODULE} --help` and emits canonical JSON.
-2. `!codex exec` runs the same `{MODULE} --help` and emits canonical JSON.
-3. Hard-match the two JSON files (`jq -S` then `diff -u`) — they must be
-   byte-identical, no semantic-only pass.
-4. Plus an interactive `claudefast` run inside tmux ending with
+1. `!claudefast -p` runs `{MODULE} --help` and emits canonical JSON; diff it
+   against the snapshot under `snapshots/{MODULE}-help.canonical.json`
+   (`jq -S` + `diff -u`, byte-identical, no semantic-only pass).
+2. Plus an interactive `claudefast` run inside tmux ending with
    `/export <path>`; the export file is attached to the PR.
 
 The plan's how-to-verify section should name the **module under test**, the
@@ -171,9 +170,9 @@ Each `judge.md` playbook documents three sections:
 - **§V2 DUMP** — the canonical JSON schema written to
   `.judge/<run_id>/judge.json`: at minimum `exit_code`, `metrics`,
   `evidence_dir`, `stdout_path`.
-- **§V3 READ** — a separate `claudefast -p` (or `codex exec`) reads ONLY
-  the raw JSON + evidence and grades the run. The PR author, the executing
-  agent, and the code-under-test must never be the judge.
+- **§V3 READ** — a separate `claudefast -p` reads ONLY the raw JSON +
+  evidence and grades the run. The PR author, the executing agent, and the
+  code-under-test must never be the judge.
 
 This is the user-level testing-judge-harness rule
 (`~/.claude/docs/rules/testing-judge-harness.md`) plus user-memory
@@ -235,6 +234,13 @@ nice-to-have may be deferred to a follow-up issue only with explicit
 human reviewer approval. The only legitimate follow-up artefact is a
 follow-up *PR* in the rare auto-merge-raced-`/review` case.
 
+After PR #190, every PR also gets an automated cloud review from the
+`claude-code-review.yml` GH Action posting as a normal review comment.
+Per ADR-0007 the **local** `/review` skill stays the authoritative gate;
+the cloud signal is supplementary. Don't merge with an outstanding local
+finding even when the cloud comment is silent or 👍. Mechanics:
+`docs/features/claude-code-action.md`.
+
 ```
 PR opened → CI + /review → issues found?
    → block the merge
@@ -242,7 +248,7 @@ PR opened → CI + /review → issues found?
      (task / expected outputs / judge harness)
    → execute with TEAMWORK (N workers + 2N probes + 1 opus reporter)
    → push fix commits to the SAME PR branch
-   → rerun pnpm test + pnpm typecheck + verification 1+2+3
+   → rerun pnpm test + pnpm typecheck + feature-verification gate
    → re-run /review on the new diff
    → stop only when CI green + no conflict + /review PASS
 ```
@@ -261,7 +267,7 @@ on first green CI" usually skip the `/review` pass and miss P1s.
 - [ ] how-to-verify is a `docs/plans/<issue>/judge.md` md playbook —
       third-party judge harness forbidden fixed scripts; MUST use md playbook
 - [ ] judge.md names the module under test, JSON schema, /export path;
-      project-wide 1+2+3 gate planned
+      project-wide feature-verification gate planned
 - [ ] claudefast probes run before coding:
       (a) -h orient   (b) parallel -p ≤ 8   (c) stream-json audit logs
 - [ ] PR opened as a normal PR (not --draft)
@@ -276,8 +282,8 @@ on first green CI" usually skip the `/review` pass and miss P1s.
 - `~/.claude/CLAUDE.md` — DUCKPLAN, `plan-content.md`, testing-judge-harness
   rules (user-level).
 - `AGENTS.md` — `/Users/m1/projects` plan/research/report flow.
-- `docs/feature-verification.md` — the 1+2+3 gate, full flag list, tmux
-  `/export` recipe.
+- `docs/feature-verification.md` — the feature-verification gate, full flag
+  list, tmux `/export` recipe.
 - `docs/FASTPROBE.md` — full probe recipe and PR+conflict-resolve variant.
 - `docs/POSTPR.md` — `/review` skill + triage + loop.
 - `docs/PR-PLAN.md` — fix-issues-in-this-PR planning doc; no follow-up

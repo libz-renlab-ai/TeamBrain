@@ -23,6 +23,35 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter teamagent build
 
+      - name: Detect version
+        id: version
+        run: |
+          VERSION=$(jq -r .version packages/teamagent/package.json)
+          # Semver guard: defense-in-depth against shell-injection / GITHUB_OUTPUT-newline
+          # injection via a malicious package.json version field. Reject anything that
+          # is not strict X.Y.Z (no pre-release suffix, no metadata) for now.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'invalid version in package.json: %q (must match ^[0-9]+\\.[0-9]+\\.[0-9]+$)\n' "$VERSION" >&2
+            exit 1
+          fi
+          # printf (not echo) avoids \n / backslash-escape interpretation that echo
+          # has on some bash builds.
+          printf 'tag=v%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Pack tarball
+        run: |
+          # Clean stale artefacts from any prior workflow run before pack, so
+          # the `mv teamagent-*.tgz` glob never expands to multiple files.
+          rm -rf /tmp/release-assets
+          mkdir -p /tmp/release-assets
+          cd packages/teamagent
+          pnpm pack --pack-destination /tmp/release-assets
+          cd /tmp/release-assets
+          # Normalise filename (pnpm pack produces teamagent-<version>.tgz already)
+          mv teamagent-*.tgz "teamagent-${{ steps.version.outputs.tag }}.tgz"
+          shasum -a 256 "teamagent-${{ steps.version.outputs.tag }}.tgz" \
+            > "teamagent-${{ steps.version.outputs.tag }}.tgz.sha256"
+
       - name: Stage release artifacts
         run: |
           rm -rf /tmp/release-stage
@@ -34,9 +63,40 @@ jobs:
           # https://raw.githubusercontent.com/<owner>/<repo>/release/install.sh
           cp release/install.sh /tmp/release-stage/install.sh
           chmod 0755 /tmp/release-stage/install.sh
+          # Template the staged install.sh so its TEAMAGENT_VERSION default tracks
+          # the actual release tag (was v0.9.4 hardcoded; now matches package.json).
+          sed -i.bak "s|TEAMAGENT_VERSION:-v[0-9.]*|TEAMAGENT_VERSION:-${{ steps.version.outputs.tag }}|" \
+            /tmp/release-stage/install.sh
+          rm -f /tmp/release-stage/install.sh.bak
+          # Stage install-legacy.sh for backward compatibility
+          cp release/install-legacy.sh /tmp/release-stage/install-legacy.sh
+          chmod 0755 /tmp/release-stage/install-legacy.sh
+          # Regenerate sha256 from the templated file (NOT from release/install.sh
+          # in source — the user fetches the staged copy from origin/release, so the
+          # sha256 must hash the staged content).
+          shasum -a 256 /tmp/release-stage/install.sh \
+            | awk '{print $1 "  install.sh"}' \
+            > /tmp/release-stage/install.sh.sha256
           printf '{"sha":"%s","built_at":"%s"}\n' \
             "$GITHUB_SHA" "$(date -u +%FT%TZ)" \
             > /tmp/release-stage/release-meta.json
+
+      - name: Create GitHub Release (idempotent)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release $TAG already exists; skipping create"
+          else
+            gh release create "$TAG" \
+              --repo "${{ github.repository }}" \
+              --title "TeamBrain $TAG" \
+              --notes "Install: download install.sh from this Release (or from origin/release branch) and run it locally. The default --safe mode shows the script before executing (recommended). See README for full options." \
+              "/tmp/release-assets/teamagent-${TAG}.tgz" \
+              "/tmp/release-assets/teamagent-${TAG}.tgz.sha256" \
+              "/tmp/release-stage/install.sh.sha256"
+          fi
 
       - name: Force-push release branch
         env:

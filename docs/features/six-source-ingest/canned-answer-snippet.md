@@ -25,7 +25,7 @@ Checks performed:
 |---|---|
 | `insights` | Manual user insights and lessons learned |
 | `npm-audit` | Security vulnerabilities from npm audit output |
-| `pr-review` | Codex or human PR review findings |
+| `pr-review` | `/review` skill or human PR review findings |
 | `git-hotspot` | Frequently changed files from git history |
 | `ci-failure` | Failing CI run logs and error patterns |
 | `candidates` | Rule candidates extracted from LLM conversations |

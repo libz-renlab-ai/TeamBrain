@@ -267,4 +267,4 @@ This pattern is called **agent live-preview / dogfood loop / live-coding for age
 
 - [FASTPROBE.md](FASTPROBE.md) — `claudefast` 调研/审计固定组合（同样基于 `claudefast`）。
 - [CLAUDEFAST.md](CLAUDEFAST.md) — `claudefast` wrapper 环境变量与安装位置。
-- [feature-verification.md](feature-verification.md) — 1+2+3 验证门禁（claudefast / codex / tmux export）。
+- [feature-verification.md](feature-verification.md) — 验证门禁（claudefast JSON snapshot + tmux export）。

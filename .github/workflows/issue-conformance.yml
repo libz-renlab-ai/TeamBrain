@@ -1,0 +1,124 @@
+name: FIXEDFLOW Issue Conformance
+
+# Refusal layer for the FIXEDFLOW workflow.
+# Two paths:
+#   1. on issues:opened/edited — word-count check on body (≤ 50 words/CJK chars)
+#   2. on schedule — daily sweep of issues open > 24 h without `grill-ready`
+# Both paths honor `bypass-fixed-flow` admin-only label and the
+# FIXEDFLOW_ENFORCEMENT repo variable (default: warn for 7-day soft-warn period).
+# See docs/FIXEDFLOW.md and docs/plans/2026-05-09-fixed-flow/plan.md.
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+  schedule:
+    # 09:17 UTC daily — off the :00/:30 marks per scheduling guidance
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+env:
+  ENFORCEMENT: ${{ vars.FIXEDFLOW_ENFORCEMENT || 'warn' }}
+
+jobs:
+  bypass-permission-check:
+    if: github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'bypass-fixed-flow'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify labeler is repo admin; remove label otherwise
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -eu
+          PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq '.permission' 2>/dev/null || echo "none")
+          echo "actor=${ACTOR} permission=${PERM}"
+          if [ "$PERM" != "admin" ]; then
+            gh issue edit "$ISSUE" --remove-label bypass-fixed-flow
+            gh issue comment "$ISSUE" --body "⛔ FIXEDFLOW: \`bypass-fixed-flow\` is admin-only (actor permission: ${PERM}). Label removed. See [docs/FIXEDFLOW.md](https://github.com/${{ github.repository }}/blob/main/docs/FIXEDFLOW.md)."
+            exit 1
+          fi
+
+  word-count-check:
+    if: github.event_name == 'issues' && (github.event.action == 'opened' || github.event.action == 'edited')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip if bypass-fixed-flow label present
+        id: bypass-check
+        env:
+          LABELS_JSON: ${{ toJson(github.event.issue.labels) }}
+        run: |
+          set -eu
+          if echo "$LABELS_JSON" | jq -e '[.[] | select(.name == "bypass-fixed-flow")] | length > 0' >/dev/null; then
+            echo "bypass=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bypass=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Count words (ASCII words + CJK chars)
+        if: steps.bypass-check.outputs.bypass != 'true'
+        id: wc
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          set -eu
+          COUNT=$(python3 - <<'PY'
+          import os, re
+          body = os.environ.get("BODY", "") or ""
+          cjk = len(re.findall(r"[一-鿿㐀-䶿]", body))
+          ascii_only = re.sub(r"[一-鿿㐀-䶿]", " ", body)
+          words = [w for w in re.split(r"\s+", ascii_only) if w.strip()]
+          print(cjk + len(words))
+          PY
+          )
+          echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment + maybe close if over 50 words
+        if: steps.bypass-check.outputs.bypass != 'true' && steps.wc.outputs.count > 50
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+          COUNT: ${{ steps.wc.outputs.count }}
+        run: |
+          set -eu
+          DOC_LINK="https://github.com/${{ github.repository }}/blob/main/docs/FIXEDFLOW.md"
+          if [ "${ENFORCEMENT}" = "enforce" ]; then
+            gh issue comment "$ISSUE" --body "⛔ FIXEDFLOW: issue body 超出 50 字（实际 ${COUNT}）。详情见 [docs/FIXEDFLOW.md](${DOC_LINK})。本 issue 自动关闭。"
+            gh issue close "$ISSUE" --reason "not planned"
+          else
+            gh issue comment "$ISSUE" --body "⚠️ FIXEDFLOW (warn-only): issue body 超出 50 字（实际 ${COUNT}）。当前为 7 天软提醒期；切到 enforce 后会自动 close。详情见 [docs/FIXEDFLOW.md](${DOC_LINK})。"
+          fi
+
+  stale-no-grill-sweep:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find issues open > 24 h without grill-ready / bypass / needs-human
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          DOC_LINK="https://github.com/${REPO}/blob/main/docs/FIXEDFLOW.md"
+          STALE=$(gh issue list --repo "$REPO" --state open --limit 200 --json number,createdAt,labels --jq '
+            [.[] |
+              select((.labels | map(.name) | index("grill-ready")) | not) |
+              select((.labels | map(.name) | index("bypass-fixed-flow")) | not) |
+              select((.labels | map(.name) | index("needs-human")) | not) |
+              select(((now - (.createdAt | fromdateiso8601))) > 86400) |
+              .number
+            ] | join(" ")
+          ')
+          echo "stale_issues=${STALE}"
+          for NUM in $STALE; do
+            if [ "${ENFORCEMENT}" = "enforce" ]; then
+              gh issue comment "$NUM" --body "⛔ FIXEDFLOW: 24 小时内未加 \`grill-ready\` label。本 issue 自动关闭。详见 [docs/FIXEDFLOW.md](${DOC_LINK})。"
+              gh issue close "$NUM" --reason "not planned"
+            else
+              gh issue comment "$NUM" --body "⚠️ FIXEDFLOW (warn-only): 24 小时内未加 \`grill-ready\` label。当前为 7 天软提醒期；切到 enforce 后会自动 close。详见 [docs/FIXEDFLOW.md](${DOC_LINK})。"
+            fi
+          done

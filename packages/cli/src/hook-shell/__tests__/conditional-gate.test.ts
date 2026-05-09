@@ -45,9 +45,18 @@ describe("conditional-gate (type-level)", () => {
   it("RequireAtLeastOneEscape resolves to T when escape has a key", () => {
     type WithTimeout = { escape: { pipelineTimeoutMs: 240_000 } };
     type R = RequireAtLeastOneEscape<WithTimeout>;
-    // If R were `never`, this assignment would not compile.
-    const _proof = null as unknown as R;
-    expect(_proof).toBeDefined();
+    // testing-specialist /review on PR #152 caught: the previous form
+    // `const _proof = null as unknown as R; expect(_proof).toBeDefined()`
+    // gave false confidence because `as unknown as never` compiles fine
+    // (the `as` chain bypasses the assignability check), so the assertion
+    // would pass even if R had collapsed to `never`. Mirror the symmetric
+    // IsT pattern below to make this a real type-level invariant: if R
+    // ever stops being `WithTimeout`, IsT becomes `false` and the runtime
+    // expect fails AND the type-level `const isT: true = false` line
+    // produces a tsc error.
+    type IsT = [R] extends [WithTimeout] ? ([WithTimeout] extends [R] ? true : false) : false;
+    const isT: IsT = true;
+    expect(isT).toBe(true);
   });
 
   it("RequireAtLeastOneEscape resolves to never when escape has no keys", () => {

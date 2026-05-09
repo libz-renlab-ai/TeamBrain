@@ -1,0 +1,51 @@
+name: FIXEDFLOW Heartbeat
+
+# Heartbeat layer: when a reporter adds the `grill-ready` label, post a
+# comment so the reporter sees the pipeline is engaged. The driver
+# (Phase 4b skill) posts its own pickup comment when it actually starts
+# processing — if no driver pickup within ~10 min, the local watcher
+# (Phase 4a) on the maintainer's Mac is likely down.
+#
+# Design note: we do NOT check a watcher-written heartbeat file into the
+# repo (commit churn at 30s interval was rejected). Visibility into
+# watcher liveness comes from the driver's own pickup comment.
+#
+# See docs/FIXEDFLOW.md and docs/plans/2026-05-09-fixed-flow/plan.md.
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: 'Issue number to test heartbeat against'
+        required: true
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  queued-comment:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'grill-ready'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post queued comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number || github.event.inputs.issue }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          DOC_LINK="https://github.com/${REPO}/blob/main/docs/FIXEDFLOW.md"
+          BODY=$(cat <<EOF
+          🤖 FIXEDFLOW: queued for local pipeline.
+
+          The local mainpi watcher should pick this up within ~30 s and post a
+          \`👋 driver picked up\` comment. If you do not see that comment within
+          ~10 minutes, the watcher Mac may be off — please ping the maintainer.
+
+          See [FIXEDFLOW.md](${DOC_LINK}) for the full 5-step workflow.
+          EOF
+          )
+          gh issue comment "$ISSUE" --repo "$REPO" --body "$BODY"

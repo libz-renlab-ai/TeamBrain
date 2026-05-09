@@ -40,8 +40,7 @@ tmux new-session ... "claudefast"  # interactive prompt, then /export docs/verif
 - Hook output JSON: `docs/verification/recording-memory-hook-output.json`
 - claudefast help raw: `docs/verification/recording-help-claudefast.output-format-json.raw.txt`
 - claudefast canonical JSON: `docs/verification/recording-help-claudefast.canonical.json`
-- codex raw: `docs/verification/recording-help-codex.raw.txt`
-- codex canonical JSON: `docs/verification/recording-help-codex.canonical.json`
+- ~~codex raw / codex canonical JSON~~ — removed in the 2026-05-09 codex review-stage cleanup; the cross-tool hard-match step is no longer part of the verification flow.
 - hard-match result: `docs/verification/recording-help-hard-match.txt`
 - stream JSON output: `docs/verification/recording-memory-claudefast-stream.jsonl`
 - stream summary: `docs/verification/recording-memory-claudefast-stream-summary.json`

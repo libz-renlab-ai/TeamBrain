@@ -59,6 +59,7 @@ import { cleanupWikiResidue } from "./wiki-residue-cleanup.js";
 import { cleanupDbBackups } from "./db-backup-cleanup.js";
 import { runM5Session, renderM5SessionBanner } from "./m5-session-hook.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
+import { findTeamagentRoot } from "./lib/walk-up.js";
 
 /**
  * SessionStart accepts a Claude Code SessionStart payload (or empty stdin
@@ -114,9 +115,15 @@ async function main(): Promise<void> {
       // B-094: prune legacy `*.before-*` schema-migration db backups in both
       // user-global ~/.teamagent and project-local <cwd>/.teamagent so they
       // do not accumulate forever. Best-effort.
+      // Issue #161: when Claude Code is launched from a sub-directory of a
+      // teamagent-initialized project, walk up to the real project root so
+      // we clean the right `.teamagent/`. Falls back to `ctx.cwd` when no
+      // ancestor is initialized — preserves the legacy behaviour for cwds
+      // that are themselves the project root.
       const homeTeamagent = path.join(os.homedir(), ".teamagent");
       cleanupDbBackups(homeTeamagent);
-      cleanupDbBackups(path.join(ctx.cwd, ".teamagent"));
+      const projectRoot = findTeamagentRoot(ctx.cwd) ?? ctx.cwd;
+      cleanupDbBackups(path.join(projectRoot, ".teamagent"));
 
       // CRITICAL: decideAction MUST run before any code that could touch
       // <cwd>/.teamagent/knowledge.db. We're using runAdvancedHook with

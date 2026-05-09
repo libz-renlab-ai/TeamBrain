@@ -53,6 +53,7 @@ export async function executeBugReport(opts: BugReportOptions = {}): Promise<Bug
     env,
     runCommand,
     teamagentVersion: opts.teamagentVersion,
+    stdout: opts.stdout ?? false,
   });
 
   if (!opts.stdout) {
@@ -74,18 +75,21 @@ function renderBugReport(args: {
   env: NodeJS.ProcessEnv;
   runCommand: (cmd: string, args: string[]) => string;
   teamagentVersion?: string;
+  stdout: boolean;
 }): string {
   const lines: string[] = [];
   lines.push("# TeamAgent Bug Report");
   lines.push("");
   lines.push(`Generated: ${args.now.toISOString()}`);
   lines.push("");
-  lines.push("## Summary");
-  lines.push("");
-  lines.push("- What happened:");
-  lines.push("- What you expected:");
-  lines.push("- Steps to reproduce:");
-  lines.push("");
+  if (!args.stdout) {
+    lines.push("## Summary");
+    lines.push("");
+    lines.push("- What happened:");
+    lines.push("- What you expected:");
+    lines.push("- Steps to reproduce:");
+    lines.push("");
+  }
   lines.push("## System");
   lines.push("");
   lines.push(`- platform: ${process.platform}`);
@@ -129,6 +133,14 @@ function renderBugReport(args: {
   lines.push("- Secret-looking values are redacted before writing this report.");
   lines.push(`- Log blocks are capped at ${MAX_LOG_BYTES} bytes from the end of each file.`);
   lines.push("");
+  if (args.stdout) {
+    lines.push("─────────────────────────────────────────────────");
+    lines.push("📤 Paste this into a new issue at:");
+    lines.push("   https://github.com/libz-renlab-ai/TeamBrain/issues/new");
+    lines.push("");
+    lines.push("   Tip: 在 Summary 段填上你卡住的具体动作。");
+    lines.push("");
+  }
   return lines.join("\n");
 }
 

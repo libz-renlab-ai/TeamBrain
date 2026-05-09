@@ -15,6 +15,7 @@
  *
  * Core MUST NOT import `node:fs`, `node:child_process`, or read `process.env`.
  */
+import { sanitizeUserFacingText } from "@teamagent/types";
 import { detectCompliedSignals, type OverrideSignalEvent } from "../pipeline/override-signal.js";
 
 /**
@@ -122,7 +123,7 @@ export function createPreToolUseHandler(deps: PreToolUseDeps) {
         const hitSummary = hits.length > 0 ? `, 语义命中 ${hits.length} 条` : "";
         const lines = [`◈ TeamAgent: ✓ ${tool_name} 放行 (检查 ${n} 条规则${hitSummary})`];
         for (const h of hits) {
-          lines.push(`  · [${h.id}] ${h.trigger.slice(0, 40)} (score ${h.score.toFixed(2)})`);
+          lines.push(`  · [${h.id}] ${sanitizeUserFacingText(h.trigger).slice(0, 40)} (score ${h.score.toFixed(2)})`);
         }
         return { permissionDecision: "allow", systemMessage: lines.join("\n") };
       }
@@ -224,8 +225,8 @@ function formatHumaneBlock(rule: any, now: Date, severity: "warn" | "block"): st
   const conf = typeof rule.confidence === "number" ? rule.confidence.toFixed(2) : "?";
   const hitCount = typeof rule.hit_count === "number" ? rule.hit_count : 0;
   const ruleIdShort = ruleIdShortForm(rule.id ?? rule.rule_id);
-  const correct: string = sanitizeRuleText(rule.correct_pattern ?? rule.trigger ?? "");
-  const summary: string = sanitizeRuleText(
+  const correct: string = sanitizeUserFacingText(rule.correct_pattern ?? rule.trigger ?? "");
+  const summary: string = sanitizeUserFacingText(
     rule.summary ?? rule.trigger ?? rule.wrong_pattern ?? "需要注意",
   );
   const prefix = severity === "block" ? "⚠️ TeamAgent 拦了一下" : "⚠️ TeamAgent 提醒";
@@ -240,35 +241,17 @@ function formatHumaneBlock(rule: any, now: Date, severity: "warn" | "block"): st
   return [firstLine, suggestionLine, detailLine].join("\n");
 }
 
-/**
- * Sanitize rule text before rendering it in a hook systemMessage:
- *   - drop ANSI escape sequences (B-130 cousin)
- *   - drop unpaired UTF-16 surrogate halves (B-126: regional rules whose
- *     content was corrupted somewhere in the SQLite/embedder/JSON path
- *     produced lone high/low surrogate code units, which printed as
- *     random CJK glyphs / replacement chars)
- *   - drop ASCII control bytes (\x00-\x08, \x0b-\x1f, \x7f) that could
- *     re-position the cursor or pause the terminal
- */
-function sanitizeRuleText(s: string): string {
-  if (typeof s !== "string") return "";
-  // strip CSI / OSC ANSI escape sequences
-  let out = s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
-  // strip control bytes except newline/tab
-  // eslint-disable-next-line no-control-regex
-  out = out.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
-  // strip lone surrogate halves (mojibake from corrupt UTF-8 round-trips)
-  out = out.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "");
-  out = out.replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "");
-  return out;
-}
+// Local sanitizeRuleText removed in favor of the shared `sanitizeUserFacingText`
+// from `@teamagent/types` (per security-specialist /review on PR #152). Same
+// behavior; centralizing avoids drift between this systemMessage path and the
+// StdoutRenderer's user-facing event render path.
 
 function formatLegacyWarnBox(rule: any, now: Date): string {
   const age = rule.created_at ? relativeTime(rule.created_at as string, now) : "未知";
   const conf = typeof rule.confidence === "number" ? rule.confidence.toFixed(2) : "?";
-  const correct = rule.correct_pattern ?? rule.trigger ?? "";
-  const wrong = rule.wrong_pattern ?? "";
-  const reasoning = rule.reasoning ?? "";
+  const correct = sanitizeUserFacingText(rule.correct_pattern ?? rule.trigger ?? "");
+  const wrong = sanitizeUserFacingText(rule.wrong_pattern ?? "");
+  const reasoning = sanitizeUserFacingText(rule.reasoning ?? "");
   const lines = [`置信度 ${conf} · ${age}学到`];
   if (wrong) lines.push(...formatRuleField("避免", wrong));
   if (correct) lines.push(...formatRuleField("使用", correct));
@@ -280,9 +263,9 @@ function formatLegacyBlockBox(rule: any, now: Date): string {
   const age = rule.created_at ? relativeTime(rule.created_at as string, now) : "未知";
   const conf = typeof rule.confidence === "number" ? rule.confidence.toFixed(2) : "?";
   const hitCount = typeof rule.hit_count === "number" ? rule.hit_count : 0;
-  const correct = rule.correct_pattern ?? rule.trigger ?? "";
-  const wrong = rule.wrong_pattern ?? "";
-  const reasoning = rule.reasoning ?? "";
+  const correct = sanitizeUserFacingText(rule.correct_pattern ?? rule.trigger ?? "");
+  const wrong = sanitizeUserFacingText(rule.wrong_pattern ?? "");
+  const reasoning = sanitizeUserFacingText(rule.reasoning ?? "");
   const lines = [`置信度 ${conf} · 已触发 ${hitCount} 次 · ${age}学到`];
   if (wrong) lines.push(...formatRuleField("避免", wrong));
   if (correct) lines.push(...formatRuleField("使用", correct));

@@ -44,13 +44,19 @@
 ## What it is
 
 `PR-PLAN` is the project's name for the plan document you write **after**
-opening a PR, **when** review (CI, the local `/review` skill, a human, or
+opening a PR, **when** review (CI, the local `/review` skill, the
+auto-running cloud `claude-code-review.yml` GH Action, a human, or
 your own audit) surfaces issues that need fixing, **so that** the fix lands
 inside the **same PR** — never via a follow-up issue.
 
 It is the post-PR sibling of `docs/HOWTO-PLAN-PR.md` (which covers the
 plan written *before* opening a PR) and the trigger for the `TEAMWORK`
 execution pattern (`docs/TEAMWORK.md`).
+
+Per ADR-0007 the **local** `/review` skill is the authoritative blocking
+gate; the cloud GH Action review is supplementary (see
+`docs/features/claude-code-action.md`). A cloud-only finding is still
+worth fixing in this PR if it's P1/P2 — same severity table applies.
 
 ## Hard rules — non-negotiables
 
@@ -137,15 +143,15 @@ needs a judge.
 The playbook documents three sections:
 
 - **§V1 RUN** — fixed tools to invoke (`pnpm test`, `pnpm typecheck`,
-  feature-verification 1+2+3 commands, regression repro). Stdout/stderr
+  feature-verification gate commands, regression repro). Stdout/stderr
   captured to `evidence_dir`.
 - **§V2 DUMP** — canonical JSON written to `.judge/<run_id>/judge.json`,
   schema example `{ "exit_code": <int>, "tests_passed": <int>,
   "tests_failed": <int>, "typecheck_clean": <bool>, "evidence_dir": ...,
   "stdout_path": ... }` plus raw stdout/stderr in `evidence_dir`.
-- **§V3 READ** — a separate LLM judge (`claudefast -p` or `codex exec`)
-  reads ONLY the raw JSON + evidence and grades the fix. The PR author,
-  the executing agent, and the code-under-test must never be the judge.
+- **§V3 READ** — a separate LLM judge (`claudefast -p`) reads ONLY the
+  raw JSON + evidence and grades the fix. The PR author, the executing
+  agent, and the code-under-test must never be the judge.
 
 See `~/.claude/docs/rules/testing-judge-harness.md` and user-memory
 `feedback_judge_harness_md_playbook.md`. Failed sections rerun by

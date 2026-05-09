@@ -52,6 +52,7 @@ import {
 } from "@teamagent/core";
 import { runUpdater } from "./updater-logic.js";
 import { fetchRemoteSha } from "./github-api.js";
+import { resolveGithubToken } from "./commands/update.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
 
 function teamagentHome(): string {
@@ -92,8 +93,31 @@ function readState(): UpdateState {
 }
 
 function writeState(s: UpdateState): void {
+  // Atomic write: tmp file + rename. Same rationale as commands/update.ts —
+  // checkCmd and bin-updater both write update-state.json without sharing a
+  // lock; non-atomic writes can produce a half-written file that
+  // parseUpdateState rejects, falling back to defaults and triggering a
+  // spurious reinstall. Tmp filename includes randomness to defeat PID-reuse
+  // collisions; rename retries on Windows EPERM/EBUSY (transient AV holds).
   ensureDir(teamagentHome());
-  fs.writeFileSync(statePath(), serializeUpdateState(s), "utf-8");
+  const target = statePath();
+  const tmp = `${target}.tmp.${process.pid}.${Math.random().toString(36).slice(2, 10)}`;
+  fs.writeFileSync(tmp, serializeUpdateState(s), "utf-8");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      fs.renameSync(tmp, target);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if ((code === "EPERM" || code === "EBUSY") && attempt < 2) {
+        const until = Date.now() + 50;
+        while (Date.now() < until) { /* spin */ }
+        continue;
+      }
+      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+      throw e;
+    }
+  }
 }
 
 function acquireLock(): boolean {
@@ -260,7 +284,19 @@ async function main(): Promise<void> {
     handler: async () => {
       log("updater started");
       await runUpdater({
-        fetchRemoteSha: () => fetchRemoteSha({ owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH }),
+        // Closure reads state + token per call so ETag and token are always
+        // fresh at call time (§ 2.6). State is read independently here from
+        // the state already read inside runUpdater; the extra read is cheap
+        // and ensures the latest persisted ETag is sent.
+        fetchRemoteSha: () => {
+          const s = readState();
+          return fetchRemoteSha({
+            owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH,
+            token: resolveGithubToken(),
+            ifNoneMatch: s.last_branch_etag || undefined,
+            cachedSha: s.last_branch_sha || undefined,
+          });
+        },
         runNpmInstall,
         runMigrateAuto,
         backupCurrentInstall,

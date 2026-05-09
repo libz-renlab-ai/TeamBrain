@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "cp -r src/. dist/ && cp -r public/. dist/ 2>/dev/null || true",
+    "build": "mkdir -p dist && cp -r src/. dist/ && cp -r public/. dist/ && test -f dist/index.html && test -f dist/double-moment.gif && test -f dist/double-moment-static.png",
     "preview": "npx serve dist",
     "lint": "htmlhint src/",
     "verify": "lhci autorun --config=./lighthouserc.json"

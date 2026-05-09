@@ -102,6 +102,36 @@ describe("init pack prompt + --pack flag", () => {
     });
   });
 
+  describe("zero packs available (issue 174 #5)", () => {
+    it("emits empty packPrompt and a single-line notice (no v1 marker)", async () => {
+      // Empty packs directory => available.length === 0
+      const emptyPacksDir = path.join(path.dirname(dirs.packsDir), "empty-packs");
+      fs.mkdirSync(emptyPacksDir, { recursive: true });
+      const result = await executeInit({
+        cwd: dirs.cwd,
+        homeDir: dirs.home,
+        skipImport: true,
+        skipHook: true,
+        skipWarmup: true,
+        skipSeed: true,
+        packsDir: emptyPacksDir,
+      });
+      expect(result.ok).toBe(true);
+      // packPrompt is the empty string (not undefined) when 0 packs available.
+      expect(result.packPrompt ?? "").toBe("");
+      // Rendered stdout must NOT contain the v1 prompt block …
+      const out = renderInitResult(result);
+      expect(out).not.toContain("<!-- teamagent-pack-prompt v1 -->");
+      // … but MUST contain the new single-line notice.
+      expect(out).toContain("暂无 stack packs 可用");
+      // Step still records as ok.
+      const step = result.steps.find((s) => s.step === "pack-prompt");
+      expect(step).toBeDefined();
+      expect(step?.status).toBe("ok");
+      expect(step?.detail).toContain("暂无 stack packs 可用");
+    });
+  });
+
   describe("--pack all bypass", () => {
     it("installs every available pack and emits NO prompt block", async () => {
       const result = await executeInit({

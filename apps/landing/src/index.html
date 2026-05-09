@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,13 +9,14 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #ffffff; color: #1a1a1a; line-height: 1.6; }
-    a { color: #e85c0d; text-decoration: none; }
+    a, a:link, a:visited { color: #b84200; text-decoration: none; }
     a:hover { text-decoration: underline; }
+    a:focus-visible, summary:focus-visible, .table-scroll:focus-visible { outline: 2px solid #b84200; outline-offset: 2px; border-radius: 2px; }
     .container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
     header { padding: 80px 0 60px; text-align: center; }
     h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); font-weight: 700; margin-bottom: 20px; line-height: 1.25; }
     .sub { font-size: 1.125rem; color: #555; max-width: 540px; margin: 0 auto; }
-    .gif-placeholder { aspect-ratio: 16/9; background: #f0f0f0; display: flex; align-items: center; justify-content: center; border-radius: 8px; margin: 40px 0; font-size: 0.9rem; color: #888; border: 1px solid #e0e0e0; }
+    .hero-gif { aspect-ratio: 688/490; display: block; width: 100%; height: auto; max-width: 100%; object-fit: contain; background: #1f1f1f; border-radius: 8px; margin: 40px 0; border: 1px solid #e0e0e0; }
     .install-box { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px; padding: 20px 24px; margin: 32px 0; }
     .install-box pre { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.875rem; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px 16px; overflow-x: auto; margin-bottom: 8px; }
     .install-box pre:last-child { margin-bottom: 0; }
@@ -23,24 +24,34 @@
     .section-title { font-size: 1.5rem; font-weight: 600; margin-bottom: 32px; }
     .comparison-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-bottom: 40px; }
     .comparison-table th { background: #1a1a1a; color: #ffffff; padding: 12px 16px; text-align: left; font-weight: 600; }
-    .comparison-table th:last-child { background: #e85c0d; }
+    .comparison-table th[scope="row"] { background: #ffffff; color: #1a1a1a; }
+    .comparison-table th:last-child { background: #b84200; }
     .comparison-table td { padding: 12px 16px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
     .comparison-table tr:last-child td { border-bottom: none; }
     .comparison-table td:not(:first-child) { text-align: center; }
-    .check { color: #e85c0d; font-weight: 700; }
-    .cross { color: #999; }
+    .check { color: #b84200; font-weight: 700; }
+    .cross { color: #767676; }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 40px; }
+    .table-scroll .comparison-table { margin-bottom: 0; min-width: 540px; }
+    @media (max-width: 620px) {
+      .container { padding: 0 16px; }
+      header { padding: 56px 0 40px; }
+      .section { padding: 40px 0; }
+      .comparison-table th, .comparison-table td { padding: 10px 12px; font-size: 0.85rem; }
+    }
     .bullets { list-style: none; margin-bottom: 32px; }
     .bullets li { padding: 12px 0; padding-left: 28px; position: relative; border-bottom: 1px solid #f0f0f0; }
-    .bullets li::before { content: '—'; position: absolute; left: 0; color: #e85c0d; font-weight: 700; }
+    .bullets li::before { content: '—'; position: absolute; left: 0; color: #b84200; font-weight: 700; }
     .details-section { border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; margin-bottom: 12px; }
     .details-section summary { padding: 14px 18px; background: #f5f5f5; cursor: pointer; font-weight: 600; user-select: none; list-style: none; }
     .details-section summary::-webkit-details-marker { display: none; }
-    .details-section summary::after { content: '+'; float: right; font-weight: 700; color: #e85c0d; }
-    .details-section[open] summary::after { content: '−'; }
+    .details-section summary::after { content: '+' / ''; float: right; font-weight: 700; color: #b84200; }
+    .details-section[open] summary::after { content: '−' / ''; }
     .details-section .detail-body { padding: 16px 18px; border-top: 1px solid #e0e0e0; font-size: 0.9rem; color: #444; }
-    footer { padding: 40px 0; border-top: 1px solid #e0e0e0; text-align: center; font-size: 0.8rem; color: #888; }
+    footer { padding: 40px 0; border-top: 1px solid #e0e0e0; text-align: center; font-size: 0.8rem; color: #767676; }
     .trust-anchors { display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; margin-bottom: 16px; }
     .trust-anchors span { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
   </style>
 </head>
 <body>
@@ -50,49 +61,55 @@
       <p class="sub">不是 CLAUDE.md。是会自己进化的活规则库。</p>
     </header>
 
-    <div class="gif-placeholder">demo GIF placeholder</div>
+    <!-- MAINTENANCE: when replacing double-moment.gif, regenerate double-moment-static.png from the same recording (see TOOLCHAIN.md). The static frame is what reduced-motion users see; stale PNG = lying to motion-sensitive users. -->
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="double-moment-static.png" />
+      <img class="hero-gif" src="double-moment.gif" alt="TeamAgent double-moment 演示：用户教 AI 用 dayjs 替代 moment.js，新会话里 PreToolUse hook 自动应用学过的规则，AI 不再重复同一错误" loading="eager" fetchpriority="high" width="688" height="490" />
+    </picture>
 
     <div class="install-box">
-      <pre>curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh</pre>
+      <pre>curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash</pre>
       <pre>teamagent init</pre>
     </div>
 
     <section class="section">
-      <h2 class="section-title">第一屏对比表</h2>
-      <table class="comparison-table">
-        <thead>
-          <tr>
-            <th>特性</th>
-            <th>CLAUDE.md</th>
-            <th>.cursorrules</th>
-            <th>Claude memory</th>
-            <th>TeamAgent</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>跨会话记忆</td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="check">✓</span></td>
-          </tr>
-          <tr>
-            <td>工具调用前拦截 PreToolUse</td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="check">✓</span></td>
-          </tr>
-          <tr>
-            <td>团队共享 xsync</td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="cross">✗</span></td>
-            <td><span class="check">✓</span></td>
-          </tr>
-        </tbody>
-      </table>
+      <h2 class="section-title" id="comparison-title">第一屏对比表</h2>
+      <div class="table-scroll" role="region" aria-labelledby="comparison-title" tabindex="0">
+        <table class="comparison-table" aria-labelledby="comparison-title">
+          <thead>
+            <tr>
+              <th scope="col">特性</th>
+              <th scope="col">CLAUDE.md</th>
+              <th scope="col">.cursorrules</th>
+              <th scope="col">Claude memory</th>
+              <th scope="col">TeamAgent</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">跨会话记忆</th>
+              <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
+              <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
+              <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
+              <td><span class="check" aria-hidden="true">✓</span><span class="sr-only">支持</span></td>
+            </tr>
+            <tr>
+              <th scope="row">工具调用前拦截 PreToolUse</th>
+              <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
+              <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
+              <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
+              <td><span class="check" aria-hidden="true">✓</span><span class="sr-only">支持</span></td>
+            </tr>
+            <tr>
+              <th scope="row">团队共享 xsync</th>
+              <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
+              <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
+              <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
+              <td><span class="check" aria-hidden="true">✓</span><span class="sr-only">支持</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="section">

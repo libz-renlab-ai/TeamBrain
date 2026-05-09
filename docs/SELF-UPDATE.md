@@ -171,3 +171,48 @@ unset TEAMAGENT_AUTO_UPDATE
 - postinstall：`packages/teamagent/postinstall.mjs`
 - 测试：`packages/cli/src/__tests__/updater-logic.test.ts`、`session-start-update.test.ts`、`session-start-logic.test.ts`
 - 触发审计入口：`docs/plans/issue-118/research.md` §7
+
+## Token & ETag (issue #159)
+
+`teamagent update --check` and the auto-updater both call `api.github.com` to
+read the latest commit on the `release` branch. Two opt-in features make this
+robust against rate limits.
+
+### Token (skip the 60 req/h anonymous limit)
+
+If any of the following env vars is set, the updater will send it as a Bearer
+token, raising the GitHub limit to 5000 req/h:
+
+- `TEAMAGENT_GITHUB_TOKEN` — TeamAgent-specific, recommended (won't collide
+  with `gh` or other tools).
+- `GITHUB_TOKEN` — common in CI environments.
+- `GH_TOKEN` — used by `gh`. Picked up if neither of the above is set.
+
+The token only needs `public_repo` read scope.
+
+### ETag / conditional GET (zero-quota check when nothing changed)
+
+The updater persists the response ETag in `~/.teamagent/update-state.json` and
+sends `If-None-Match` on the next call. When upstream hasn't moved, GitHub
+returns `304 Not Modified` which **does NOT count against the rate limit**.
+The cached SHA is returned without a fresh fetch.
+
+### Failure backoff
+
+When the rate limit is hit (anonymous or authenticated), the updater waits
+exponentially before retrying: 1h → 2h → 4h → 8h → 16h → 24h (capped). The
+counter resets to 0 on the first successful fetch. This avoids hot-looping
+against an exhausted quota.
+
+### Error messages
+
+`teamagent update --check` now classifies failures and surfaces a per-reason
+message instead of the generic `fetch failed (network/rate-limit)`:
+
+- `rate_limit_anonymous` → suggests setting `TEAMAGENT_GITHUB_TOKEN`.
+- `rate_limit_authed` → "retry later".
+- `auth` → token rejected / SSO-required.
+- `not_found` → branch missing.
+- `server` → 5xx, GitHub-side issue.
+- `network` → connection refused / timeout / DNS.
+- `parse` → upstream returned malformed JSON.

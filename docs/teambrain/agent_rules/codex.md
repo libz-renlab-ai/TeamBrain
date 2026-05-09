@@ -66,14 +66,12 @@ Every prompt that requires image generation MUST include this banlist at the top
 
 Without this banlist, Codex defaults to PIL and CJK text renders as □ with no error.
 
-### Feature verification — 1+2+3 gate (codex exec step)
+### Feature verification
 
-Per `docs/feature-verification.md`, step 2 requires:
-```bash
-codex exec --skip-git-repo-check -s read-only \
-  "<module> --help; emit JSON matching step-1 claudefast output"
-```
-Hard-match step 1 and step 2 outputs with `jq -S .` — byte-identical required.
+Codex is **not** part of the project's feature-verification gate. Per ADR-0007
+the gate is `claudefast -p` JSON snapshot diff plus a tmux interactive
+`/export` capture (see `docs/feature-verification.md`). Do not introduce a
+`codex exec` cross-tool hard-match step into a plan's verification harness.
 
 ---
 
@@ -135,11 +133,6 @@ Do not attempt workarounds for any of the above. Log the blocker to the task ent
 - Right: include `强制约束：必须调用 image_gen.imagegen，绝对禁止写 Python / PIL / matplotlib` at the top of every image-gen prompt.
 - Why: Codex silently falls back to PIL; CJK characters render as □ with no error message.
 
-### AP-2: Skipping `codex exec` JSON in feature-verification gate
-- Wrong: declaring step 2 done because the logic "looks right" or claudefast step 1 passed.
-- Right: run `codex exec --skip-git-repo-check -s read-only "..."`, capture output, `jq -S .` both step-1 and step-2 outputs, assert byte-identical.
-- Why: step 2 is a hard gate; skipping it means the feature is not verified.
-
 ### AP-3: Using GitHub Gist for image hosting
 - Wrong: `gh gist create my-image.png` (binary files not supported, returns error).
 - Right: push to `liush2yuxjtu/slack-image-host` public repo, use the `https://raw.githubusercontent.com/...png` URL.
@@ -193,6 +186,5 @@ Codex-specific example recipes to create when needed:
 |-----------|-----------------|
 | `VERIFY-CODEX-001` | `image_gen.imagegen` tool was called (not PIL); evidence: codex exec stdout contains `image_gen.imagegen`, does NOT contain `PIL` or `import matplotlib` |
 | `VERIFY-CODEX-002` | Sandbox mode used correctly; evidence: codex exec command log shows `-s read-only` or `-s workspace-write`, never `dangerouslyDisableSandbox` |
-| `VERIFY-CODEX-003` | Feature verification step-2 JSON parity; evidence: `jq -S .` diff of claudefast step-1 output and codex exec step-2 output is empty (byte-identical) |
 
 Each recipe must fill all VERIFY_TEMPLATE.md required fields: `recipe_id`, `prerequisites`, `command`, `expected_output`, `failure_modes`, `evidence_path`, `archive_path`, `judge_input`.

@@ -18,6 +18,8 @@ packages/benchmark/bench-*.json
 packages/benchmark/bench-*.md
 .claude/scheduled_tasks.lock
 .claude/laziness/
+# skill-creator workspaces (eval JSON, run_loop logs, snapshots — regenerated per run).
+.claude/skills/*-workspace/
 # pnpm pack build artifacts
 packages/*/*.tgz
 # reclassify command outputs (timestamped, regenerated per run)
@@ -28,15 +30,23 @@ scripts/out/claudefast-stream-json/
 scripts/out/codex-raw-chat-*/
 # CLAUDE.md compile-hook write-failure leftovers
 CLAUDE.md.tmp-*
+# Lighthouse CI run artifacts (timestamped, regenerated per run)
+apps/landing/.lighthouseci/
 # Machine-local Claude Code settings (contains absolute hook paths specific to each dev's machine).
 # Each developer runs `teamagent install-hook` after clone to generate their own.
 .claude/settings.local.json
+# Timestamped backups created by the hook installer when rewriting settings.local.json.
+# Matches both the .bak-<iso-ts> form (current) and the older .bak.<unix-epoch> form.
+.claude/settings.local.json.bak*
 # Xenova / Hugging Face model caches (downloaded on first embedder run; per-package).
 packages/*/.cache/
 # Chaos QA verification scratch scripts (paired with BUGS.md, not formal tests).
 chaos-verify*.mjs
 # FASTPROBE timestamped scratch dirs (raw .result/.jsonl from claudefast probes; regenerated per run).
 .fastprobe/
+# FIXEDFLOW watcher runtime state (machine-local; processed-set + heartbeat per host).
+# See docs/FIXEDFLOW.md and scripts/fixed-flow-watcher.sh.
+.fixedflow/
 # DOGFOOD verify capture (regenerated each `bash docs/dogfood/verify-canned-answer.sh` run).
 docs/dogfood/.last-verify.out
 # DOGFOOD active-sandbox state file (written by scripts/dogfood.sh; per-machine).
@@ -70,3 +80,6 @@ docs/gstack-bin/.last-verify.out
 docs/gstack-bin/.last-judge.out
 docs/gstack-bin/.last-judge.json
 docs/gstack-bin/.last-judge-prompt.txt
+
+# Judge harness evidence dirs (timestamped, regenerated per run; paired with docs/plans/<issue>/judge.md).
+.judge/

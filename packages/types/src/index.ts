@@ -25,6 +25,7 @@ export type {
 export {
   DEFAULT_VISIBILITY,
   parseVisibilityMode,
+  sanitizeUserFacingText,
   type AttributionEvent,
   type AttributionEventKind,
   type VisibilityMode,

@@ -561,6 +561,54 @@ describe("executeInit", () => {
     expect(content).toContain("pre-check");
     expect(content).toContain("compile-skills");
   });
+
+  // ─── PR #181 fix-cycle (Worker E) — nested-init guard ──────────────────
+  //
+  // Background (PR-PLAN finding #5): running `teamagent init` from a sub-
+  // directory of an already-initialized project must REFUSE by default,
+  // to avoid creating a duplicate child `.teamagent/`. Escape hatch:
+  // `--force-nested-init` (opts.force === true).
+  it("PR #181: refuses nested init by default — fails with hint about --force-nested-init", async () => {
+    // Build an initialized parent: <parent>/.teamagent/knowledge.db + .git
+    // and sub directory <parent>/child. Call executeInit({ cwd: <parent>/child })
+    // and expect the nested-init guard to fire.
+    const parent = path.join(tmp.root, "parent");
+    const child = path.join(parent, "child");
+    nodeFs.mkdirSync(child, { recursive: true });
+    nodeFs.mkdirSync(path.join(parent, ".teamagent"), { recursive: true });
+    nodeFs.writeFileSync(path.join(parent, ".teamagent", "knowledge.db"), "stub");
+    // Project marker required by the new walk-up contract.
+    nodeFs.mkdirSync(path.join(parent, ".git"), { recursive: true });
+
+    const r = await executeInit({
+      ...commonOpts(),
+      cwd: child,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+
+    expect(r.ok).toBe(false);
+    const guard = r.steps.find((s) => s.step === "nested-init-guard");
+    expect(guard).toBeDefined();
+    expect(guard?.status).toBe("failed");
+    expect(guard?.detail).toContain("ancestor");
+    expect(guard?.detail).toContain("--force-nested-init");
+    // Critical safety: the child must NOT have a `.teamagent/` dir created
+    // (the guard short-circuits before doCreateDirs runs).
+    expect(nodeFs.existsSync(path.join(child, ".teamagent"))).toBe(false);
+
+    // Now call again with force=true — guard is bypassed and init proceeds.
+    const r2 = await executeInit({
+      ...commonOpts(),
+      cwd: child,
+      force: true,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    expect(r2.ok).toBe(true);
+    // The nested-init-guard step is NOT present when force is set.
+    expect(r2.steps.find((s) => s.step === "nested-init-guard")).toBeUndefined();
+    // Child's .teamagent/ now exists (init proceeded normally).
+    expect(nodeFs.existsSync(path.join(child, ".teamagent", "knowledge.db"))).toBe(true);
+  });
 });
 
 describe("parseInitArgs", () => {

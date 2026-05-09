@@ -81,4 +81,53 @@ describe("executeBugReport", () => {
     expect(md).not.toContain("secret-value");
     expect(md).toContain("\"hook_error\"");
   });
+
+  it("--stdout mode appends issue-new URL footer and suppresses ## Summary template", async () => {
+    const cwd = path.join(tmp, "project");
+    const homeDir = path.join(tmp, "home");
+    const teamagentHome = path.join(homeDir, ".teamagent");
+    fs.mkdirSync(path.join(cwd, ".teamagent"), { recursive: true });
+    fs.mkdirSync(teamagentHome, { recursive: true });
+
+    const result = await executeBugReport({
+      cwd,
+      homeDir,
+      stdout: true,
+      now: new Date("2026-04-29T12:34:56Z"),
+      teamagentVersion: "0.10.1-test",
+      runCommand: (cmd) => (cmd === "claude" ? "Claude Code 2.0.0" : "9.0.0"),
+    });
+
+    expect(result.outputPath).toBeUndefined();
+    const md = result.markdown;
+    expect(md).not.toContain("## Summary");
+    expect(md).toContain("https://github.com/libz-renlab-ai/TeamBrain/issues/new");
+    // Last non-blank lines should contain the issue-new URL.
+    const nonBlankLines = md.split("\n").filter((l) => l.trim().length > 0);
+    const tail = nonBlankLines.slice(-5).join("\n");
+    expect(tail).toContain("https://github.com/libz-renlab-ai/TeamBrain/issues/new");
+  });
+
+  it("--out=path mode keeps ## Summary template and omits issue-new URL footer", async () => {
+    const cwd = path.join(tmp, "project");
+    const homeDir = path.join(tmp, "home");
+    const teamagentHome = path.join(homeDir, ".teamagent");
+    fs.mkdirSync(path.join(cwd, ".teamagent"), { recursive: true });
+    fs.mkdirSync(teamagentHome, { recursive: true });
+
+    const outputPath = path.join(tmp, "report-file.md");
+    const result = await executeBugReport({
+      cwd,
+      homeDir,
+      outputPath,
+      now: new Date("2026-04-29T12:34:56Z"),
+      teamagentVersion: "0.10.1-test",
+      runCommand: (cmd) => (cmd === "claude" ? "Claude Code 2.0.0" : "9.0.0"),
+    });
+
+    expect(result.outputPath).toBe(outputPath);
+    const md = fs.readFileSync(outputPath, "utf-8");
+    expect(md).toContain("## Summary");
+    expect(md).not.toContain("https://github.com/libz-renlab-ai/TeamBrain/issues/new");
+  });
 });

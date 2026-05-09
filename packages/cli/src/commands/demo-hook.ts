@@ -150,13 +150,43 @@ export function executeDemoHook(opts: DemoHookOptions): DemoHookResult {
   return { output: out, decision: decisionFor(top) };
 }
 
-/** 解析 demo-hook 的 CLI 参数：argv[0]=tool, argv[1..]=key=value */
+/**
+ * 解析 demo-hook 的 CLI 参数：argv[0]=tool, argv[1..]=key=value
+ *
+ * 支持两种输入形式：
+ *  1. 空格分隔多 slot（canonical）：`Write file_path=test.js content='console.log(1)'`
+ *  2. 单 slot 整个 JSON：`Write '{"file_path":"test.js","content":"console.log(1)"}'`
+ *
+ * 历史注意：曾尝试支持单 slot 内 `;` / `&` 分隔多字段（例如
+ * `Write 'file_path=a;content=b'`），但 `;` 是 shell 命令分隔符、`&` 在 URL
+ * 查询串里随处可见，会把 `command=echo hi; rm -rf /` 或
+ * `url=https://x.com/?a=1&b=2` 静默切断。Demo 工具必须忠实回放用户输入，所以
+ * 那条路径已经下线（PR #183 fix）。多字段请用 JSON 形式。
+ */
 export function parseDemoHookArgs(args: string[]): DemoHookOptions | null {
   if (args.length === 0) return null;
   const toolName = args[0]!;
-  const toolInput: Record<string, unknown> = {};
+  const rest = args.slice(1);
 
-  for (const a of args.slice(1)) {
+  // Form 2: 单个 slot 且以 `{` 开头 `}` 结尾，整体当 JSON 解析为 toolInput
+  if (rest.length === 1) {
+    const only = rest[0]!.trim();
+    if (only.startsWith("{") && only.endsWith("}")) {
+      try {
+        const parsed = JSON.parse(only);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const toolInput = parsed as Record<string, unknown>;
+          return { toolName, toolInput, tool: toolName, input: toolInput };
+        }
+      } catch {
+        // JSON parse 失败时 fallthrough 到普通 key=value 解析
+      }
+    }
+  }
+
+  // Form 1: 空格分隔多 slot，每 slot 是 `key=value`。value 内的 `;` / `&` 不被切。
+  const toolInput: Record<string, unknown> = {};
+  for (const a of rest) {
     const idx = a.indexOf("=");
     if (idx < 0) continue;
     const k = a.slice(0, idx);

@@ -1,6 +1,6 @@
 ```
         __        verify/ — autonomous per-feature verification loop
-   <(o )___      （complementary to feature-verification.md 1+2+3 PR-time gate）
+   <(o )___      （complementary to feature-verification.md PR-time gate）
     ( ._> /
      `---'
 ```
@@ -24,7 +24,7 @@ backstop).
 
 ## When to use which
 
-- **PR-time one-shot verification** → use [`docs/feature-verification.md`](../feature-verification.md) 1+2+3 (claudefast hard-match codex + tmux `/export`)
+- **PR-time one-shot verification** → use [`docs/feature-verification.md`](../feature-verification.md) (claudefast JSON snapshot + tmux `/export`)
 - **Per-feature long-running verification across sessions** → start at [RUN-VERIFY-LOOP.md](RUN-VERIFY-LOOP.md)
 - **CLAUDE.md `Verify loop canned answer` trigger** → user types "how to run verify loop?" → main agent returns the canned answer that points here
 

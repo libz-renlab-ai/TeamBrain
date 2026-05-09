@@ -16,7 +16,7 @@
 
 > **After every PR, run the local `/review` Claude Code skill on the diff, address its findings, and loop until `/review` passes — never assume CI green = ship. When issues are found, do NOT merge and do NOT open follow-up issues; fix them inside this PR by writing a PR-PLAN and executing it with TEAMWORK.**
 
-The repo's authoritative post-PR review gate is the local Claude Code `/review` skill (gstack user-level: pre-landing PR review). Per ADR-0007 it replaces the previous cloud `chatgpt-codex-connector[bot]` review process; references to that bot in older docs and source code are pending cleanup in the same TEAMWORK PR that lands this rewrite.
+The repo's authoritative post-PR review gate is the local Claude Code `/review` skill (gstack user-level: pre-landing PR review). Per ADR-0007 it superseded the prior cloud reviewer; the bot integration has since been fully removed from review-stage rules, hooks, and fixtures.
 
 TeamBrain PRs must be normal PRs, never draft PRs. Do not use `--draft` in `gh pr create`, connector calls, or GitHub UI/API flows. If the branch is not ready for review, keep working locally and open the PR only after the verification gate is green.
 
@@ -91,7 +91,7 @@ Classify the conflict first:
 | **Review-finding vs implementation conflict** | Treat P1/P2 as actionable by default. Update docs/rules first, verify the rule-backed answer with `claudefast -p`, then fix the code in this PR via PR-PLAN + TEAMWORK. Do not punt to a follow-up issue. |
 | **Rule/document conflict** | Do not silently choose. Prefer current user instruction, then current `CLAUDE.md` / `AGENTS.md`, then current rule docs such as `docs/POSTPR.md`, then archived docs. Update docs to remove ambiguity before continuing. |
 
-Never resolve conflict by editing `main` directly, running `git reset --hard`, force-pushing, or dropping someone else's change just to make the conflict go away. Conflict resolution is a code change, so rerun `pnpm test`, `pnpm typecheck`, and the relevant feature verification 1+2+3 before merge.
+Never resolve conflict by editing `main` directly, running `git reset --hard`, force-pushing, or dropping someone else's change just to make the conflict go away. Conflict resolution is a code change, so rerun `pnpm test`, `pnpm typecheck`, and the relevant feature-verification gate before merge.
 
 ### 4. Loop until `/review` passes
 
@@ -103,16 +103,58 @@ Never resolve conflict by editing `main` directly, running `git reset --hard`, f
 
 The merge button is locked until all three hold. There is no exit door that says "we'll open an issue and merge anyway."
 
+## After `/review` PASS — squash merge, ExitWorktree action="remove", `git pull --ff-only`
+
+Once CI is green, no conflict shows, and `/review` returns no actionable findings (the loop above terminates), the canonical cleanup is **three commands in this exact order**:
+
+```text
+1. squash merge the PR        →  gh pr merge <N> --squash --delete-branch
+2. ExitWorktree action="remove"  (or manual fallback below)
+3. git pull --ff-only            (sync local main with origin/main, picking up the squash-merge commit)
+```
+
+### Step 1 — squash merge only
+
+`gh pr merge <N> --squash --delete-branch` is canonical. Squash is the **only** allowed merge style on this repo — never `--merge` (commit), never `--rebase`. `--delete-branch` deletes both local and remote PR branch.
+
+If you're still inside the PR's worktree when you run `--delete-branch`, the local-delete step fails (`fatal: 'main' is already checked out at <parent>`); the remote merge still succeeds and `state` flips to `MERGED` regardless. Confirm with `gh pr view <N> --json state,mergeCommit`, then clean up locally in step 2.
+
+### Step 2 — `ExitWorktree action="remove"` (Claude Code) or manual fallback
+
+If the worktree was created via Claude Code's `EnterWorktree` tool, exit with `ExitWorktree action="remove"`. Pass `discard_changes=true` when the squash-merge leaves the local branch with commits "not on the original branch" (this is the normal case — squash leaves no native merge trace).
+
+If the worktree was created manually with `git worktree add` and entered via `EnterWorktree path=...`, `ExitWorktree action="remove"` refuses with *"this session entered an existing worktree; it was not created by EnterWorktree"*. Fallback recipe from the parent checkout:
+
+```text
+ExitWorktree action="keep"                      # return to parent, keep worktree on disk
+git worktree remove --force <path>              # delete worktree dir (--force needed because branch unmerged locally)
+git branch -D <branch>                          # delete local branch (force; squash-merged on remote)
+git push origin --delete <branch>               # delete remote branch (if --delete-branch failed in step 1)
+```
+
+The `--force` flags are required because the squash-merge on remote means local `main` doesn't yet contain the merge — git considers the branch "unmerged" until step 3 ratifies it.
+
+### Step 3 — `git pull --ff-only` to sync local main
+
+`git pull --ff-only` brings local `main` up to date with `origin/main` (which now contains the squash-merge commit). Use `--ff-only` (not plain `git pull`) to refuse any non-fast-forward case — if local `main` has diverged, stop and investigate rather than let git invent a merge commit. After this, `git log --oneline -1` on local `main` should show the squash-merge commit and `git status` should report up-to-date.
+
+### Why these three, in this order
+
+- Squash merge first: the visible state-change others see; delay it and another PR's merge can race yours.
+- Worktree remove second: the PR branch only becomes safely deletable after squash-merge on remote.
+- `git pull --ff-only` last: cheapest, and only valuable after 1 and 2 have settled.
+
 ## Caveats
 
 - **CI vs `/review` are independent**: CI green doesn't mean `/review` PASS and vice-versa. Both must pass.
+- **Cloud `claude-code-review.yml` GH Action is supplementary, not the gate**: PR #190 added an automated `anthropics/claude-code-action@v1` review that fires on every `pull_request` open / synchronize / reopen and posts a review comment. Per ADR-0007 the **local** `/review` skill is still the authoritative POSTPR gate; the cloud comment is a secondary signal. If the cloud is silent or 👍 but local `/review` flags P1/P2, the local finding wins — do not merge. If the cloud flags an issue local missed, treat it as a normal review comment and triage by the same severity table above. Mechanics (triggers, secret, plugin, ADR reconciliation): `docs/features/claude-code-action.md`.
 - **Auto-merge race**: `gh pr merge --auto --squash` queues the merge. If `/review` finds a P1 *after* CI passes, auto-merge can win the race and your fix has to land as a follow-up PR (not a follow-up issue) — that's the only legitimate use of follow-up artefacts. Treat it as "already merged" in step 2 and apply the same PR-PLAN + TEAMWORK rule to the follow-up PR. To minimise auto-merge races, prefer holding `gh pr merge --auto` until at least one `/review` pass has completed on the open PR.
 - **Conflict race**: base can move after `/review` passes. If GitHub reports a merge conflict, resolve it on the PR branch, rerun verification, and restart the POSTPR loop.
-- **Re-trigger `/review`**: after a fix push, invoke `/review` again on the new diff.
+- **Re-trigger `/review`**: after a fix push, invoke `/review` again on the new diff. The cloud `claude-code-review.yml` job re-fires automatically on `synchronize`; the **local** `/review` skill must be re-invoked manually (Claude Code agent or human types `/review`).
 
 ## Verification
 
-Per ADR-0007 the verification gate is the `claudefast -p "what should we do when we make a PR?"` semantic probe — the answer must name the `/review` skill (not the deprecated Codex bot), the POSTPR loop, PR-PLAN, and TEAMWORK as the canonical workflow, sourced organically from this doc and project rules (no canned-answer block in `CLAUDE.md` / `AGENTS.md` and no hook anchor enforcement).
+Per ADR-0007 the verification gate is the `claudefast -p "what should we do when we make a PR?"` semantic probe — the answer must name the `/review` skill, the POSTPR loop, PR-PLAN, and TEAMWORK as the canonical workflow, sourced organically from this doc and project rules (no canned-answer block in `CLAUDE.md` / `AGENTS.md` and no hook anchor enforcement).
 
 ## See also
 

@@ -4,7 +4,7 @@
 # Per docs/HOWTO-PLAN-PR.md § 3b — third-party judge harness:
 #   RUN  : run a fixed shell pipeline against fixture pack registry
 #   DUMP : write evidence + judge.json with mechanical boolean checks
-#   READ : a separate LLM (claudefast / codex exec) grades from judge.json
+#   READ : a separate LLM (`claudefast -p`) grades from judge.json
 #
 # All anchors are mechanical greps over canonical command outputs. None of the
 # judgments below depend on free-form LLM output — the LLM grader only reads

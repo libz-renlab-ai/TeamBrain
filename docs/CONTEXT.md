@@ -123,16 +123,11 @@ _Avoid_: audience（仅描述谁看不描述阻止；delivery 同时承载两个
 ### Review & PR workflow（开 PR 到 merge 之间的 review 链；ADR-0007 设定 `/review` skill 为权威 gate）
 
 **POSTPR loop**:
-开 PR 到 merge approve 之间的 fix loop；终止 gate 是本地 `/review` skill，不是 cloud bot。
-_Avoid_: "Codex review loop", "post-PR Codex check"
+开 PR 到 merge approve 之间的 fix loop；终止 gate 是本地 `/review` skill。
 
 **`/review` skill**:
 gstack user-level Claude Code skill ("Pre-landing PR review")；ADR-0007 指定为 POSTPR loop 的权威终止 gate。
 _Avoid_: "review command", "PR review tool"
-
-**Codex review** (deprecated):
-被 ADR-0007 弃用的 cloud `chatgpt-codex-connector[bot]` review 流程。本 PR 已移除：`docs/POSTPR.md` 重写为 `/review` 锚点、`docs/postpr/verify-canned-answer.sh` 已删除、`CLAUDE.md` / `AGENTS.md` 的 POSTPR canned-answer block 已删除。仍待未来 TEAMWORK PR 处理：`.claude/hooks/laziness-self-report.sh` 的 POSTPR + FASTPROBE-PR-conflict 锚点（文件已 orphan 但锚点仍是源码）、源码层 `pr-cycle.ts` / `pr-review.ts` / sqlite `reviewed_at` 字段。
-_Avoid_: "Codex 👍 = ship"
 
 **Self-discipline-via-matcher**:
 TeamBrain 的偏好 enforcement primitive —— 真文档语义 + M4-B BM25+dense-RRF+soft-AND matcher + `claudefast -p` 探针验证；明确**不**等于 canned-answer regex 锚点或平台分支保护。
@@ -158,7 +153,7 @@ _Avoid_: "fix plan", "follow-up issue"
 - **Calibration subagent** 走 git-backed transport / cross-machine **无关** —— 它是 host agent 进程内的本地行为，输出落到 L1 还是 L2 由所改 rule 自身的 scope 决定
 - 每个 **Hook channel** 的 imperative shell 都走 **HookShell** 的两层 API；channel-specific 业务在 **Hook handler** 内（住 core，纯函数）；user-visible 副作用全部通过 `ctx.bus.emit` 走 **AttributionBus** + StdoutRenderer，禁止 `process.stderr.write`（per ADR-0008 + lint rule `scripts/check-bin-stderr.sh`）
 - 每条 **AttributionEvent** 携带可选 **Delivery mode** 标签描述意图；当前 **HookShell** 始终 exit 0 不读此字段，但 **Renderer** 可读它做 future 装饰；该字段是 audience+blocking 维度的 architectural future-proof（详见 ADR-0009）
-- **POSTPR loop** 终止 = **`/review` skill** PASS + CI green + 无 merge 冲突；不再以 **Codex review** 为终止 signal（ADR-0007）
+- **POSTPR loop** 终止 = **`/review` skill** PASS + CI green + 无 merge 冲突（ADR-0007）
 - **PR-PLAN** 在 **POSTPR loop** 命中 issue 时写；走 **TEAMWORK** 执行；不允许 follow-up issue 替代
 - **Self-discipline-via-matcher** 是 enforcement primitive；**Negative-space platform layer** 是它在 GitHub 层的可观察后果，不是独立机制
 - **`/review` skill** 与 **Calibration subagent** 都是 host-agent 进程内 LLM 行为；TeamBrain core 仍然 LLM-free（与 ADR-0004 一致）
@@ -171,8 +166,8 @@ _Avoid_: "fix plan", "follow-up issue"
 > **Dev:** "那 A 的 brain 和 B 的 brain 是分开的两个 brain 吗？"
 > **Domain expert:** "TeamBrain 没有 per-person brain。每人一份本地项目 KB，里面区分 **personal / team / global** 三种 scope。'A 的 brain'要么指 A 的整个本地 KB（包含 A 的 personal + 已 pull 进来的 team），要么是历史遗物（issue #82 早期措辞），不是 canonical 用法。"
 >
-> **CEO duck:** "PR 一开 Codex bot 上来评论，这就是 **POSTPR loop** 吧？"
-> **Domain expert:** "**Codex review** 是历史触发器。当前 **POSTPR loop** 的权威 reviewer 是 **`/review` skill**；Codex 已 deprecated，过渡期没拆完而已（ADR-0007）。"
+> **CEO duck:** "PR 一开就 review 然后修，这就是 **POSTPR loop** 吧？"
+> **Domain expert:** "对。当前 **POSTPR loop** 的权威 reviewer 是 **`/review` skill**（ADR-0007）。"
 >
 > **CEO duck:** "GitHub 没 required review，那纪律怎么落地？"
 > **Domain expert:** "靠 **self-discipline-via-matcher** —— 真文档 + BM25 matcher + `claudefast -p` 探针自洽。GitHub 没 gate 是 **negative-space platform layer**，是 deliberate design choice，不是 bug。"
@@ -188,6 +183,6 @@ _Avoid_: "fix plan", "follow-up issue"
 - **"AgenticCalibrator"** — 在 grilling 过程中曾被提出作为 TeamBrain 内部模块名；解决：拒绝；TeamBrain 不内嵌 LLM，agentic 判断由 host 端的 **Calibration subagent** 完成
 - **"5 handler factories" vs "2 handler factories"** — ADR-0008 + 早期 plan.md 假设 5 个 hook handler factory 要从 adapters 搬到 core；实际 inventory 只有 2 个（`pre-tool-use-sdk.ts` + `post-tool-use-sdk.ts`）。其他 hook channel（user-prompt-submit / stop / session-* / pre-compact / updater）已经直接以 `bin-*.ts` 形态在 `packages/cli/src/`，没有 `createXxxHandler(deps)` factory 模式可搬。**实际 sweep = 2 个 factory**，per commit 2 (PreToolUse) + commit 3 (PostToolUse)
 - **"audience vs delivery" / "exit 2 vs metadata"** — 候选 2 grilling (2026-05-08) 中曾考虑给 `AttributionEvent` 加 `audience: "user" | "claude" | "both"` + `blocking: bool` 两个独立字段，并让 delivery=context/block 触发 hook 退 2 让 Claude 拿 stderr 当 context；解决：单字段 `delivery: "log" | "context" | "block"` 收窄到 3 种实际有意义组合，且 α2 决议保留 ADR-0008 的 always-exit-0 保证——delivery 当前是 metadata 字段不映射退码；详见 ADR-0009
-- **"review"** — 既被用来指 **Codex review**（已弃用 cloud bot）也被用来指 **`/review` skill**（当前本地 gate）；解决：ADR-0007 之后 bare "review" 默认指 **`/review` skill**；Codex review 必须显式带 "Codex" 前缀
+- **"review"** — ADR-0007 之后 bare "review" 默认指 **`/review` skill**（本地 gate）；引用历史 cloud-reviewer 流程时请直接指 ADR-0007
 - **"纪律软 / soft discipline"** — CEO-mode summary 用语，描述 GitHub 层缺自动化；解决：这是 **negative-space platform layer**（deliberate），不是 discipline gap；CEO 文案此后须改用后者
 - **"PR-PLAN scope"** — `docs/PR-PLAN.md` 当前 scope 是 post-PR；grilling 中有用户把 issue → PR-PLAN 视为 pre-PR 流程；解决：post-PR 为 canonical；pre-PR plans 走 `docs/HOWTO-PLAN-PR.md`，未来若要扩 PR-PLAN 到 pre-PR 须独立 ADR

@@ -112,4 +112,4 @@ https://github.com/libz-renlab-ai/TeamBrain/issues/new
 
 - [DOGFOOD.md](DOGFOOD.md) — sandbox setup; many bugs are isolation-related and benefit from a probe attachment.
 - [FASTPROBE.md](FASTPROBE.md) — how to capture stream-json evidence for the bug report.
-- [feature-verification.md](feature-verification.md) — 1+2+3 verification gate (claudefast / codex / tmux export).
+- [feature-verification.md](feature-verification.md) — verification gate (claudefast JSON snapshot + tmux export).

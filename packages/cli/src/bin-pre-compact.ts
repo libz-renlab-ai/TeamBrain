@@ -41,7 +41,7 @@ import { appendFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runFullRescanPipeline, type StopHookInput } from "./bin-stop.js";
-import { runHook } from "./hook-shell/index.js";
+import { runAdvancedHook } from "./hook-shell/index.js";
 
 function isValidStopHookInput(v: unknown): v is StopHookInput {
   return (
@@ -64,9 +64,26 @@ async function main(): Promise<void> {
 
   // Foreground branch: HookShell owns stdin parse + cwd resolution + exit-0
   // guarantee; the handler only schedules the detached child and returns.
-  await runHook<StopHookInput, undefined>({
+  //
+  // `escape.manualResources: true` (performance-specialist finding on PR #152
+  // /review, same root cause as Codex P1 for bin-updater): default `runHook`
+  // eagerly opens DualLayerStore + SqliteEventLog before the handler runs,
+  // and DualLayerStore's ctor creates `<cwd>/.teamagent/knowledge.db` even
+  // when no rows are written. Foreground PreCompact only spawns a detached
+  // child and returns — never touches `ctx.store` / `ctx.eventLog` — so
+  // opening sqlite is wasted work AND has the side effect of marking a
+  // project as "already initialized" which would flip the next SessionStart
+  // auto-init detection. With manualResources the shell never opens sqlite
+  // unless the handler explicitly calls the lazy getters, which we don't.
+  await runAdvancedHook<StopHookInput, undefined, {
+    channel: "PreCompact";
+    parseInput: (raw: unknown) => StopHookInput | null;
+    escape: { manualResources: true };
+    handler: (ctx: { input: StopHookInput; cwd: string }) => undefined;
+  }>({
     channel: "PreCompact",
     parseInput: (raw) => (isValidStopHookInput(raw) ? raw : null),
+    escape: { manualResources: true },
     handler: (ctx) => {
       const selfPath = process.argv[1]!;
       const child = spawn(

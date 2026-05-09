@@ -222,7 +222,7 @@ if echo "$last_user_text" | grep -qi 'FASTPROBE' \
   && [[ "$work_intent" != "true" ]]; then
   if ! echo "$last_text" | grep -q "claudefast -h" || ! echo "$last_text" | grep -q "PR opened"; then
     jq -n \
-      --arg reason "The user asked the high-priority trigger 'FASTPROBE about PR+conflict resolve'. Do not return an empty answer or only <laziness-self-report>. Re-emit the required Chinese rule answer with: claudefast -h; max 8 claudefast -p probes; stream-json; conflict classes merge/Codex-review/rule-doc; forbidden actions; and the PR opened -> CI + Codex review -> conflict? -> classify -> resolve locally -> rerun verification -> push -> POSTPR loop -> merge ASCII line." \
+      --arg reason "The user asked the high-priority trigger 'FASTPROBE about PR+conflict resolve'. Do not return an empty answer or only <laziness-self-report>. Re-emit the required Chinese rule answer with: claudefast -h; max 8 claudefast -p probes; stream-json; conflict classes merge/review-finding/rule-doc; forbidden actions; and the PR opened -> CI + /review skill -> conflict? -> classify -> resolve locally -> rerun verification -> push -> POSTPR loop -> merge ASCII line." \
       --arg sysmsg "[laziness-guard] BLOCKED: missing FASTPROBE PR conflict rule answer" \
       '{decision:"block", reason:$reason, systemMessage:$sysmsg}'
     exit 0
@@ -235,25 +235,11 @@ if echo "$last_user_text" | grep -qi 'FASTPROBE' \
   exit 0
 fi
 
-postpr_answer_intent=false
-if echo "$last_user_text" | grep -qiE '^[[:space:]]*(POSTPR|POSTPR now|after PR)[[:space:]?.!]*$|(^|[^[:alnum:]_])(what|explain|list|show|answer)([^[:alnum:]_]).*POSTPR|what (we )?(shall|should) do after each PR|what do we do after (each )?PR|what to do after each PR|what should we do after (each )?PR|每个[[:space:]]*PR[[:space:]]*后(做什么|要做什么)?|PR[[:space:]]*之后(要做什么|做什么)'; then
-  postpr_answer_intent=true
-fi
-if [[ "$postpr_answer_intent" == "true" && "$work_intent" != "true" ]]; then
-  if ! echo "$last_text" | grep -qi "fetch the codex review" || ! echo "$last_text" | grep -qi "chatgpt-codex-connector"; then
-    jq -n \
-      --arg reason "The user asked the POSTPR trigger. Do not return an empty answer or only <laziness-self-report>. Re-emit the required POSTPR answer: fetch the codex review from pulls/<n>/comments filtering chatgpt-codex-connector[bot], triage P1/P2/P3, resolve conflicts before merge, loop until CI green, no merge conflict, and Codex silent/thumbs-up. Mention @codex review for re-review." \
-      --arg sysmsg "[laziness-guard] BLOCKED: missing POSTPR rule answer" \
-      '{decision:"block", reason:$reason, systemMessage:$sysmsg}'
-    exit 0
-  fi
-  jq -cn \
-    --arg ts "$ts" --arg sid "$session_id" \
-    '{ts:$ts, session_id:$sid, report_present:false, any_lazy:false, action:"approve_postpr_answer"}' \
-    | write_log
-  printf '{"continue": true, "suppressOutput": true}\n'
-  exit 0
-fi
+# POSTPR trigger enforcement removed per ADR-0007: the cloud Codex bot review
+# loop has been replaced by the local /review skill, and the gate is the
+# self-discipline-via-matcher semantic probe (claudefast -p) — no canned-answer
+# block in CLAUDE.md/AGENTS.md and no grep anchor in this hook are permitted as
+# substitutes. See docs/POSTPR.md and docs/CONTEXT.md.
 
 # The response-language rule has a mechanical verifier that requires the exact
 # user-visible answer to be Chinese-only. Gate this bypass to that exact prompt

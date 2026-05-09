@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞 (Security Advisory)
+    url: https://github.com/libz-renlab-ai/TeamBrain/security/advisories/new
+    about: 安全问题请走 Security Advisory 私下提交，不要走 issue。
+  - name: 阅读 FIXEDFLOW 工作流
+    url: https://github.com/libz-renlab-ai/TeamBrain/blob/main/docs/FIXEDFLOW.md
+    about: 提交 issue 前请阅读 FIXEDFLOW 5 步铁律——非此模板的 issue 会被自动 close。

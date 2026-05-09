@@ -160,6 +160,16 @@ import {
   renderPackList,
   renderPackRemove,
 } from "./commands/pack.js";
+import {
+  executeDigitalTwin,
+  parseDigitalTwinArgs,
+  DigitalTwinArgError,
+} from "./commands/digital-twin.js";
+import {
+  executeRecord,
+  parseRecordArgs,
+  RecordArgError,
+} from "./commands/record.js";
 
 function findPackageVersion(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
@@ -347,6 +357,18 @@ async function main(): Promise<void> {
       process.stdout.write(executeStats(statsOpts));
       return;
     }
+    case "try": {
+      const { executeTry } = await import("./commands/try.js");
+      // Help mode
+      if (rest.includes("--help") || rest.includes("-h")) {
+        const r = await executeTry({ help: true });
+        process.stdout.write(r.output);
+        process.exit(r.exitCode);
+      }
+      const r = await executeTry({});
+      process.stdout.write(r.output);
+      process.exit(r.exitCode);
+    }
     case "demo": {
       // Legacy subcommand: teamagent demo hook <tool> <key=value>...
       const sub = rest[0];
@@ -446,22 +468,30 @@ async function main(): Promise<void> {
         process.stdout.write(
           "Usage: teamagent init [--dry-run] [--skip-import] [--skip-hook] [--install-plugins]\n" +
           "                      [--target=claude|codex|both] [--pack <all|name1,name2>]\n" +
+          "                      [--no-user-level-hook] [--force-nested-init]\n" +
           "\n" +
           "Options:\n" +
-          "  --dry-run            Preview what init would do without making changes\n" +
-          "  --skip-import        Skip LLM-based rule import step\n" +
-          "  --skip-hook          Skip hook registration\n" +
-          "  --skip-warmup        Skip embedding model warmup\n" +
-          "  --install-plugins    Also install team plugins (superpowers/caveman/sales)\n" +
-          "  --target=TARGET      claude (default), codex, or both\n" +
-          "  --pack=NAMES         Install stack packs without showing the agent prompt.\n" +
-          "                       NAMES may be 'all' or a comma-separated list (e.g. frontend-js,ops-safety).\n" +
+          "  --dry-run              Preview what init would do without making changes\n" +
+          "  --skip-import          Skip LLM-based rule import step\n" +
+          "  --skip-hook            Skip hook registration\n" +
+          "  --skip-warmup          Skip embedding model warmup\n" +
+          "  --install-plugins      Also install team plugins (superpowers/caveman/sales)\n" +
+          "  --target=TARGET        claude (default), codex, or both\n" +
+          "  --pack=NAMES           Install stack packs without showing the agent prompt.\n" +
+          "                         NAMES may be 'all' or a comma-separated list (e.g. frontend-js,ops-safety).\n" +
+          "  --no-user-level-hook   Issue #161 escape hatch: do NOT register hooks in\n" +
+          "                         ~/.claude/settings.json. Default behaviour registers\n" +
+          "                         user-level hooks so cc launched from sub-directories\n" +
+          "                         still triggers TeamAgent (project DB resolved via walk-up).\n" +
+          "  --force-nested-init    Issue #161 escape hatch: allow `init` to create a\n" +
+          "                         child .teamagent/ even when an ancestor already has\n" +
+          "                         one. Default refuses to avoid duplicate state.\n" +
           "\n" +
           "Scaffolds TeamAgent config in the current project:\n" +
           "  - Creates .teamagent/ directory and initializes knowledge DB\n" +
           "  - Injects meta-principles into global store\n" +
           "  - Imports rules from CLAUDE.md / AGENTS.md / .cursorrules\n" +
-          "  - Registers Claude Code hook (PreToolUse)\n" +
+          "  - Registers Claude Code hook (PreToolUse) at project AND user level\n" +
           "  - Exports compiled Skills\n" +
           "\n" +
           "Run teamagent doctor after init to verify the installation.\n",
@@ -723,6 +753,63 @@ async function main(): Promise<void> {
         process.stdout.write(renderPackRemove(result));
         return;
       }
+      return;
+    }
+    case "digital-twin": {
+      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage:\n" +
+            "  teamagent digital-twin login <token>     Save the bearer token to ~/.teamagent/digital-twin.json\n" +
+            "  teamagent digital-twin logout            Clear uploader.token\n" +
+            "  teamagent digital-twin status            Show config + queue + daemon status\n" +
+            "  teamagent digital-twin pause             Disable uploader (uploader.enabled=false)\n" +
+            "  teamagent digital-twin resume            Enable uploader (uploader.enabled=true)\n" +
+            "  teamagent digital-twin inject-mock       Write a synthetic transcript and tap it (end-to-end smoke test)\n" +
+            "         [--cwd <path>] [--session-id <id>]\n" +
+            "\n" +
+            "Manages the TeamBrain Digital Twin sidecar configuration in ~/.teamagent/.\n",
+        );
+        return;
+      }
+      let parsed;
+      try {
+        parsed = parseDigitalTwinArgs(rest);
+      } catch (err) {
+        if (err instanceof DigitalTwinArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
+      const result = await executeDigitalTwin(parsed);
+      if (result.exitCode !== 0) process.exit(result.exitCode);
+      return;
+    }
+    case "record": {
+      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage:\n" +
+            "  teamagent record start [--id <id>] [--label <l>]   Spawn ffmpeg detached, write pid sidecar to queue/recording_temp/\n" +
+            "  teamagent record stop  [--id <id>]                 SIGTERM ffmpeg, finalize ogg + metadata to queue/pending/\n" +
+            "  teamagent record import <file> [--label <l>]       Transcode to Opus/OGG and drop into queue/pending/\n" +
+            "\n" +
+            "Records local work audio to ~/.teamagent/digital-twin/queue/ via ffmpeg.\n" +
+            "Requires ffmpeg on PATH; install hint printed on failure.\n",
+        );
+        return;
+      }
+      let parsed;
+      try {
+        parsed = parseRecordArgs(rest);
+      } catch (err) {
+        if (err instanceof RecordArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
+      const result = await executeRecord(parsed);
+      if (result.exitCode !== 0) process.exit(result.exitCode);
       return;
     }
     case "compile": {
@@ -1075,6 +1162,7 @@ async function main(): Promise<void> {
           "teamagent — TeamAgent CLI",
           "",
           "用法:",
+          "  teamagent try                    30 秒一键体验：依次播放 5 个经典 hook 拦截场景（首次安装推荐入口）",
           "  teamagent skeleton-demo          M0 Walking Skeleton 演示",
           "  teamagent m5-infect [--project-root=<path>] [--author=<name>]",
           "                                   [M5-A] 把 TeamAgent 病毒式契约写入项目（幂等）",
@@ -1095,8 +1183,9 @@ async function main(): Promise<void> {
           "                                   非交互模式 (可选: --category=C|E|S|K --tags=a,b --level=personal|team|global --nature=objective|subjective)",
           "  teamagent stats [--stuck-in-promotion] [--stuck-days=N] [--explain=<id>]",
           "                                   展示知识库统计；--stuck-in-promotion 列出卡在 probation 超 N 天的规则",
-          "  teamagent demo hook <tool> <k=v>...",
-          "                                   离线模拟 PreToolUse hook (例: teamagent demo hook Bash 'command=npm install moment')",
+          "  teamagent demo hook <tool> <k=v>...    [advanced] 离线模拟 PreToolUse hook（多字段请用空格分隔多个 slot，或传单个 JSON：'{\"file_path\":\"a\",\"content\":\"b\"}'）",
+          "                                   例：teamagent demo hook Bash 'command=npm install moment'",
+          "                                   例：teamagent demo hook Write file_path=a.js content='console.log(1)'",
           "  teamagent install-hook           把 PreToolUse hook 注册到当前项目 .claude/settings.local.json",
           "  teamagent uninstall-hook         移除 PreToolUse hook 注册",
           "  teamagent install-user-hook      把 SessionStart hook 注册到 ~/.claude/settings.json",
@@ -1115,7 +1204,11 @@ async function main(): Promise<void> {
           "                                   Codex 快捷安装：导出 Skills，并创建 .codex/skills 软链接",
           "  teamagent doctor [--fix] [--json]",
           "                                   诊断安装环境（Node版本/Claude Code/sqlite-vec/Hook/CLAUDE.md）",
-          "                                   --fix: 自动修复能自动修的问题",
+          "                                   --fix: 自动修复以下类型的问题（先备份到 ~/.teamagent/backups/）：",
+          "                                          - 旧版 TEAMAGENT:START 生成块（剥离）",
+          "                                          - hook 注册路径过期（更新指向当前安装）",
+          "                                          - skill 文件残留（清理）",
+          "                                          配 --dry-run 预览要改什么",
           "                                   --json: 输出机器可读 JSON",
           "  teamagent install-plugins [--dry-run] [--only=a,b] [--scope=user|project|local]",
           "                                   注册团队标配 plugins（superpowers/sales/playground）",
@@ -1175,6 +1268,10 @@ async function main(): Promise<void> {
           "                                   列出已安装 / 可用的 stack packs（ADR 0002 — agent 决定装哪些）",
           "  teamagent pack add <names>       例 pack add frontend-js,ops-safety；从 seed/packs/<name>.{jsonl,meta.json} 读取并注入用户全局 store",
           "  teamagent pack remove <names>    按 tag pack:<name> 过滤删除全局 store 中对应规则",
+          "  teamagent digital-twin <login|logout|status|pause|resume|inject-mock>",
+          "                                   管理 TeamBrain Digital Twin sidecar 配置（~/.teamagent/digital-twin.json）；inject-mock 走端到端 smoke",
+          "  teamagent record <start|stop|import>",
+          "                                   本地工作录音子命令（ffmpeg → Opus/OGG → queue/pending/）",
           "  teamagent ingest --from-insights <path> | --from-audit | --from-pr <n>",
           "                   | --from-git [--since=30d] | --from-ci [--since=30d] | --from-candidates <path>",
           "                                   多源摄入：Claude /insights / npm audit / PR review / git hotspot / CI failure",

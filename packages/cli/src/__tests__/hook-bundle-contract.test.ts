@@ -29,6 +29,98 @@ const REQUIRED_NO_EXTERNAL = [
   "js-tiktoken",
 ];
 
+/**
+ * Source-level invariant for the regression fixed 2026-05-09: the staged
+ * ~/.teamagent/hooks/bin-session-start.cjs (built by packages/teamagent/tsup.config.ts
+ * with web-tree-sitter listed in NATIVE_EXTERNAL) crashed at load time with
+ * MODULE_NOT_FOUND because ast-context.ts had a top-level static value import of
+ * web-tree-sitter, which esbuild left as a top-level `var X = require(...)` in the
+ * bundle. SessionStart never invokes the matcher; the require fired anyway.
+ *
+ * Lock the fix at the source: the only mention of web-tree-sitter in
+ * ast-context.ts may be `import type` (erased at compile time). Runtime access
+ * must go through `await import(...)` inside the lazy initAstMatcher path, where
+ * a try/catch can degrade to "no AST parser → don't filter" when the module is
+ * not resolvable from a staged bundle location.
+ */
+const AST_CONTEXT = path.resolve(
+  HERE, "..", "..", "..", "core", "src", "matcher", "legacy", "ast-context.ts",
+);
+
+describe("packages/core ast-context source contract (web-tree-sitter must be lazy)", () => {
+  it("uses only `import type` for every static import of web-tree-sitter", () => {
+    const rawSrc = fs.readFileSync(AST_CONTEXT, "utf-8");
+    const rel = path.relative(process.cwd(), AST_CONTEXT);
+
+    // Strip comments before scanning — otherwise documentation that mentions
+    // the buggy pattern (e.g. "old code: `import { Parser } from \"web-tree-sitter\"`")
+    // would be mistaken for a real static value import. We only care about
+    // executable code.
+    const src = rawSrc
+      .replace(/\/\/[^\n]*/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+
+    // Walk every `from "web-tree-sitter"` occurrence that belongs to a static
+    // import (i.e. NOT a dynamic `import("web-tree-sitter")` expression). For
+    // each, find the nearest preceding `import` keyword and verify the slice
+    // between them starts with `type` — that's the only erased-at-compile-time
+    // shape, the one that does not leak as a runtime `require(...)`.
+    const fromRe = /from\s+["']web-tree-sitter["']/g;
+    const offenders: string[] = [];
+    let staticImportCount = 0;
+    let m: RegExpExecArray | null;
+    while ((m = fromRe.exec(src)) !== null) {
+      const fromIdx = m.index;
+      const before = src.slice(0, fromIdx);
+      // Skip dynamic-import sites: a dynamic import looks like
+      // `import("web-tree-sitter")` and has no preceding `import` keyword
+      // followed by named bindings on this same import statement.
+      const lastImportIdx = before.lastIndexOf("import");
+      if (lastImportIdx < 0) continue;
+      // Reject dynamic-import expressions: `import(` immediately at the
+      // matched index means a `from` token shouldn't appear, but be defensive.
+      const afterImport = before.slice(lastImportIdx + "import".length);
+      // If the segment between the `import` keyword and the `from` contains a
+      // closing `)` from a dynamic import, treat as not a static import.
+      if (/^\s*\(/.test(afterImport)) continue;
+      staticImportCount++;
+      const between = afterImport.replace(/^\s+/, "");
+      if (!/^type\b/.test(between)) {
+        offenders.push(`import${afterImport}from "web-tree-sitter"`);
+      }
+    }
+
+    expect(
+      staticImportCount,
+      `${rel} should have at least one \`import type ... from "web-tree-sitter"\` to keep ` +
+        `the Parser/Language types available at compile time`,
+    ).toBeGreaterThanOrEqual(1);
+
+    expect(
+      offenders,
+      `${rel} contains static value import(s) of web-tree-sitter:\n` +
+        offenders.map((o) => `  - ${o.slice(0, 120)}…`).join("\n") +
+        `\n\nMust use \`import type ... from "web-tree-sitter"\` and load the runtime via ` +
+        `\`await import("web-tree-sitter")\` inside initAstMatcher(). A top-level static value ` +
+        `import leaks as a top-level \`require("web-tree-sitter")\` in the published hook bundle, ` +
+        `breaking SessionStart on machines where the staged bin lives outside node_modules ` +
+        `(regression 2026-05-09).`,
+    ).toEqual([]);
+  });
+
+  it("has at least one dynamic import of web-tree-sitter", () => {
+    const src = fs.readFileSync(AST_CONTEXT, "utf-8");
+    // Allow both `await import("web-tree-sitter")` and `import("web-tree-sitter")`.
+    const dynImport = /\bimport\s*\(\s*["']web-tree-sitter["']\s*\)/;
+    expect(
+      dynImport.test(src),
+      `${path.relative(process.cwd(), AST_CONTEXT)} must load web-tree-sitter via dynamic import ` +
+        `(\`await import("web-tree-sitter")\`) inside initAstMatcher() — pure type imports alone ` +
+        `would mean no runtime path to load the parser at all.`,
+    ).toBe(true);
+  });
+});
+
 describe("packages/cli hook bundle config", () => {
   it("declares every pure-JS hook dependency in noExternal", () => {
     const source = fs.readFileSync(HOOK_CONFIG, "utf-8");
@@ -78,6 +170,71 @@ describe("packages/cli hook bundle config", () => {
           expect(
             re.test(text),
             `dist/${bin} contains external require("${dep}") — should be inlined per noExternal config (issue #131)`,
+          ).toBe(false);
+        }
+      }
+    },
+  );
+
+  /**
+   * Native externals (web-tree-sitter etc) are intentionally kept external in
+   * packages/teamagent/tsup.config.ts (NATIVE_EXTERNAL) — we cannot inline a
+   * WASM-loading runtime safely. But that means any `import` of one of those
+   * modules at TS source top-level is still going to leak as a top-level
+   * `var X = require("…")` in the staged hook bundle, and the staged bin
+   * lives at ~/.teamagent/hooks/ outside any node_modules tree → MODULE_NOT_FOUND
+   * on first SessionStart load (regression observed 2026-05-09).
+   *
+   * Contract: any native external must be lazy-required (via dynamic import,
+   * which esbuild lowers to `Promise.resolve().then(() => require("…"))`),
+   * so the hook's startup path never fires the require unless the consumer
+   * actually invokes the matcher. This test pins that invariant for
+   * web-tree-sitter — the one that has bitten us — and is the right place
+   * to extend whenever a new native external joins NATIVE_EXTERNAL.
+   */
+  it.skipIf(!fs.existsSync(path.resolve(HERE, "..", "..", "dist", "bin-session-start.cjs")))(
+    "built bin-session-start.cjs has no TOP-LEVEL require() for native externals (must be lazy)",
+    () => {
+      const distDir = path.resolve(HERE, "..", "..", "dist");
+      const bins = fs
+        .readdirSync(distDir)
+        .filter((f) => f.startsWith("bin-") && f.endsWith(".cjs"));
+      expect(bins.length).toBeGreaterThan(0);
+
+      // Module names that must NEVER appear as a top-level eager
+      // `var <ident> = require("<name>")` line in any hook bundle. The
+      // tree-sitter language packs share `web-tree-sitter`'s WASM-load
+      // pattern (only referenced via `require.resolve(...wasm)` strings
+      // in ast-context.ts), so they're zero-impact additions today and
+      // cheap insurance against a future static import.
+      // Add to this list when a new native external joins NATIVE_EXTERNAL
+      // and could plausibly be statically imported from a hot bundle path.
+      const LAZY_REQUIRED_NATIVES = [
+        "web-tree-sitter",
+        "tree-sitter-typescript",
+        "tree-sitter-python",
+      ];
+
+      for (const bin of bins) {
+        const text = fs.readFileSync(path.join(distDir, bin), "utf-8");
+        for (const dep of LAZY_REQUIRED_NATIVES) {
+          // Top-level eager form esbuild emits for static `import x from "dep"`
+          // when "dep" is in `external`: a `var <ident> = require("dep")` at
+          // the start of a line (multiline mode `m`). The dynamic-import
+          // shape — `Promise.resolve().then(() => __toESM(require("dep")))` —
+          // is fine because the require fires only when the .then callback
+          // runs, i.e. when the consumer actually invokes the matcher.
+          const escaped = dep.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&");
+          const topLevel = new RegExp(
+            `^var\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*=\\s*require\\(["']${escaped}["']\\)`,
+            "m",
+          );
+          expect(
+            topLevel.test(text),
+            `dist/${bin} contains top-level require("${dep}") — must be lazy via dynamic import to keep ` +
+              `~/.teamagent/hooks/${bin} loadable outside node_modules. Convert the offending ` +
+              `static import in packages/core/src/matcher/legacy/ast-context.ts (or its caller) to ` +
+              `\`await import("${dep}")\` inside the function that actually needs it.`,
           ).toBe(false);
         }
       }

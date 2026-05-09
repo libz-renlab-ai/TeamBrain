@@ -1,0 +1,49 @@
+commit 9bad00ea3281ecf8023fba9b270d651a299e6b48
+Author: LiuShiyuMath <liusy@nb-ai.com>
+Date:   Sat May 9 01:34:10 2026 +0800
+
+    docs(m6): rewire CLI help + sync release README (issue 174 #1, #7)
+    
+    Three help/onboarding-text changes:
+    
+    1. teamagent try is now the headline 30-sec entry in --help and README
+       (per P1 probe CHOICE: A). teamagent demo hook is demoted to
+       [advanced] with a help line that documents the new multi-field
+       syntax (issue 174 #4): space, ;, & or JSON form.
+    
+    2. doctor --fix help rewritten from the circular line
+       "自动修复能自动修的问题" to a 5-line concrete enumeration:
+       - 旧版 TEAMAGENT:START 生成块（剥离）
+       - hook 注册路径过期（更新指向当前安装）
+       - skill 文件残留（清理）
+       plus a mention of the ~/.teamagent/backups/ safety net and
+       --dry-run preview.
+    
+    3. Release branch README sync: .github/workflows/release-branch.yml
+       now copies README.md into /tmp/release-stage so visiting
+       github.com/libz-renlab-ai/TeamBrain/tree/release no longer 404s
+       on the readme card. Existing copy lines (dist/, package.json,
+       postinstall.mjs, install.sh, release-meta.json) unchanged.
+    
+    README.md L57 updated to recommend `teamagent try` (replacing the
+    older `teamagent demo` headline) consistent with the --help reorder.
+    
+    Project-gate 1+2+3 hard-match in judge.md targets the new
+    `teamagent try --help` and `teamagent demo hook --help` surfaces.
+    
+    Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+diff --git a/.github/workflows/release-branch.yml b/.github/workflows/release-branch.yml
+index 0f10915..c9c57ad 100644
+--- a/.github/workflows/release-branch.yml
++++ b/.github/workflows/release-branch.yml
+@@ -34,6 +34,9 @@ jobs:
+           # https://raw.githubusercontent.com/<owner>/<repo>/release/install.sh
+           cp release/install.sh /tmp/release-stage/install.sh
+           chmod 0755 /tmp/release-stage/install.sh
++          # Stage README.md at branch root so users landing on the release branch
++          # see the same install/getting-started doc as on main.
++          cp README.md /tmp/release-stage/README.md
+           printf '{"sha":"%s","built_at":"%s"}\n' \
+             "$GITHUB_SHA" "$(date -u +%FT%TZ)" \
+             > /tmp/release-stage/release-meta.json

@@ -39,6 +39,7 @@ import type { LLMClient } from "@teamagent/ports";
 import type { KnowledgeEntry } from "@teamagent/types";
 import { computeEnforcement } from "@teamagent/types";
 import { installHook } from "./install-hook.js";
+import { findTeamagentRoot } from "../lib/walk-up.js";
 
 export interface InitOptions {
   cwd?: string;
@@ -53,6 +54,20 @@ export interface InitOptions {
   skipImport?: boolean;
   /** 跳过 hook 安装（测试环境下 dist bundle 可能不存在）。 */
   skipHook?: boolean;
+  /**
+   * Issue #161 — Layer 1 viral install. When `true` (default), `installHook`
+   * also writes the TeamAgent hook entries to `~/.claude/settings.json` so
+   * Claude Code launched from any cwd (including sub-directories) registers
+   * the project's hooks. CLI escape hatch: `--no-user-level-hook`.
+   */
+  userLevelHook?: boolean;
+  /**
+   * Issue #161 follow-up: skip the nested-init guard. Default false. Use only
+   * when you really do want to create a child .teamagent/ inside an already-
+   * initialized parent (e.g. testing, monorepo subproject with intentional
+   * isolation).
+   */
+  force?: boolean;
   /** 跳过打包 seed 注入（测试环境隔离 dev 产物；正常安装应保持 false）。 */
   skipSeed?: boolean;
   /** 跳过向量模型预热（测试 / 离线环境；正常安装应保持 false）。 */
@@ -162,6 +177,27 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
   const now = opts.now ?? (() => new Date());
   const steps: InitStepResult[] = [];
 
+  // Issue #161 follow-up (PR #181 /review finding #5):
+  // If an ancestor directory already has a teamagent project (.teamagent/knowledge.db
+  // + project marker), refuse to create a duplicate child .teamagent/. The user
+  // almost certainly meant to operate on the existing parent project.
+  //
+  // Escape hatch: --force-nested-init (opts.force === true).
+  if (!opts.force) {
+    const ancestor = findTeamagentRoot(paths.cwd, { homeDir: paths.home });
+    if (ancestor !== null && ancestor !== paths.cwd) {
+      const failedStep: InitStepResult = {
+        step: "nested-init-guard",
+        status: "failed",
+        detail:
+          `detected ancestor TeamAgent project at ${ancestor}; refusing to ` +
+          `create duplicate .teamagent/ in ${paths.cwd} — cd to the project root ` +
+          `or use --force-nested-init to override.`,
+      };
+      return finalize(false, dryRun, [failedStep], emptySummary());
+    }
+  }
+
   // ---------- Phase A: Pre-check ----------
   const preCheck = runPreChecks(paths, target);
   steps.push(preCheck);
@@ -189,7 +225,9 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
   steps.push(...importStep.steps);
 
   if (targetIncludesClaude(target) && !opts.skipHook) {
-    steps.push(doInstallHook(paths.cwd, opts.hookEntry, dryRun));
+    steps.push(
+      doInstallHook(paths.cwd, opts.hookEntry, dryRun, opts.userLevelHook ?? true),
+    );
   } else if (targetIncludesCodex(target) && !targetIncludesClaude(target)) {
     steps.push({
       step: "install-hook",
@@ -397,23 +435,34 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
       }
     }
   } else if (!dryRun) {
-    const installedNames = collectInstalledPackNames(
-      paths.userGlobalDbPath,
-      available,
-    );
-    packPrompt = renderPackPromptBody({
-      observed,
-      available,
-      installed: installedNames,
-    });
-    steps.push(
-      okStep(
-        "pack-prompt",
-        available.length > 0
-          ? `已生成 v1 markdown prompt（${available.length} 个可用 pack）`
-          : "已生成 v1 markdown prompt（无 pack 可用）",
-      ),
-    );
+    if (available.length === 0) {
+      // No stack packs available — skip the prompt block entirely (issue 174 #5).
+      // The self-contradicting "已生成 v1 prompt（无 pack 可用）" + 30-line block
+      // confused new users; emit a single notice instead.
+      packPrompt = "";
+      steps.push(
+        okStep(
+          "pack-prompt",
+          "ℹ️  暂无 stack packs 可用（teamagent pack list 查看）",
+        ),
+      );
+    } else {
+      const installedNames = collectInstalledPackNames(
+        paths.userGlobalDbPath,
+        available,
+      );
+      packPrompt = renderPackPromptBody({
+        observed,
+        available,
+        installed: installedNames,
+      });
+      steps.push(
+        okStep(
+          "pack-prompt",
+          `已生成 v1 markdown prompt（${available.length} 个可用 pack）`,
+        ),
+      );
+    }
   } else {
     steps.push(
       okStep(
@@ -559,6 +608,24 @@ function doCreateDirs(
   }
   try {
     for (const d of toCreate) fs.mkdirSync(d, { recursive: true });
+    // Issue #161 follow-up (PR #181 round-2 finding #9): write a TeamAgent-
+    // managed `.teamagent/.project-root` marker so docs-only projects (no
+    // .git, no package.json) are still discoverable by `findTeamagentRoot`
+    // when Claude Code is launched from a sub-directory. Idempotent —
+    // best-effort, a write failure must NOT abort init.
+    try {
+      const marker = path.join(paths.cwd, ".teamagent", ".project-root");
+      if (!fs.existsSync(marker)) {
+        fs.writeFileSync(
+          marker,
+          `# TeamAgent project marker — created by \`teamagent init\` on ${new Date().toISOString()}\n` +
+            `# This file makes the project discoverable by findTeamagentRoot from sub-directories.\n`,
+          "utf-8",
+        );
+      }
+    } catch {
+      // best-effort; the rest of init proceeds even if the marker fails to write
+    }
     return okStep("create-dirs", `已确保目录存在: ${toCreate.length} 个`);
   } catch (err) {
     return failStep("create-dirs", String(err).slice(0, 200));
@@ -946,17 +1013,27 @@ function doInstallHook(
   cwd: string,
   hookEntry: string | undefined,
   dryRun: boolean,
+  userLevel: boolean,
 ): InitStepResult {
   if (dryRun) {
-    return okStep(
-      "install-hook",
-      `(dry-run) 会写入 ${path.join(cwd, ".claude", "settings.local.json")}`,
-    );
+    const dest = userLevel
+      ? `${path.join(cwd, ".claude", "settings.local.json")} + ~/.claude/settings.json`
+      : path.join(cwd, ".claude", "settings.local.json");
+    return okStep("install-hook", `(dry-run) 会写入 ${dest}`);
   }
   try {
-    const r = installHook({ cwd, ...(hookEntry ? { hookEntry } : {}) });
+    const r = installHook({
+      cwd,
+      ...(hookEntry ? { hookEntry } : {}),
+      userLevel,
+    });
     const parts: string[] = [];
     parts.push(r.alreadyInstalled ? `已安装 (无变化): ${r.settingsPath}` : `已注册: ${r.settingsPath}`);
+    if (userLevel) {
+      // Issue #161 — viral install path also writes ~/.claude/settings.json so
+      // Claude Code launched from sub-directories still picks up project hooks.
+      parts.push("已写入用户级 ~/.claude/settings.json (Issue #161 viral install)");
+    }
     if (r.statusLineSkipped) {
       parts.push("⚠️  statusLine bundle 缺失，未注册");
     } else if (r.statusLineMergedScope) {
@@ -1188,6 +1265,8 @@ export function parseInitArgs(argv: string[]): InitOptions {
     if (a === "--dry-run") opts.dryRun = true;
     else if (a === "--skip-import") opts.skipImport = true;
     else if (a === "--skip-hook") opts.skipHook = true;
+    else if (a === "--no-user-level-hook") opts.userLevelHook = false;
+    else if (a === "--force-nested-init") opts.force = true;
     else if (a === "--skip-warmup") opts.skipWarmup = true;
     else if (a === "--install-plugins") opts.installPlugins = true;
     else if (a === "--codex") opts.target = "codex";

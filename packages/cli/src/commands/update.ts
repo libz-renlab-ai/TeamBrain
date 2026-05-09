@@ -9,6 +9,19 @@ import {
   serializeUpdateState,
   type UpdateState,
 } from "@teamagent/core";
+import type { FetchShaFailure } from "../github-api.js";
+
+/**
+ * Resolve a GitHub token for authenticated API calls.
+ * Strict priority: TEAMAGENT_GITHUB_TOKEN > GITHUB_TOKEN > GH_TOKEN > undefined.
+ * Empty string counts as unset.
+ */
+export function resolveGithubToken(): string | undefined {
+  return process.env["TEAMAGENT_GITHUB_TOKEN"]
+      || process.env["GITHUB_TOKEN"]
+      || process.env["GH_TOKEN"]
+      || undefined;
+}
 
 function home(): string {
   return process.env["TEAMAGENT_HOME"] ?? path.join(os.homedir(), ".teamagent");
@@ -35,8 +48,44 @@ export function readState(): UpdateState {
 }
 
 export function writeState(s: UpdateState): void {
-  fs.mkdirSync(home(), { recursive: true });
-  fs.writeFileSync(statePath(), serializeUpdateState(s), "utf-8");
+  // Atomic write: tmp file + rename. Guards against truncation when checkCmd
+  // (foreground) and bin-updater (background) write concurrently — without this,
+  // a Windows reader can observe a half-written JSON file and parseUpdateState
+  // falls back to defaults, losing last_installed_sha and triggering a spurious
+  // reinstall. POSIX rename is atomic; Windows rename over an existing file
+  // (since Node 12) uses MoveFileEx with MOVEFILE_REPLACE_EXISTING.
+  const dir = home();
+  fs.mkdirSync(dir, { recursive: true });
+  atomicWriteFile(statePath(), serializeUpdateState(s));
+}
+
+/**
+ * Write `body` to `target` atomically: write to a per-pid+random tmp path,
+ * then rename. The randomness defeats PID-reuse collisions when two writers
+ * happen to share a PID. On Windows, rename can transiently fail with
+ * EPERM/EBUSY when antivirus scans the tmp file — retry up to 3 times with
+ * a 50ms sleep before giving up.
+ */
+function atomicWriteFile(target: string, body: string): void {
+  const tmp = `${target}.tmp.${process.pid}.${Math.random().toString(36).slice(2, 10)}`;
+  fs.writeFileSync(tmp, body, "utf-8");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      fs.renameSync(tmp, target);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if ((code === "EPERM" || code === "EBUSY") && attempt < 2) {
+        // Busy-wait briefly; cross-platform sleepSync without async.
+        const until = Date.now() + 50;
+        while (Date.now() < until) { /* spin */ }
+        continue;
+      }
+      // Best-effort cleanup of the tmp before re-throwing.
+      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+      throw e;
+    }
+  }
 }
 
 export function findUpdaterBinary(baseUrl = import.meta.url): string | null {
@@ -104,13 +153,54 @@ function logsCmd(): UpdateRunResult {
   return { ok: true, output: tail + "\n" };
 }
 
+function formatCheckFailure(result: FetchShaFailure): string {
+  return result.message;
+}
+
 async function checkCmd(): Promise<UpdateRunResult> {
   const { fetchRemoteSha } = await import("../github-api.js");
-  const remote = await fetchRemoteSha({ owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH });
-  const local = readState().last_installed_sha;
-  if (!remote) return { ok: false, output: "fetch failed (network/rate-limit)\n" };
-  if (remote === local) return { ok: true, output: `up-to-date (${local.slice(0, 7)})\n` };
-  return { ok: true, output: `update available: ${(local || "(none)").slice(0, 7)} -> ${remote.slice(0, 7)}\n` };
+  const s = readState();
+
+  // Honor the same exponential backoff the auto-updater respects. Without this
+  // guard, looping `teamagent update --check` (the exact entry-point that
+  // surfaced #159) bypasses backoff and re-exhausts the 60 req/h anonymous
+  // quota on every invocation.
+  if (s.next_check_after_ts > 0 && Date.now() < s.next_check_after_ts) {
+    const until = new Date(s.next_check_after_ts).toISOString();
+    return { ok: false, output: `auto-updater backoff active until ${until}; skip\n` };
+  }
+
+  const result = await fetchRemoteSha({
+    owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH,
+    token: resolveGithubToken(),
+    ifNoneMatch: s.last_branch_etag || undefined,
+    cachedSha: s.last_branch_sha || undefined,
+  });
+  if (!result.ok) {
+    // On rate-limit, persist the same backoff fields runUpdater would. Foreground
+    // and background share one window; failures from either path advance both.
+    if (result.reason === "rate_limit_anonymous" || result.reason === "rate_limit_authed") {
+      const next = s.consecutive_rate_limits + 1;
+      const delayHours = Math.min(2 ** (next - 1), 24);
+      writeState({
+        ...s,
+        consecutive_rate_limits: next,
+        next_check_after_ts: Date.now() + delayHours * 3600 * 1000,
+      });
+    }
+    return { ok: false, output: formatCheckFailure(result) + "\n" };
+  }
+  // Persist etag/sha for next conditional GET; reset rate-limit counters on success (§ 2.4)
+  writeState({
+    ...s,
+    last_branch_etag: result.etag ?? "",
+    last_branch_sha: result.sha,
+    consecutive_rate_limits: 0,
+    next_check_after_ts: 0,
+  });
+  const local = s.last_installed_sha;
+  if (result.sha === local) return { ok: true, output: `up-to-date (${local.slice(0, 7)})\n` };
+  return { ok: true, output: `update available: ${(local || "(none)").slice(0, 7)} -> ${result.sha.slice(0, 7)}\n` };
 }
 
 async function nowCmd(): Promise<UpdateRunResult> {

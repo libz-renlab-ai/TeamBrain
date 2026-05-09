@@ -8,8 +8,10 @@
 - Phase 2 设计：`docs/superpowers/specs/2026-04-15-phase2-design.md`
 - Phase 1 实现计划（已归档）：`docs/backup/phase1/specs/2026-04-14-teamagent-phase1-plan.md`
 - **多工具适配**：`docs/features/multi-tool.md` — 4 通道（PreToolUse / UserPromptSubmit / Stop analyze / AttributionBus）已实现；MCP Server / Cursor compiler **NOT YET**。
-- **如何为一个 PR 写计划 / how to plan for a PR**：`docs/HOWTO-PLAN-PR.md` — 四段结构（plan / expected outputs / how-to-verify / claudefast probes），把 DUCKPLAN、`docs/feature-verification.md` 1+2+3 门禁、`docs/FASTPROBE.md` 三步探针、`docs/POSTPR.md` 循环串成一条 PR 工作流。
-- **PR 已经开了之后才发现 issue 怎么修 / what to do when issues found post-PR**：`docs/PR-PLAN.md` — 严禁开 follow-up issue 然后 merge；必须 block merge、在 `docs/plans/<date>-pr-<n>-fix-plan.md` 写 PR-PLAN（task / expected outputs / judge harness 三段），用 `docs/TEAMWORK.md` 的 N+1+(2N) 模式并行修，push 到同一个 PR branch，POSTPR loop 直到 `/review` PASS（ADR-0007 把 Codex bot 替换为本地 `/review` skill）。
+- **如何为一个 PR 写计划 / how to plan for a PR**：`docs/HOWTO-PLAN-PR.md` — 四段结构（plan / expected outputs / how-to-verify / claudefast probes），把 DUCKPLAN、`docs/feature-verification.md` 验证门禁、`docs/FASTPROBE.md` 三步探针、`docs/POSTPR.md` 循环串成一条 PR 工作流。
+- **PR 已经开了之后才发现 issue 怎么修 / what to do when issues found post-PR**：`docs/PR-PLAN.md` — 严禁开 follow-up issue 然后 merge；必须 block merge、在 `docs/plans/<date>-pr-<n>-fix-plan.md` 写 PR-PLAN（task / expected outputs / judge harness 三段），用 `docs/TEAMWORK.md` 的 N+1+(2N) 模式并行修，push 到同一个 PR branch，POSTPR loop 直到 `/review` PASS（ADR-0007 设定本地 `/review` skill 为权威 review gate）。
+- **代码 PR-ready 且 review 通过之后怎么收尾 / what to do after PR-ready + review finished**：`docs/POSTPR.md` "After `/review` PASS" 段落 — canonical 三步顺序：(1) `gh pr merge <N> --squash --delete-branch`（squash-only，禁 `--merge` / `--rebase`）；(2) 在 worktree session 里 `ExitWorktree action="remove"`（必要时 `discard_changes=true`）；如果 worktree 是手动 `git worktree add` 创建的（`ExitWorktree` 拒绝 remove），fallback 为 `ExitWorktree action="keep"` → `git worktree remove --force <path>` → `git branch -D <branch>` → `git push origin --delete <branch>`；(3) 回到父 checkout 跑 `git pull --ff-only` 把本地 main 同步到 origin/main（含刚 merge 的 squash commit）。
+- **仓库唯一 issue → PR → merge 工作流 / FIXEDFLOW**：`docs/FIXEDFLOW.md` — ≤50 字 issue + grill 评论 + `grill-ready` label 触发本地 mainpi 自动跑 step 3-5（实现 / `/review` 无限循环 / 普通 PR / squash-merge）；非此模板的 issue 一律自动 close。取代已归档的 `docs/HOW-TO-ISSUE.md`。
 
 ---
 
@@ -26,7 +28,7 @@
 - **TDD**：每个新功能先写测试（看到红）→ 写最小实现（变绿）→ commit。
 - **小 commit**：每个 commit 覆盖一个 "概念上完整的小事"。跑得通、测试绿。
 - **commit message 格式**：`feat(m{N}): <...>` / `fix(m{N}): <...>` / `refactor(m{N}): <...>`，让 Milestone 产出在 git 历史中可溯。
-- **Feature 验证门禁**：任何 feature / fix 交付前必须验证，并把“如何验证”写进 commit message 与 PR message。通用 1+2+3：`!claudefast -p` 跑 `{MODULE} --help` 出 JSON；`!codex exec` 跑同一个 `{MODULE} --help` 出 JSON，并 hard-match 两份 canonical JSON；最后用 tmux 跑 interactive `claudefast` 并提交 `/export <path>`，把 export 文件加入 PR contents。详见 `docs/feature-verification.md`。
+- **Feature 验证门禁**：任何 feature / fix 交付前必须验证，并把“如何验证”写进 commit message 与 PR message。两条路径：(1) `!claudefast -p` 跑 `{MODULE} --help` 出 canonical JSON 并对照 `snapshots/{MODULE}-help.canonical.json`；(2) tmux 跑 interactive `claudefast` 并提交 `/export <path>`，把 export 文件加入 PR contents。详见 `docs/feature-verification.md`。
 - **PR 必须是普通 PR，不要 draft PR**。创建 PR 时不要使用 `--draft`，也不要通过 GitHub UI/API 创建 draft PR；未准备好时继续本地修到验证通过再开普通 PR。
 - **worktree 位置**：新建 git worktree 必须放在仓库内的 `.codex/worktrees/` 目录下，不要放在仓库同级目录、`.worktrees/` 或 `.claude/worktrees/`。
 

@@ -28,13 +28,13 @@ TeamAgent 解决这件事：从你纠正它的每一次对话里，自动**提�
 # 推荐：先下载 install.sh，确认内容后再执行
 curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh -o /tmp/teambrain-install.sh
 cat /tmp/teambrain-install.sh          # 建议先 review，确认脚本内容符合预期
-sh /tmp/teambrain-install.sh
+bash /tmp/teambrain-install.sh
 ```
 
 也支持直接执行（适合已熟悉该脚本、或在 CI 中使用）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash
 ```
 
 校验文件（SHA256）：**TBD H1** — SHA256 校验文件位置待 H1 open question 决定后填入。
@@ -54,11 +54,12 @@ avoidance 规则）、立即可拦截。背景任务将在 ~10 分钟内静默�
 ### 立即验证（30 秒内看到第一次拦截）
 
 ```bash
-teamagent demo
+teamagent try
 ```
 
-`demo` 命令模拟一次 `moment → dayjs` 纠正 → 下一会话被 PreToolUse 拦截的完整闭环。
-GIF 演示同样展示这两个时刻（[见 landing page](https://libz-renlab-ai.github.io/TeamBrain/)）。
+`try` 命令是 30 秒一键体验入口，依次播放 5 个经典 PreToolUse 拦截场景（含 `moment → dayjs`
+纠正 → 下一会话被拦截的完整闭环）。GIF 演示同样展示这些时刻（[见 landing page](https://libz-renlab-ai.github.io/TeamBrain/)）。
+进阶用法见 `teamagent demo --help`。
 
 ---
 
@@ -74,8 +75,8 @@ GIF 演示同样展示这两个时刻（[见 landing page](https://libz-renlab-a
 ## 5–10 分钟上手
 
 ```bash
-# 1. 装（一行 curl|sh：先校验 node ≥ 22 + npm/pnpm，再 npm install -g release tarball）
-curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | sh
+# 1. 装（一行 curl|bash：先校验 node ≥ 22 + npm/pnpm，再 npm install -g release tarball）
+curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash
 cd your-project                                          # 2. 进项目
 teamagent init                                           # 3. 初始化（注册 hook + 预热向量模型）
 # 如果同一个项目也要给 Codex 读取规则：
@@ -85,7 +86,7 @@ teamagent init --target=both
 # → 它每次被你纠正，都会自动入库
 ```
 
-> **`curl … | sh` 做了什么？** 校验 `node -v` ≥ 22 → 选 `npm`（或 `pnpm`）→ 跑 `npm install -g <release-tarball>`。失败时给确定的退出码（10 = node 缺失，11 = node 太老，20 = 包管理器都没有，30 = 安装失败），不会偷偷把别的东西塞进 PATH。脚本源码：[`release/install.sh`](./release/install.sh)，验证 harness：[`docs/features/install-sh/run-judge.sh`](./docs/features/install-sh/run-judge.sh)（utility，retained per docs/legacy/judge-scripts/README.md exemption）。
+> **`curl … | bash` 做了什么？** 校验 `node -v` ≥ 22 → 通过 SHA-256 双文件校验 + redirect domain guard 下载 release tarball → 解压到 `~/.local/lib/teamagent` 并把 `dist/bin.js` 软链到 `~/.local/bin/teamagent`。默认 `--safe` 模式会先打印脚本内容再 prompt y/N（输入 `--auto` 跳过）。失败时给确定的退出码（10 = node 缺失，11 = node 太老，20 = 包管理器都没有，30 = 安装失败）。脚本源码：[`release/install.sh`](./release/install.sh)，POSIX-sh 兼容版本（legacy）：[`release/install-legacy.sh`](./release/install-legacy.sh)。
 
 <details>
 <summary>不能 curl 的环境（离线、Windows PowerShell、CI 容器）— 用 tarball URL 直装</summary>

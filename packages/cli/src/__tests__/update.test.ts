@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,9 +7,17 @@ import {
   findUpdaterBinary,
   runUpdateCommand,
   parseUpdateArgs,
+  readState,
   writeState,
 } from "../commands/update.js";
 import { defaultUpdateState } from "@teamagent/core";
+import type { FetchShaResult } from "../github-api.js";
+
+// Mock the github-api module so checkCmd tests don't make real HTTP calls.
+// The mock is wired before module resolution; each test reconfigures the fn.
+vi.mock("../github-api.js", () => ({
+  fetchRemoteSha: vi.fn(),
+}));
 
 let tmpHome: string;
 let envBak: string | undefined;
@@ -70,6 +78,214 @@ describe("update command", () => {
     const r = await runUpdateCommand("rollback", []);
     expect(r.ok).toBe(false);
     expect(r.output).toContain("no backups");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────
+// checkCmd — per-reason error formatting (§ 2.4) and ETag persistence
+// ────────────────────────────────────────────────────────────────
+describe("checkCmd — per-reason error messages", () => {
+  let mockFetchRemoteSha: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    const mod = await import("../github-api.js");
+    mockFetchRemoteSha = mod.fetchRemoteSha as ReturnType<typeof vi.fn>;
+    mockFetchRemoteSha.mockReset();
+  });
+
+  function failResult(
+    reason: "rate_limit_anonymous" | "rate_limit_authed" | "auth" | "not_found" | "server" | "network" | "parse",
+    message: string,
+    status = 0,
+  ): FetchShaResult {
+    return { ok: false, reason, status, message };
+  }
+
+  it("rate_limit_anonymous: surfaces the exact error message", async () => {
+    const msg = "GitHub anonymous rate limit exhausted; set TEAMAGENT_GITHUB_TOKEN to authenticate (5000 req/h)";
+    mockFetchRemoteSha.mockResolvedValue(failResult("rate_limit_anonymous", msg, 403));
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toBe(msg + "\n");
+  });
+
+  it("rate_limit_authed: surfaces the exact error message", async () => {
+    const msg = "GitHub authenticated rate limit exhausted; retry later";
+    mockFetchRemoteSha.mockResolvedValue(failResult("rate_limit_authed", msg, 403));
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toBe(msg + "\n");
+  });
+
+  it("auth: surfaces the exact error message", async () => {
+    const msg = "GitHub auth rejected (token invalid or expired)";
+    mockFetchRemoteSha.mockResolvedValue(failResult("auth", msg, 401));
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toBe(msg + "\n");
+  });
+
+  it("not_found: surfaces the exact error message", async () => {
+    const msg = "branch not found: libz-renlab-ai/TeamBrain@release";
+    mockFetchRemoteSha.mockResolvedValue(failResult("not_found", msg, 404));
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toBe(msg + "\n");
+  });
+
+  it("server: surfaces the exact error message", async () => {
+    const msg = "GitHub server error 503";
+    mockFetchRemoteSha.mockResolvedValue(failResult("server", msg, 503));
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toBe(msg + "\n");
+  });
+
+  it("network: surfaces the exact error message", async () => {
+    const msg = "ECONNREFUSED";
+    mockFetchRemoteSha.mockResolvedValue(failResult("network", msg));
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toBe(msg + "\n");
+  });
+
+  it("parse: surfaces the exact error message", async () => {
+    const msg = "malformed response body";
+    mockFetchRemoteSha.mockResolvedValue(failResult("parse", msg, 200));
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toBe(msg + "\n");
+  });
+});
+
+describe("checkCmd — ETag and sha persistence on success", () => {
+  let mockFetchRemoteSha: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    const mod = await import("../github-api.js");
+    mockFetchRemoteSha = mod.fetchRemoteSha as ReturnType<typeof vi.fn>;
+    mockFetchRemoteSha.mockReset();
+  });
+
+  it("persists last_branch_etag and last_branch_sha on ok:true", async () => {
+    const s = defaultUpdateState();
+    s.last_installed_sha = "abc1234";
+    writeState(s);
+
+    mockFetchRemoteSha.mockResolvedValue({
+      ok: true,
+      sha: "new-sha-12345",
+      etag: "W/\"etag-test\"",
+      source: "200",
+    } satisfies FetchShaResult);
+
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("update available");
+
+    const written = readState();
+    expect(written.last_branch_etag).toBe("W/\"etag-test\"");
+    expect(written.last_branch_sha).toBe("new-sha-12345");
+  });
+
+  it("persists empty string for etag when server omits it", async () => {
+    writeState(defaultUpdateState());
+    mockFetchRemoteSha.mockResolvedValue({
+      ok: true,
+      sha: "some-sha",
+      etag: null,
+      source: "200",
+    } satisfies FetchShaResult);
+
+    await runUpdateCommand("check");
+    const written = readState();
+    expect(written.last_branch_etag).toBe("");
+  });
+
+  // ── PR #194 follow-up tests for F5 (checkCmd backoff) ────────────────────
+
+  it("checkCmd: backoff active → early return, no fetch (PR #194 F5)", async () => {
+    const s = defaultUpdateState();
+    s.next_check_after_ts = Date.now() + 60 * 60 * 1000; // 1h from now
+    writeState(s);
+
+    // fetchRemoteSha should never be called
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain("backoff active until");
+    expect(mockFetchRemoteSha).not.toHaveBeenCalled();
+  });
+
+  it("checkCmd: backoff window expired → fetch proceeds (PR #194 F5)", async () => {
+    const s = defaultUpdateState();
+    s.next_check_after_ts = Date.now() - 60 * 1000; // 1 min ago — expired
+    writeState(s);
+
+    mockFetchRemoteSha.mockResolvedValue({
+      ok: true, sha: "abc1234", etag: null, source: "200",
+    } satisfies FetchShaResult);
+
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(true);
+    expect(mockFetchRemoteSha).toHaveBeenCalled();
+  });
+
+  it("checkCmd: rate_limit_anonymous → persists backoff state (PR #194 F5)", async () => {
+    writeState(defaultUpdateState());
+    mockFetchRemoteSha.mockResolvedValue({
+      ok: false,
+      reason: "rate_limit_anonymous",
+      status: 403,
+      message: "GitHub anonymous rate limit exhausted; set TEAMAGENT_GITHUB_TOKEN to authenticate (5000 req/h)",
+    } satisfies FetchShaResult);
+
+    const before = Date.now();
+    const r = await runUpdateCommand("check");
+    const after = Date.now();
+
+    expect(r.ok).toBe(false);
+    const written = readState();
+    expect(written.consecutive_rate_limits).toBe(1);
+    // First failure: 2^(1-1) = 1h
+    expect(written.next_check_after_ts).toBeGreaterThanOrEqual(before + 60 * 60 * 1000);
+    expect(written.next_check_after_ts).toBeLessThanOrEqual(after + 60 * 60 * 1000);
+    // Must NOT bump install-failure counter
+    expect(written.consecutive_install_failures).toBe(0);
+  });
+
+  it("checkCmd: success resets rate_limits and next_check_after_ts (PR #194 F5)", async () => {
+    const s = defaultUpdateState();
+    s.consecutive_rate_limits = 3;
+    s.next_check_after_ts = Date.now() - 1000; // expired
+    writeState(s);
+
+    mockFetchRemoteSha.mockResolvedValue({
+      ok: true, sha: "newsha", etag: 'W/"new"', source: "200",
+    } satisfies FetchShaResult);
+
+    await runUpdateCommand("check");
+    const written = readState();
+    expect(written.consecutive_rate_limits).toBe(0);
+    expect(written.next_check_after_ts).toBe(0);
+    expect(written.last_branch_etag).toBe('W/"new"');
+    expect(written.last_branch_sha).toBe("newsha");
+  });
+
+  it("returns up-to-date when sha matches last_installed_sha", async () => {
+    const s = defaultUpdateState();
+    s.last_installed_sha = "current-sha";
+    writeState(s);
+
+    mockFetchRemoteSha.mockResolvedValue({
+      ok: true,
+      sha: "current-sha",
+      etag: "W/\"e1\"",
+      source: "304",
+    } satisfies FetchShaResult);
+
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("up-to-date");
   });
 });
 

@@ -1,0 +1,39 @@
+name: FIXEDFLOW issue (仓库唯一允许的 issue 类型)
+description: 提交一个 ≤50 字 body 的 issue，随后必须贴 grill 评论 + 加 grill-ready label 才会进入自动化流水线。
+title: "[fixedflow] "
+labels: ["fixedflow", "needs-grill-comment"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## FIXEDFLOW 5 步铁律
+
+        本仓库自 2026-05-09 起仅接受走 FIXEDFLOW 的 issue。
+
+        | 步骤 | 谁做 | 怎么做 |
+        |------|------|--------|
+        | 1 | 你 | 用本模板提交 ≤50 字 issue |
+        | 2 | 你 | 跑 `/grill-me` (web claude.ai) 或 `/grill-with-docs` (CC CLI)，把整段输出贴到本 issue 评论；评论末尾以 `--- end grill ---` 结束，最后给 issue 加 `grill-ready` label |
+        | 3-5 | 自动化 | 本地 mainpi 在 30 秒内开 worktree → 实现 → /review loop → 普通 PR → squash-merge |
+
+        - 24 小时内未加 `grill-ready` 的 issue 会被自动关闭（前 7 天为 warn 模式）
+        - body 超 50 字的 issue 同样会被自动关闭
+        - 完整规则：[docs/FIXEDFLOW.md](https://github.com/libz-renlab-ai/TeamBrain/blob/main/docs/FIXEDFLOW.md)
+  - type: textarea
+    id: body
+    attributes:
+      label: 想要什么 / 看见了什么 (≤50 字)
+      description: 一句话描述。技术细节、复现步骤、设计权衡留给后续 grill 评论。
+      placeholder: |
+        例：新用户 onboarding 第 3 步在 Windows Git Bash 下卡住，错误见复现命令。
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 流程确认
+      options:
+        - label: 我已阅读 docs/FIXEDFLOW.md，理解需要 24 小时内补 grill 评论 + grill-ready label
+          required: true
+        - label: 我承诺 body ≤50 字，详细内容写在 grill 评论里
+          required: true

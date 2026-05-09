@@ -4,28 +4,27 @@ Use this rule when asked "how do we verify/test a feature?" or before shipping
 any feature/fix.
 
 TL;DR: you need to verify and add how to verify to the commit message and PR
-message. 1. verify with `!claudefast -p`; 2. verify with `!codex exec`; both
-must run `{MODULE} --help` first, use JSON format, and hard-match the paired
-canonical JSON contents; 3. use interactive `claudefast` with tmux and finally
-submit `/export <path>`. Add the `/export` files to PR contents to convince
-readers. Keep updating code/docs until 1+2+3 match.
+message. 1. verify with `!claudefast -p` running `{MODULE} --help` in JSON
+format; 2. use interactive `claudefast` with tmux and finally submit
+`/export <path>`. Add the `/export` files to PR contents to convince readers.
+Keep updating code/docs until both paths agree.
 
 ## Related — autonomous verification loop (per-feature, long-running)
 
-This doc is the **PR-time gate** (1+2+3 once per feature/fix). For
-**per-feature long-running verification across sessions** — composing a
-product-language `GOAL.md`, judge / META-JUDGE iteration, code-frozen
-attestation when `node_modules` is missing — see the autonomous loop
-playbook:
+This doc is the **PR-time gate** (claudefast + tmux interactive once per
+feature/fix). For **per-feature long-running verification across sessions** —
+composing a product-language `GOAL.md`, judge / META-JUDGE iteration,
+code-frozen attestation when `node_modules` is missing — see the autonomous
+loop playbook:
 
 - [`docs/verify/RUN-VERIFY-LOOP.md`](verify/RUN-VERIFY-LOOP.md) — main agent's 6-step playbook
 - [`docs/verify/GOAL-COMPOSER.md`](verify/GOAL-COMPOSER.md) — 5-source GOAL.md composer
 - [`docs/verify/JUDGE.md`](verify/JUDGE.md) — feature-level JUDGE call (no `--bare`)
 - [`docs/verify/META-JUDGE.md`](verify/META-JUDGE.md) — `--bare` loop-progress judge
 
-The two systems are **complementary**, not redundant: 1+2+3 is a one-shot PR
-gate; the autonomous loop is per-feature long-running verification with
-backlog.jsonl across sessions. The CLAUDE.md `Verify loop canned answer`
+The two systems are **complementary**, not redundant: this gate is a
+one-shot PR gate; the autonomous loop is per-feature long-running verification
+with backlog.jsonl across sessions. The CLAUDE.md `Verify loop canned answer`
 section is the canned trigger for "how to run verify loop?".
 
 ## Required Record
@@ -35,9 +34,9 @@ Every feature/fix must include a verification summary in both places:
 - Commit message: include what was verified, not only what changed.
 - PR message: include exact commands, output files, and any known caveats.
 
-## Required 1+2+3 Flow
+## Required Flow
 
-Keep updating the code/docs until all three paths agree.
+Keep updating the code/docs until both paths agree.
 
 1. Verify with `!claudefast -p`.
    - It must run `claudefast -h` first and record the supported flags.
@@ -45,13 +44,9 @@ Keep updating the code/docs until all three paths agree.
    - It must run `{MODULE} --help` first, or the module's equivalent help /
      metadata entry point.
    - It must emit JSON using a declared schema or stable JSON format.
-2. Verify with `!codex exec`.
-   - It must run the same `{MODULE} --help` first.
-   - It must emit JSON using the same schema or stable JSON fields.
-   - Hard-match the paired JSON contents from steps 1 and 2.
-   - Canonicalize both outputs, for example `jq -S .`.
-   - The hard match must be byte-identical, with no semantic-only pass.
-3. Verify interactive mode with tmux.
+   - Canonicalize the output, for example `jq -S .`, and snapshot the result
+     so future runs can diff against it.
+2. Verify interactive mode with tmux.
    - Start `claudefast` without `-p` inside tmux.
    - Run the same feature verification prompt.
    - Finally submit `/export <path>`.
@@ -62,9 +57,7 @@ Keep updating the code/docs until all three paths agree.
 
 The feature is not verified until:
 
-- `claudefast -p` JSON passes.
-- `codex exec` JSON passes.
-- The two canonical JSON files hard-match.
+- `claudefast -p` JSON passes against the snapshot.
 - The tmux interactive `/export` file exists and supports the same conclusion.
 - Commit and PR messages both explain how to reproduce the verification.
 
@@ -91,7 +84,6 @@ before the generic feature verification checklist:
 
 ```bash
 !claudefast -p "{pr_index} 根据规则，我们应该怎么解决这个review出来的问题？"
-!codexfastg -p "{pr_index} 根据规则，我们应该怎么解决这个review出来的问题？"
 ```
 
 7. Only after the verification answer is correct, fix the review.
@@ -110,8 +102,8 @@ the same gate:
    ambiguity before continuing.
 5. Never fix directly on `main`, force-push, use `git reset --hard`, or discard
    someone else's change only to make the conflict disappear.
-6. Rerun `pnpm test`, `pnpm typecheck`, and the relevant 1+2+3 verification,
-   then push the same PR branch and restart the POSTPR loop.
+6. Rerun `pnpm test`, `pnpm typecheck`, and the relevant verification flow
+   above, then push the same PR branch and restart the POSTPR loop.
 
 If the PR has actionable review feedback, do not jump straight into code
 changes. First update the project documentation or TeamAgent rule that explains
@@ -120,7 +112,6 @@ Claude Code and keep editing docs/rules until the answer is correct:
 
 ```bash
 !claudefast -p "{pr_index} 根据规则，我们应该怎么解决这个review出来的问题？"
-!codexfastg -p "{pr_index} 根据规则，我们应该怎么解决这个review出来的问题？"
 ```
 
 Only after that answer is correct should the review fix begin. The expected
@@ -137,14 +128,11 @@ teamagent ingest --from-pr {pr_index} --dry-run
 
 ```bash
 claudefast -p --output-format json --json-schema schema.json \
-  "Run {MODULE} --help and return only the required JSON."
-
-codex exec --output-schema schema.json -o codex.json \
-  "Run {MODULE} --help and return only the required JSON."
+  "Run {MODULE} --help and return only the required JSON." \
+  > claudefast.json
 
 jq -S . claudefast.json > claudefast.sorted.json
-jq -S . codex.json > codex.sorted.json
-diff -u claudefast.sorted.json codex.sorted.json
+diff -u snapshots/{MODULE}-help.canonical.json claudefast.sorted.json
 ```
 
 

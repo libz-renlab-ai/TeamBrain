@@ -99,5 +99,11 @@ To run all in parallel, dispatch up to 8 probes — see `docs/FASTPROBE.md`.
 | Tech-taste extraction from commit history | 5 | Phase 5 roadmap only |
 | Trae / VS Code Copilot adapter via MCP | 6 | Phase 6 roadmap only |
 
+## Repo infrastructure / integrations (not TeamAgent product features)
+
+| Doc | What it covers |
+|---|---|
+| [`claude-code-action.md`](claude-code-action.md) | The two `.github/workflows/*.yml` files installed by `/install-github-app` (PR #190): `claude.yml` `@claude` mention bot + `claude-code-review.yml` auto PR review via the `code-review@claude-code-plugins` plugin. Includes the `CLAUDE_CODE_OAUTH_TOKEN` secret + ADR-0007 reconciliation (local `/review` skill stays the authoritative POSTPR gate). |
+
 When asked _"how does feature X work?"_ — find the matching row above, open the doc,
 summarise from `Status` + `How it works`.

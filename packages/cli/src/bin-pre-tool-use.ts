@@ -43,6 +43,11 @@ import { matchRulesAsync, semanticMatch } from "@teamagent/core";
 import { runHook } from "./hook-shell/index.js";
 import { buildToolActionSummary } from "./pre-tool-use-context.js";
 import { mergeSemanticAndLegacyMatches } from "./pre-tool-use-merge.js";
+// Static import (performance-specialist /review on PR #152): the dynamic
+// `await import("./warmup-state.js")` inside the hot PreToolUse handler ran
+// once per invocation, defeating tsup tree-shake/inline and adding module-load
+// latency to every tool call. The module is small + pure, no circular dep risk.
+import { describeWarmupReadiness, defaultWarmupStatePath } from "./warmup-state.js";
 
 // ---- Lazy singleton for semantic path (per-process, reused if process is long-lived) ----
 let _embedder: XenovaRuleEmbedder | null = null;
@@ -100,9 +105,6 @@ async function main(): Promise<void> {
       // next PreToolUse invocation reads the new value and switches to
       // semantic. Per ADR-0008 Q3, this stays channel-specific (in handler)
       // rather than sinking to the shell.
-      const { describeWarmupReadiness, defaultWarmupStatePath } = await import(
-        "./warmup-state.js"
-      );
       const warmup = describeWarmupReadiness(defaultWarmupStatePath(ctx.home));
       const explicitlyLegacy =
         (ctx.env.TEAMAGENT_MATCHER ?? "").toLowerCase() === "legacy";

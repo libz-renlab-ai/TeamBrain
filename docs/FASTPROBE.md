@@ -48,7 +48,7 @@ PR opened
   -> conflict?
   -> classify: merge / review-finding / rule-doc
   -> resolve locally on PR branch
-  -> rerun pnpm test + pnpm typecheck + feature verification 1+2+3
+  -> rerun pnpm test + pnpm typecheck + feature-verification gate
   -> push same PR branch or follow-up PR if already merged
   -> POSTPR loop
   -> merge only when CI green + no conflict + /review PASS
@@ -216,7 +216,7 @@ Full layout and reproduction steps: `docs/sandbox.md`.
 ## 与其它规则关系
 
 - `docs/CLAUDEFAST.md` — `claudefast` wrapper 本身的环境变量、profile、安装位置。
-- `docs/feature-verification.md` — 1+2+3 验证门禁（claudefast / codex / tmux export）。
+- `docs/feature-verification.md` — 验证门禁（claudefast JSON snapshot + tmux export）。
 - `docs/sandbox.md` — 本机沙箱目录布局与 LiuShiyuMath 的路径速查表。
 - `docs/DOGFOOD.md` — 双 tmux 窗口 left/right split 的 live agent dev loop（同样基于 `claudefast`）。
 - 用户级 `runtime/term-expansion.md` — canned-answer 类规则的同类先例。

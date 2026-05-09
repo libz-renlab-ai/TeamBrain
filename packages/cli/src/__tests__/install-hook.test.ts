@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -28,7 +28,7 @@ describe("installHook", () => {
   });
 
   it("creates settings.local.json with PreToolUse hook entry", () => {
-    const r = installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY });
+    const r = installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userLevel: false });
     expect(r.alreadyInstalled).toBe(false);
 
     const content = JSON.parse(fs.readFileSync(r.settingsPath, "utf-8"));
@@ -54,7 +54,7 @@ describe("installHook", () => {
       }),
     );
 
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userLevel: false });
 
     const content = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
     expect(content.someUserSetting).toBe("preserved");
@@ -64,8 +64,8 @@ describe("installHook", () => {
   });
 
   it("idempotent: second install detects already-installed", () => {
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY });
-    const r2 = installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userLevel: false });
+    const r2 = installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userLevel: false });
     expect(r2.alreadyInstalled).toBe(true);
 
     const content = JSON.parse(
@@ -92,7 +92,7 @@ describe("uninstallHook", () => {
   });
 
   it("removes only TeamAgent entry, preserves user hooks", () => {
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userLevel: false });
 
     // 注入一条用户自己的 hook
     const settingsPath = path.join(tmp.cwd, ".claude", "settings.local.json");
@@ -112,7 +112,7 @@ describe("uninstallHook", () => {
   });
 
   it("returns removed=false on second uninstall", () => {
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userLevel: false });
     uninstallHook({ cwd: tmp.cwd });
     const r2 = uninstallHook({ cwd: tmp.cwd });
     expect(r2.removed).toBe(false);
@@ -129,6 +129,7 @@ describe("installHook — UserPromptSubmit + Stop", () => {
       cwd: tmp.cwd,
       hookEntry: FAKE_HOOK_ENTRY,
       userPromptEntry: FAKE_HOOK_ENTRY,
+      userLevel: false,
     });
     const content = JSON.parse(
       fs.readFileSync(path.join(tmp.cwd, ".claude", "settings.local.json"), "utf-8")
@@ -144,6 +145,7 @@ describe("installHook — UserPromptSubmit + Stop", () => {
       cwd: tmp.cwd,
       hookEntry: FAKE_HOOK_ENTRY,
       stopEntry: FAKE_HOOK_ENTRY,
+      userLevel: false,
     });
     const content = JSON.parse(
       fs.readFileSync(path.join(tmp.cwd, ".claude", "settings.local.json"), "utf-8")
@@ -155,8 +157,8 @@ describe("installHook — UserPromptSubmit + Stop", () => {
   });
 
   it("idempotent: second install of UserPromptSubmit not duplicated", () => {
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userPromptEntry: FAKE_HOOK_ENTRY });
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userPromptEntry: FAKE_HOOK_ENTRY });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userPromptEntry: FAKE_HOOK_ENTRY, userLevel: false });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userPromptEntry: FAKE_HOOK_ENTRY, userLevel: false });
     const content = JSON.parse(
       fs.readFileSync(path.join(tmp.cwd, ".claude", "settings.local.json"), "utf-8")
     );
@@ -169,6 +171,7 @@ describe("installHook — UserPromptSubmit + Stop", () => {
       hookEntry: FAKE_HOOK_ENTRY,
       userPromptEntry: FAKE_HOOK_ENTRY,
       stopEntry: FAKE_HOOK_ENTRY,
+      userLevel: false,
     });
     uninstallHook({ cwd: tmp.cwd });
     const content = JSON.parse(
@@ -189,6 +192,7 @@ describe("installHook — statusLine", () => {
       cwd: tmp.cwd,
       hookEntry: FAKE_HOOK_ENTRY,
       statusLineEntry: FAKE_HOOK_ENTRY,
+      userLevel: false,
     });
     expect(r.statusLineSkipped).toBe(false);
 
@@ -203,8 +207,8 @@ describe("installHook — statusLine", () => {
   });
 
   it("updates tagged teamagent statusLine (idempotent)", () => {
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY });
-    const r2 = installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, userLevel: false });
+    const r2 = installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, userLevel: false });
     expect(r2.statusLineSkipped).toBe(false);
 
     const content = JSON.parse(
@@ -229,6 +233,7 @@ describe("installHook — statusLine", () => {
       hookEntry: FAKE_HOOK_ENTRY,
       statusLineEntry: FAKE_HOOK_ENTRY,
       homeDir: tmp.cwd, // 测试用空 home，避免读到本机真 ~/.claude
+      userLevel: false,
     });
     expect(r.statusLineSkipped).toBe(false);
     expect(r.statusLineMergedScope).toBe("project");
@@ -262,6 +267,7 @@ describe("installHook — statusLine", () => {
         hookEntry: FAKE_HOOK_ENTRY,
         statusLineEntry: FAKE_HOOK_ENTRY,
         homeDir: fakeHome,
+        userLevel: false,
       });
       expect(r.statusLineMergedScope).toBe("user");
 
@@ -303,6 +309,7 @@ describe("installHook — statusLine", () => {
         hookEntry: FAKE_HOOK_ENTRY,
         statusLineEntry: FAKE_HOOK_ENTRY,
         homeDir: fakeHome,
+        userLevel: false,
       });
       expect(r.statusLineMergedScope).toBe("project");
       const content = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
@@ -329,6 +336,7 @@ describe("installHook — statusLine", () => {
       hookEntry: FAKE_HOOK_ENTRY,
       statusLineEntry: FAKE_HOOK_ENTRY,
       homeDir: tmp.cwd,
+      userLevel: false,
     });
 
     const content = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
@@ -346,8 +354,8 @@ describe("installHook — statusLine", () => {
         statusLine: { type: "command", command: "USER_CMD" },
       }),
     );
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd });
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd, userLevel: false });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd, userLevel: false });
     const content = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
     expect(content.statusLine._teamagentOriginalCommand).toBe("USER_CMD");
     // chain 中只出现一次原 cmd
@@ -356,7 +364,7 @@ describe("installHook — statusLine", () => {
   });
 
   it("uninstall removes teamagent statusLine when no backup", () => {
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd, userLevel: false });
     uninstallHook({ cwd: tmp.cwd });
     const content = JSON.parse(
       fs.readFileSync(path.join(tmp.cwd, ".claude", "settings.local.json"), "utf-8"),
@@ -373,7 +381,7 @@ describe("installHook — statusLine", () => {
         statusLine: { type: "command", command: "user-status.sh" },
       }),
     );
-    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd });
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, statusLineEntry: FAKE_HOOK_ENTRY, homeDir: tmp.cwd, userLevel: false });
     uninstallHook({ cwd: tmp.cwd });
     const content = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
     expect(content.statusLine.command).toBe("user-status.sh");
@@ -397,6 +405,7 @@ describe("installHook — statusLine", () => {
         hookEntry: FAKE_HOOK_ENTRY,
         statusLineEntry: FAKE_HOOK_ENTRY,
         homeDir: fakeHome,
+        userLevel: false,
       });
       uninstallHook({ cwd: tmp.cwd });
 
@@ -411,5 +420,662 @@ describe("installHook — statusLine", () => {
     } finally {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     }
+  });
+});
+
+// ─── Issue #161 — Layer 1 viral install (userLevel option) ──────────────────
+describe("installHook — userLevel (issue #161)", () => {
+  let tmp: ReturnType<typeof mkTmp>;
+  let fakeHome: string;
+
+  beforeEach(() => {
+    tmp = mkTmp();
+    fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "fake-home-uh-"));
+  });
+
+  afterEach(() => {
+    tmp.cleanup();
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  });
+
+  it("userLevel: true writes ~/.claude/settings.json with the same hook shape", () => {
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: true,
+    });
+
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    expect(fs.existsSync(userSettingsPath)).toBe(true);
+    const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+
+    // Same shape as project-level: PreToolUse / PostToolUse / UserPromptSubmit / Stop
+    expect(content.hooks).toBeDefined();
+    expect(content.hooks.PreToolUse).toBeDefined();
+    expect(content.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
+    expect(content.hooks.PreToolUse[0].matcher).toContain("Bash");
+    expect(content.hooks.PreToolUse[0].hooks[0].command).toContain("node");
+
+    expect(content.hooks.PostToolUse).toBeDefined();
+    expect(content.hooks.PostToolUse[0]._teamagentTag).toBe("teamagent-post-tool-use");
+    expect(content.hooks.PostToolUse[0].matcher).toContain("Bash");
+
+    expect(content.hooks.UserPromptSubmit).toBeDefined();
+    expect(content.hooks.UserPromptSubmit[0]._teamagentTag).toBe("teamagent-user-prompt-submit");
+    expect(content.hooks.UserPromptSubmit[0].hooks[0].timeout).toBe(10);
+
+    expect(content.hooks.Stop).toBeDefined();
+    expect(content.hooks.Stop[0]._teamagentTag).toBe("teamagent-stop");
+    expect(content.hooks.Stop[0].hooks[0].timeout).toBe(60);
+  });
+
+  it("userLevel: true is idempotent — running twice produces a single entry", () => {
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: true,
+    });
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: true,
+    });
+
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+
+    // Each TeamAgent-tagged channel must contain exactly ONE entry after two installs.
+    const preTagged = content.hooks.PreToolUse.filter(
+      (h: { _teamagentTag?: string }) => h._teamagentTag === "teamagent-pre-tool-use",
+    );
+    expect(preTagged).toHaveLength(1);
+
+    const postTagged = content.hooks.PostToolUse.filter(
+      (h: { _teamagentTag?: string }) => h._teamagentTag === "teamagent-post-tool-use",
+    );
+    expect(postTagged).toHaveLength(1);
+
+    const upTagged = content.hooks.UserPromptSubmit.filter(
+      (h: { _teamagentTag?: string }) => h._teamagentTag === "teamagent-user-prompt-submit",
+    );
+    expect(upTagged).toHaveLength(1);
+
+    const stopTagged = content.hooks.Stop.filter(
+      (h: { _teamagentTag?: string }) => h._teamagentTag === "teamagent-stop",
+    );
+    expect(stopTagged).toHaveLength(1);
+  });
+
+  it("userLevel: true preserves existing non-TeamAgent entries in ~/.claude/settings.json", () => {
+    // Pre-seed user-level settings.json with foreign entries + an unrelated top-level setting.
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    fs.mkdirSync(path.dirname(userSettingsPath), { recursive: true });
+    fs.writeFileSync(
+      userSettingsPath,
+      JSON.stringify({
+        someUserGlobalSetting: "preserved",
+        hooks: {
+          PreToolUse: [
+            { matcher: "Bash", hooks: [{ type: "command", command: "user-global-pre.sh" }] },
+          ],
+          SessionStart: [
+            { hooks: [{ type: "command", command: "user-session.sh" }] },
+          ],
+        },
+      }),
+    );
+
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: true,
+    });
+
+    const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+
+    // Top-level non-hook setting preserved.
+    expect(content.someUserGlobalSetting).toBe("preserved");
+
+    // Foreign PreToolUse entry preserved AND TeamAgent entry appended.
+    expect(content.hooks.PreToolUse).toHaveLength(2);
+    const foreignPre = content.hooks.PreToolUse.find(
+      (h: { _teamagentTag?: string; hooks: { command: string }[] }) =>
+        h.hooks?.[0]?.command === "user-global-pre.sh",
+    );
+    expect(foreignPre).toBeDefined();
+    expect(foreignPre._teamagentTag).toBeUndefined();
+
+    const taggedPre = content.hooks.PreToolUse.find(
+      (h: { _teamagentTag?: string }) => h._teamagentTag === "teamagent-pre-tool-use",
+    );
+    expect(taggedPre).toBeDefined();
+
+    // SessionStart channel completely untouched (not one we manage here).
+    expect(content.hooks.SessionStart).toBeDefined();
+    expect(content.hooks.SessionStart).toHaveLength(1);
+    expect(content.hooks.SessionStart[0].hooks[0].command).toBe("user-session.sh");
+  });
+
+  it("userLevel: false does NOT touch ~/.claude/settings.json", () => {
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: false,
+    });
+
+    // No user-level settings.json should be created.
+    expect(fs.existsSync(userSettingsPath)).toBe(false);
+
+    // Project-level write happened (sanity check — userLevel:false didn't break the old path).
+    const projectPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    expect(fs.existsSync(projectPath)).toBe(true);
+    const proj = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
+    expect(proj.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
+  });
+});
+
+// ─── PR #181 fix-cycle (Worker E) — install-hook hardening ───────────────────
+//
+// Cases added per PR-PLAN docs/plans/2026-05-09-pr-181-fix-plan.md:
+//   1. B-091 staged path under <homeDir>/.teamagent/hooks/
+//   2. malformed user-level settings.json → backup + start fresh
+//   3. atomic write via tmp+rename (POSIX renameSync)
+//   4. B-086 untagged-legacy dedup at the user level
+//   5. concurrent-init advisory lock at <homeDir>/.claude/.settings.lock
+//   6. userLevel:false leaves ~/.claude/settings.json untouched (regression
+//      lock — already covered above; re-run via this block to assert it
+//      still passes after the staging refactor).
+describe("installHook — PR #181 fix-cycle", () => {
+  let tmp: ReturnType<typeof mkTmp>;
+  let fakeHome: string;
+  /**
+   * Plant a *real-named* hook bundle at a stable path so
+   * `mergeUserLevelHooks` stages it as the right basename
+   * (e.g. `bin-pre-tool-use.cjs`) under `<homeDir>/.teamagent/hooks/`.
+   * `FAKE_HOOK_ENTRY` (the test file path) would stage as
+   * `install-hook.test.ts` and fail the basename assertion below.
+   */
+  function plantBundle(dir: string, name: string): string {
+    fs.mkdirSync(dir, { recursive: true });
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, "// stub bundle\n", "utf-8");
+    return p;
+  }
+
+  beforeEach(() => {
+    tmp = mkTmp();
+    fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "fake-home-postpr-"));
+  });
+
+  afterEach(() => {
+    tmp.cleanup();
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  });
+
+  it("(1) B-091: stages hook bundles to <homeDir>/.teamagent/hooks/ and references the staged path in settings.json", () => {
+    const stage = path.join(tmp.cwd, "src-stage");
+    const hookEntry = plantBundle(stage, "bin-pre-tool-use.cjs");
+    const postHookEntry = plantBundle(stage, "bin-post-tool-use.cjs");
+    const userPromptEntry = plantBundle(stage, "bin-user-prompt-submit.cjs");
+    const stopEntry = plantBundle(stage, "bin-stop.cjs");
+
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry,
+      postHookEntry,
+      userPromptEntry,
+      stopEntry,
+      homeDir: fakeHome,
+      userLevel: true,
+    });
+
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+
+    // PreToolUse command must reference the STAGED path (not the source dist).
+    const preCmd: string = content.hooks.PreToolUse[0].hooks[0].command;
+    const expectedStaged = path.join(fakeHome, ".teamagent", "hooks", "bin-pre-tool-use.cjs");
+    // command is normalized to forward slashes
+    expect(preCmd).toContain(expectedStaged.replace(/\\/g, "/"));
+    // command must NOT reference the original src-stage path
+    expect(preCmd).not.toContain(stage.replace(/\\/g, "/"));
+    // The staged file must actually exist.
+    expect(fs.existsSync(expectedStaged)).toBe(true);
+    expect(fs.statSync(expectedStaged).isFile()).toBe(true);
+
+    // Same for the other 3 channels.
+    const postCmd: string = content.hooks.PostToolUse[0].hooks[0].command;
+    expect(postCmd).toContain(
+      path.join(fakeHome, ".teamagent", "hooks", "bin-post-tool-use.cjs").replace(/\\/g, "/"),
+    );
+    expect(fs.existsSync(path.join(fakeHome, ".teamagent", "hooks", "bin-post-tool-use.cjs"))).toBe(true);
+
+    const upCmd: string = content.hooks.UserPromptSubmit[0].hooks[0].command;
+    expect(upCmd).toContain(
+      path.join(fakeHome, ".teamagent", "hooks", "bin-user-prompt-submit.cjs").replace(/\\/g, "/"),
+    );
+    expect(fs.existsSync(path.join(fakeHome, ".teamagent", "hooks", "bin-user-prompt-submit.cjs"))).toBe(true);
+
+    const stopCmd: string = content.hooks.Stop[0].hooks[0].command;
+    expect(stopCmd).toContain(
+      path.join(fakeHome, ".teamagent", "hooks", "bin-stop.cjs").replace(/\\/g, "/"),
+    );
+    expect(fs.existsSync(path.join(fakeHome, ".teamagent", "hooks", "bin-stop.cjs"))).toBe(true);
+  });
+
+  it("(2) readSettings recovers from malformed user-level settings.json by backing up + starting fresh", () => {
+    // Pre-seed `<home>/.claude/settings.json` with literally-malformed JSON.
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    fs.mkdirSync(path.dirname(userSettingsPath), { recursive: true });
+    fs.writeFileSync(userSettingsPath, "{not json}", "utf-8");
+
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    try {
+      // Should not throw — install proceeds even with corrupt settings.
+      const r = installHook({
+        cwd: tmp.cwd,
+        hookEntry: FAKE_HOOK_ENTRY,
+        postHookEntry: FAKE_HOOK_ENTRY,
+        userPromptEntry: FAKE_HOOK_ENTRY,
+        stopEntry: FAKE_HOOK_ENTRY,
+        homeDir: fakeHome,
+        userLevel: true,
+      });
+      expect(r.settingsPath).toBeDefined();
+
+      // The new file is valid JSON with TeamAgent entries.
+      const after = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+      expect(after.hooks).toBeDefined();
+      expect(after.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
+
+      // The original corrupt file is preserved at `<path>.bak-<ts>`.
+      const claudeDir = path.dirname(userSettingsPath);
+      const baks = fs
+        .readdirSync(claudeDir)
+        .filter((f) => f.startsWith("settings.json.bak-"));
+      expect(baks.length).toBeGreaterThanOrEqual(1);
+      const firstBak = baks[0];
+      if (!firstBak) throw new Error("expected at least one .bak file");
+      const bakContent = fs.readFileSync(path.join(claudeDir, firstBak), "utf-8");
+      expect(bakContent).toBe("{not json}");
+
+      // A stderr warning was emitted at least once mentioning malformed.
+      const stderrCalls = stderrSpy.mock.calls.map((c) => String(c[0] ?? ""));
+      const hasMalformedWarn = stderrCalls.some((s) =>
+        s.includes("malformed") && s.includes("backed up"),
+      );
+      expect(hasMalformedWarn).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it("(3) writeSettings is atomic via tmp+rename — fs.renameSync is called with a .tmp- source", () => {
+    // We spy on fs.renameSync; the real implementation must still run so the
+    // file actually lands on disk. Capture argument shape only.
+    const renameSpy = vi.spyOn(fs, "renameSync");
+
+    try {
+      installHook({
+        cwd: tmp.cwd,
+        hookEntry: FAKE_HOOK_ENTRY,
+        postHookEntry: FAKE_HOOK_ENTRY,
+        userPromptEntry: FAKE_HOOK_ENTRY,
+        stopEntry: FAKE_HOOK_ENTRY,
+        homeDir: fakeHome,
+        userLevel: true,
+      });
+
+      // Among all renameSync calls, at least one must be tmp → final settings
+      // path with the .tmp-<pid>-<rand> shape (writeSettings's atomic-write
+      // contract).
+      const calls = renameSpy.mock.calls;
+      expect(calls.length).toBeGreaterThanOrEqual(1);
+      const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+      const projectSettingsPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+      const matched = calls.some(([src, dst]) => {
+        const s = String(src);
+        const d = String(dst);
+        return (
+          /\.tmp-\d+-/.test(s) &&
+          (d === userSettingsPath || d === projectSettingsPath)
+        );
+      });
+      expect(matched).toBe(true);
+
+      // And the resulting file is valid JSON (no half-written state visible).
+      const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+      expect(content.hooks).toBeDefined();
+    } finally {
+      renameSpy.mockRestore();
+    }
+  });
+
+  it("(4) B-086 dedup: untagged legacy PreToolUse entry is replaced cleanly (1 entry remains)", () => {
+    // Pre-seed user settings.json with an UNTAGGED entry whose command
+    // contains the bundle filename — exactly the "legacy install" case
+    // described in B-086. The new mergeUserLevelHooks must filter both
+    // tagged AND untagged TeamAgent entries before pushing the new one.
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    fs.mkdirSync(path.dirname(userSettingsPath), { recursive: true });
+    fs.writeFileSync(
+      userSettingsPath,
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "Bash",
+              // Untagged — but command points at the channel bundle filename.
+              hooks: [
+                {
+                  type: "command",
+                  command: "node /old/path/to/bin-pre-tool-use.cjs",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      "utf-8",
+    );
+
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: true,
+    });
+
+    const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+    // Exactly one PreToolUse entry: the new tagged TeamAgent one.
+    expect(content.hooks.PreToolUse).toHaveLength(1);
+    expect(content.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
+    // The legacy command path is gone.
+    const cmd: string = content.hooks.PreToolUse[0].hooks[0].command;
+    expect(cmd).not.toContain("/old/path/to/bin-pre-tool-use.cjs");
+  });
+
+  it("(5) concurrent-init advisory lock — lockfile is created during the call and removed after", () => {
+    const lockPath = path.join(fakeHome, ".claude", ".settings.lock");
+
+    // Lock must not exist before.
+    expect(fs.existsSync(lockPath)).toBe(false);
+
+    // Spy on fs.openSync so we can observe the moment the lock is acquired
+    // (its 'wx' open is synchronous and the lock is held until the merge
+    // completes). The real openSync still runs so the actual lock is taken.
+    const openSpy = vi.spyOn(fs, "openSync");
+
+    try {
+      installHook({
+        cwd: tmp.cwd,
+        hookEntry: FAKE_HOOK_ENTRY,
+        postHookEntry: FAKE_HOOK_ENTRY,
+        userPromptEntry: FAKE_HOOK_ENTRY,
+        stopEntry: FAKE_HOOK_ENTRY,
+        homeDir: fakeHome,
+        userLevel: true,
+      });
+
+      // openSync was called with the lockfile path and "wx" flag at least once.
+      const opened = openSpy.mock.calls.some(([p, flags]) => {
+        return String(p) === lockPath && String(flags) === "wx";
+      });
+      expect(opened).toBe(true);
+
+      // After a successful acquire (fd != null), the lock is released and
+      // the lockfile is unlinked. Round-2 F1 only changed the *fd === null*
+      // (degraded) branch so it no longer unlinks; the happy path is
+      // unchanged.
+      expect(fs.existsSync(lockPath)).toBe(false);
+
+      // The settings file was still written successfully.
+      const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+      const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+      expect(content.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  // ─── PR #181 round-2 (Worker FC) — true mutual-exclusion behaviour ────────
+  //
+  // Round-2 finding #10 noted that case (5) above only verifies the lockfile
+  // is created and removed — it does NOT exercise contention. The two cases
+  // below test the actual mutual-exclusion contract:
+  //
+  //   (5a) stale-lock recovery — a lockfile with mtime > 30s is detected as
+  //        stale, unlinked, and the install proceeds normally. Exercises the
+  //        retry-with-stale-detect branch in `acquireSettingsLock`.
+  //   (5b) lock held by another process — when we cannot acquire the lock
+  //        within MAX_RETRIES (5 retries × 200ms = 1s), `acquireSettingsLock`
+  //        degrades to fd=null and proceeds. The Round-2 F1 fix says we MUST
+  //        NOT unlink the lockfile we don't own. This is the regression
+  //        coverage for that fix — without F1, the second concurrent install
+  //        would silently nuke the first one's lock and break mutual
+  //        exclusion entirely.
+  it("(5a) stale-lock recovery — stale (>30s) lockfile is detected, unlinked, and install proceeds", () => {
+    const lockPath = path.join(fakeHome, ".claude", ".settings.lock");
+
+    // Pre-create a STALE lockfile (mtime in the past, > 30s ago). The
+    // stale-detect path in `acquireSettingsLock` will unlink it and retry.
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, "", "utf-8");
+    const stalePast = new Date(Date.now() - 60_000); // 60s ago > STALE_MS=30s
+    fs.utimesSync(lockPath, stalePast, stalePast);
+
+    // Sanity: the lockfile is in place and stale before we run.
+    expect(fs.existsSync(lockPath)).toBe(true);
+    expect(Date.now() - fs.statSync(lockPath).mtimeMs).toBeGreaterThan(30_000);
+
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: true,
+    });
+
+    // After install: lockfile is gone (we acquired + released it), settings
+    // were written, all without throwing on the pre-existing stale lock.
+    expect(fs.existsSync(lockPath)).toBe(false);
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+    expect(content.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
+  });
+
+  it("(5b) Round-2 F1 regression: when lock is held by another process (fd=null), releaseSettingsLock does NOT unlink", () => {
+    // This is the failure mode the round-2 /review caught: in the previous
+    // implementation, `releaseSettingsLock` unconditionally unlinked the
+    // lockfile — even when our own `fs.openSync(lockPath, "wx")` had failed
+    // and the file was still held by another process. That defeated mutual
+    // exclusion: the second install would silently nuke the first install's
+    // lock partway through its read-modify-write window.
+    //
+    // We simulate "lock held by another process" by pre-creating the
+    // lockfile with a *fresh* mtime so it never trips stale-detect, and we
+    // hold the file descriptor open for the duration of installHook. The
+    // contention path in `acquireSettingsLock` exhausts MAX_RETRIES and
+    // returns fd=null. After Round-2 F1, releaseSettingsLock(null, ...) is
+    // a no-op — the held lockfile must still exist when installHook returns.
+    const lockPath = path.join(fakeHome, ".claude", ".settings.lock");
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    const otherFd = fs.openSync(lockPath, "wx");
+
+    // Capture stderr so the degraded-path warning doesn't pollute test
+    // output, AND so we can assert it was actually emitted.
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    try {
+      installHook({
+        cwd: tmp.cwd,
+        hookEntry: FAKE_HOOK_ENTRY,
+        postHookEntry: FAKE_HOOK_ENTRY,
+        userPromptEntry: FAKE_HOOK_ENTRY,
+        stopEntry: FAKE_HOOK_ENTRY,
+        homeDir: fakeHome,
+        userLevel: true,
+      });
+
+      // The CRITICAL Round-2 F1 invariant: the lockfile that we did NOT
+      // acquire must still exist. The pre-fix code would have unlinked it.
+      expect(fs.existsSync(lockPath)).toBe(true);
+
+      // The degraded-path warning was emitted.
+      const stderrCalls = stderrSpy.mock.calls.map((c) => String(c[0] ?? ""));
+      const hasDegradedWarning = stderrCalls.some((s) =>
+        s.includes("settings lock") && s.includes("contention"),
+      );
+      expect(hasDegradedWarning).toBe(true);
+
+      // The settings file was still written (degraded path proceeds without
+      // the lock — race-prone but better than blocking init forever).
+      const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+      const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+      expect(content.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
+    } finally {
+      stderrSpy.mockRestore();
+      // Clean up: release the held lockfile we created above.
+      try { fs.closeSync(otherFd); } catch { /* best-effort */ }
+      try { fs.unlinkSync(lockPath); } catch { /* best-effort */ }
+    }
+  }, 30_000);
+
+  it("(5c) Round-2 F3 regression: stageBundleToUserTeamagent uses tmp+rename (atomic copy)", () => {
+    // Round-2 finding: under Windows, an unconditional `copyFileSync` over
+    // an in-use bundle throws EBUSY and crashes init. Under POSIX, an
+    // in-flight hook process can otherwise see a half-written bundle. The
+    // F3 fix replaces the bare copy with `copyFileSync → renameSync` via a
+    // pid+rand .tmp- intermediate. This test pins that contract by spying
+    // on `fs.renameSync` and confirming each staged channel goes through
+    // a `.tmp-<pid>-<rand>` source.
+    //
+    // We have to plant *real* hook bundles in a stable directory — using
+    // FAKE_HOOK_ENTRY (this test file's own path) doesn't trigger the
+    // stage-skip heuristic in stageBundleToUserTeamagent (size+mtime guard)
+    // when the destination doesn't yet exist, but its filename
+    // `install-hook.test.ts` is not a recognized channel basename and would
+    // confuse the staged-path assertions. Plant proper bundle-named files.
+    const stage = fs.mkdtempSync(path.join(os.tmpdir(), "stage-bundle-"));
+    try {
+      const hookEntry = path.join(stage, "bin-pre-tool-use.cjs");
+      const postHookEntry = path.join(stage, "bin-post-tool-use.cjs");
+      const userPromptEntry = path.join(stage, "bin-user-prompt-submit.cjs");
+      const stopEntry = path.join(stage, "bin-stop.cjs");
+      for (const p of [hookEntry, postHookEntry, userPromptEntry, stopEntry]) {
+        fs.writeFileSync(p, "// stub bundle\n", "utf-8");
+      }
+
+      const renameSpy = vi.spyOn(fs, "renameSync");
+      try {
+        installHook({
+          cwd: tmp.cwd,
+          hookEntry,
+          postHookEntry,
+          userPromptEntry,
+          stopEntry,
+          homeDir: fakeHome,
+          userLevel: true,
+        });
+
+        const calls = renameSpy.mock.calls;
+        // Among all renames during install (writeSettings tmp+rename for
+        // each of project + user settings.json AND stageBundleToUserTeamagent
+        // tmp+rename for each of 4 channels), at least 4 must be
+        // bundle-staging renames whose source matches the .tmp-<pid>-<rand>
+        // shape and whose destination is under <home>/.teamagent/hooks/.
+        const teamagentHooksDir = path.join(fakeHome, ".teamagent", "hooks");
+        const stagingRenames = calls.filter(([src, dst]) => {
+          const s = String(src);
+          const d = String(dst);
+          return (
+            d.startsWith(teamagentHooksDir) &&
+            /\.tmp-\d+-[a-z0-9]+$/.test(s)
+          );
+        });
+        expect(stagingRenames.length).toBeGreaterThanOrEqual(4);
+
+        // Each .tmp- source name follows pid-rand contract (no static name).
+        const stagingSources = stagingRenames.map(([s]) => String(s));
+        for (const src of stagingSources) {
+          expect(src).toMatch(/\.tmp-\d+-[a-z0-9]+$/);
+        }
+
+        // The four channel destinations all materialize as real files.
+        for (const basename of [
+          "bin-pre-tool-use.cjs",
+          "bin-post-tool-use.cjs",
+          "bin-user-prompt-submit.cjs",
+          "bin-stop.cjs",
+        ]) {
+          const dest = path.join(teamagentHooksDir, basename);
+          expect(fs.existsSync(dest)).toBe(true);
+          // No leaked .tmp- intermediates next to the final files.
+          const peers = fs.readdirSync(teamagentHooksDir);
+          const leaks = peers.filter((p) => p.startsWith(`${basename}.tmp-`));
+          expect(leaks).toEqual([]);
+        }
+      } finally {
+        renameSpy.mockRestore();
+      }
+    } finally {
+      fs.rmSync(stage, { recursive: true, force: true });
+    }
+  });
+
+  it("(6) userLevel: false leaves ~/.claude/settings.json untouched (regression lock for staging refactor)", () => {
+    // Sanity re-check after PR #181 staging refactor — the userLevel:false
+    // path must NOT touch the user-level settings file at all.
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: false,
+    });
+
+    expect(fs.existsSync(userSettingsPath)).toBe(false);
+    // Lock should never have been created either.
+    expect(fs.existsSync(path.join(fakeHome, ".claude", ".settings.lock"))).toBe(false);
+    // Project-level path still works.
+    const projectPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    const proj = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
+    expect(proj.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
   });
 });

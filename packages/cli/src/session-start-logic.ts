@@ -3,7 +3,7 @@
  */
 import { spawn } from "node:child_process";
 import fs, { appendFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import os from "node:os";
 import {
   parseUpdateState,
@@ -13,7 +13,8 @@ import {
   type UpdateState,
 } from "@teamagent/core";
 import { rotateIfTooLarge } from "./log-rotate.js";
-import { findTeamagentRoot } from "./find-teamagent-root.js";
+import { findTeamagentRoot } from "./lib/walk-up.js";
+import { hasProjectMarker } from "./lib/project-markers.js";
 
 export const DEFAULT_DEBOUNCE_HOURS = 24;
 
@@ -23,53 +24,69 @@ export type Action =
   | "skip-auto-init-disabled"
   | "skip-already-initialized";
 
-/** Project markers — cwd must have at least one of these to trigger auto-init. */
-const PROJECT_MARKERS = [
-  ".git",
-  "package.json",
-  "pyproject.toml",
-  "pnpm-workspace.yaml",
-  "Cargo.toml",
-  "go.mod",
-  "pom.xml",
-  "build.gradle",
-  "build.gradle.kts",
-  "Gemfile",
-  "composer.json",
-];
-
+/**
+ * Project markers — cwd must have at least one of these to trigger auto-init.
+ * Single source of truth lives in `./lib/project-markers.ts`; this thin wrapper
+ * preserves the `isProjectDir` name used elsewhere in this module.
+ */
 function isProjectDir(cwd: string): boolean {
-  for (const m of PROJECT_MARKERS) {
-    if (existsSync(join(cwd, m))) return true;
-  }
-  return false;
+  return hasProjectMarker(cwd);
 }
 
 function autoInitDisabled(cwd: string): boolean {
-  // User can opt out per-project OR globally.
-  // Walk up to find the nearest ancestor with .teamagent/knowledge.db so that
-  // the disabled flag is read from the project root, not the current subfolder.
-  const root = findTeamagentRoot(cwd);
-  return (
-    existsSync(join(root, ".teamagent", "auto-init.disabled")) ||
-    existsSync(join(os.homedir(), ".teamagent", "auto-init.disabled"))
-  );
+  // User can opt out per-project, ancestor-project, OR globally.
+  // Issue #161 follow-up (PR #181 finding #8): walk up to honor an ancestor
+  // project's `auto-init.disabled` marker so a SessionStart from a child cwd
+  // of an opted-out parent doesn't auto-init regardless. This walk-up is
+  // INDEPENDENT of `findTeamagentRoot` (which requires `knowledge.db`)
+  // because a user can opt out BEFORE ever initializing — the ancestor may
+  // have `.teamagent/auto-init.disabled` but no `knowledge.db` yet.
+  //
+  // Mirrors `findTeamagentRoot`'s security guards: home-directory cap +
+  // project-marker requirement, both as defense-in-depth against attacker-
+  // planted markers in /tmp or similar.
+  if (existsSync(join(cwd, ".teamagent", "auto-init.disabled"))) return true;
+  if (existsSync(join(os.homedir(), ".teamagent", "auto-init.disabled"))) return true;
+  if (ancestorHasAutoInitDisabled(cwd)) return true;
+  return false;
+}
+
+function ancestorHasAutoInitDisabled(start: string): boolean {
+  // Walks from `start`'s parent up to (but not including) `os.homedir()`
+  // and the filesystem root. Returns true if ANY ancestor that has a
+  // project-marker carries a `.teamagent/auto-init.disabled` file.
+  //
+  // Defense-in-depth, mirroring `findTeamagentRoot`:
+  //   - project-marker requirement rejects bare markers planted in
+  //     non-project directories (e.g. /tmp/.teamagent/auto-init.disabled);
+  //   - the home-directory boundary stops the walk at `~` (we don't honor
+  //     a marker on `~` itself — the global opt-out path is already
+  //     checked separately as `~/.teamagent/auto-init.disabled`).
+  const homeDir = os.homedir();
+  if (start === homeDir) return false;
+  let cur = dirname(start);
+  while (true) {
+    if (cur === homeDir) return false; // do not match `~` itself
+    if (isProjectDir(cur)) {
+      if (existsSync(join(cur, ".teamagent", "auto-init.disabled"))) return true;
+    }
+    const parent = dirname(cur);
+    if (parent === cur) return false; // fs root
+    cur = parent;
+  }
 }
 
 export function decideAction(cwd: string, _now?: Date, _debounceHours?: number): Action {
-  // Walk up from cwd to find the nearest ancestor with .teamagent/knowledge.db.
-  // If found in any ancestor, treat this session as already initialized so we
-  // don't create a second fragmented .teamagent in the subfolder (issue #161).
-  const projectRoot = findTeamagentRoot(cwd);
-  const dbPath = join(projectRoot, ".teamagent", "knowledge.db");
-  if (!existsSync(dbPath)) {
-    // New project (no DB yet). Auto-init if it looks like a real project
-    // and user hasn't opted out.
-    if (autoInitDisabled(cwd)) return "skip-auto-init-disabled";
-    if (!isProjectDir(cwd)) return "skip-not-a-project";
-    return "auto-init";
-  }
-  return "skip-already-initialized";
+  // Issue #161: walk up to honor an ancestor's .teamagent/knowledge.db.
+  // SessionStart from a sub-directory of an already-initialized project
+  // must NOT auto-init a duplicate child .teamagent/.
+  const ancestorRoot = findTeamagentRoot(cwd);
+  if (ancestorRoot !== null) return "skip-already-initialized";
+
+  // No ancestor has a DB. Apply the existing per-cwd logic for new projects.
+  if (autoInitDisabled(cwd)) return "skip-auto-init-disabled";
+  if (!isProjectDir(cwd)) return "skip-not-a-project";
+  return "auto-init";
 }
 
 export function findMainBin(): string {

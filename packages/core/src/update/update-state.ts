@@ -22,6 +22,22 @@ export interface UpdateState {
    * persisted JSON for backwards compat with pre-B-104 state files.
    */
   reinstall_banner_shown_at: number;
+
+  /** ETag returned by GitHub on the last 200 response. Empty string = none. */
+  last_branch_etag: string;
+
+  /** SHA returned alongside last_branch_etag. Used to fill cachedSha for 304.
+   *  Distinct from last_installed_sha — etag tracks "what's on the remote",
+   *  sha tracks "what we have locally installed". They diverge between
+   *  detection and install. */
+  last_branch_sha: string;
+
+  /** Epoch ms; if non-zero and now < this, skip the next check (backoff active).
+   *  0 = no active backoff. */
+  next_check_after_ts: number;
+
+  /** Counter for exponential backoff. Reset to 0 on any successful fetch. */
+  consecutive_rate_limits: number;
 }
 
 export function defaultUpdateState(): UpdateState {
@@ -35,6 +51,10 @@ export function defaultUpdateState(): UpdateState {
     last_install_error: null,
     pending_banner: null,
     reinstall_banner_shown_at: 0,
+    last_branch_etag: "",
+    last_branch_sha: "",
+    next_check_after_ts: 0,
+    consecutive_rate_limits: 0,
   };
 }
 
@@ -54,6 +74,12 @@ export function parseUpdateState(raw: string): UpdateState {
       pending_banner: isPendingBanner(obj.pending_banner) ? obj.pending_banner : null,
       reinstall_banner_shown_at:
         typeof obj.reinstall_banner_shown_at === "number" ? obj.reinstall_banner_shown_at : def.reinstall_banner_shown_at,
+      last_branch_etag: typeof obj.last_branch_etag === "string" ? obj.last_branch_etag : def.last_branch_etag,
+      last_branch_sha: typeof obj.last_branch_sha === "string" ? obj.last_branch_sha : def.last_branch_sha,
+      next_check_after_ts:
+        typeof obj.next_check_after_ts === "number" ? obj.next_check_after_ts : def.next_check_after_ts,
+      consecutive_rate_limits:
+        typeof obj.consecutive_rate_limits === "number" ? obj.consecutive_rate_limits : def.consecutive_rate_limits,
     };
   } catch {
     return def;

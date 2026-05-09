@@ -13,6 +13,7 @@ the indexes below to choose what to read first.
 | Look up implementation details | [SYSTEM.md](SYSTEM.md) |
 | Launch the real-time dashboard | Run `pnpm teamagent dashboard --watch --open` |
 | Plan a PR — what to write, what to ship, how to verify, which probes to run | [HOWTO-PLAN-PR.md](HOWTO-PLAN-PR.md) |
+| Understand the Claude Code GitHub Action workflows (`@claude` mention bot + auto PR review) | [features/claude-code-action.md](features/claude-code-action.md) |
 | Verify or test a feature/fix, including PR review gates | [feature-verification.md](feature-verification.md) |
 | Run the autonomous verification loop on a product feature (#1–64) | [verify/RUN-VERIFY-LOOP.md](verify/RUN-VERIFY-LOOP.md) |
 | Prepare a verified-only CEO/VC ship-status CSV | [PRESHIP.md](PRESHIP.md) |
@@ -49,8 +50,8 @@ the indexes below to choose what to read first.
 ### Verification
 
 1. [feature-verification.md](feature-verification.md) for the required
-   feature/fix verification gate: `claudefast`, `codex`, JSON hard-match, tmux
-   `/export`, PR review gate, and commit/PR evidence.
+   feature/fix verification gate: `claudefast` JSON snapshot, tmux `/export`,
+   PR review gate, and commit/PR evidence.
 2. [pr-14-status.md](pr-14-status.md) for the current PR #14 local status
    index when GitHub access is blocked.
 3. [verify/RUN-VERIFY-LOOP.md](verify/RUN-VERIFY-LOOP.md) for the
