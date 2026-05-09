@@ -38,11 +38,11 @@ For the multi-tool channel design, see [`docs/features/multi-tool.md`](./multi-t
 | 🟢 Active Node bundles installed by `teamagent init` (project-level) | 6 | `bin-{pre-tool-use, post-tool-use, user-prompt-submit, stop, session-end, pre-compact}.cjs` |
 | 🟢 Active Node bundles installed by `teamagent init` (user-level additive) | 2 | `bin-session-start.cjs`, `bin-digital-twin-tap.cjs` (both write to `~/.claude/settings.json` only) |
 | 🟢 Active statusLine script (single-slot, chain-wraps user cmd) | 1 | `dist/teamagent-statusline.cjs` |
-| 🟢 Active `.sh` scripts wired by committed `.claude/settings.json` | 2 | `self-report-fused.sh`, `digital-twin-tap.sh` |
-| 🟡 Deprecated standalone command (still functional) | 1 | `teamagent install-user-hook` — SessionStart logic folded into `installHook()`; emits deprecation warning |
+| 🟢 Active `.sh` scripts wired by committed `.claude/settings.json` | 1 | `self-report-fused.sh` (12-field self-report enforcement; SIGTERM-aware bash wrapper) |
+| 🟡 Deprecated standalone command (still functional shim) | 1 | `teamagent install-user-hook` — body now delegates to `applyUserLevelChannelOps`; emits deprecation warning. Removed in v1.0. |
 | ⚪ Updater (not a hook) | 1 | `bin-updater.ts` (CLI self-update; intentionally excluded from hook installation) |
 
-**Total**: 12 production assets. Coverage by `teamagent init` after the B+C scope PR (2026-05-09): **11/12 ≈ 92%** — only `bin-updater.ts` is excluded by design. Note: `digital-twin-tap.cjs` is wired user-level only because committed `.claude/settings.json` already routes the `.sh` wrapper (which internally spawns the `.cjs`); writing the `.cjs` to project-level too would double-tap when working IN TeamBrain. User-level write means OTHER projects get one tap (via the .cjs); TeamBrain itself stays at one tap (via the .sh wrapper).
+**Total**: 11 production assets. Coverage by `teamagent init`: **10/11 ≈ 91%** — only `bin-updater.ts` is excluded by design. After v0.11.0 (2026-05-09 cleanup PR), `digital-twin-tap.cjs` is the SOLE digital-twin path on every machine: TeamBrain itself receives one tap (via the user-level `.cjs`) and other projects also receive one tap (also via the user-level `.cjs`). The previous in-TeamBrain double-tap risk — where `digital-twin-tap.sh` from committed settings AND `bin-digital-twin-tap.cjs` from user-level both fired against `tapSession`'s idempotent (cwd, session_id) dedup — is eliminated entirely, not merely deduped.
 
 ## Channel-by-channel
 
@@ -70,18 +70,18 @@ For the multi-tool channel design, see [`docs/features/multi-tool.md`](./multi-t
 
 ### 5. Stop  
 **Fires when**: Claude finishes a turn.  
-**Three concurrent handlers** (committed `.claude/settings.json` + `settings.local.json` both contribute):
+**Three concurrent handlers** post-v0.11.0 (committed `.claude/settings.json` + `settings.local.json` + user-level `~/.claude/settings.json` all contribute):
 
 | Handler | Source | Wired by |
 |---------|--------|----------|
-| `bin-stop.cjs` | TS source | `teamagent init` → `settings.local.json` |
+| `bin-stop.cjs` | TS source | `teamagent init` → `settings.local.json` (project) + user-level `~/.claude/settings.json` |
 | `self-report-fused.sh` | shell wrapper | committed `.claude/settings.json` |
-| `digital-twin-tap.sh` (wraps `bin-digital-twin-tap` logic) | shell + node | committed `.claude/settings.json` |
+| `bin-digital-twin-tap.cjs` | TS source | `teamagent init` → user-level `~/.claude/settings.json` only |
 
 **Jobs (in order)**:
 - `bin-stop.cjs`: learning pipeline `analyze → calibrate → compile`. Sync (legacy) or async detached mode (recommended) — see source comment.
 - `self-report-fused.sh`: enforce the 12-field `<self-report>` block; block if missing or any field is `true`.
-- `digital-twin-tap.sh`: forward `(cwd, session_id)` to `tapSession()` of `@teamagent/digital-twin`. Includes SIGTERM forwarding so the hook timeout doesn't reparent node to launchd.
+- `bin-digital-twin-tap.cjs`: forward `(cwd, session_id)` to `tapSession()` of `@teamagent/digital-twin`. v0.11.0 dropped the `digital-twin-tap.sh` bash wrapper from committed `.claude/settings.json` — the `.cjs` is now the only digital-twin path and is installed user-level only by `teamagent init`. `tapSession()` is still idempotent by `(cwd, session_id)` for safety.
 
 ### 6. PreCompact  
 **Fires when**: Claude Code is about to compact the transcript.  
@@ -102,12 +102,13 @@ Single-slot `statusLine.command` registered by `installHook()` into `.claude/set
 
 ## Why `.sh` and `.cjs` co-exist
 
-`.sh` files in `.claude/hooks/` are **wrappers**, not duplicates. They:
-1. Are tracked by `.claude/settings.json` (committed) so a fresh clone gets the hooks immediately, no `teamagent init` required.
-2. Handle SIGTERM forwarding so `node` children aren't reparented to `launchd`/`init` when Claude Code times out the hook.
-3. Cross-platform path resolution (look up `bin-stop.cjs` in dev tree / pnpm hoisted / global install).
+After v0.11.0 only one `.sh` wrapper remains: `self-report-fused.sh`. It stays because the 12-field self-report block enforcement is a project-level discipline that must be available the moment a fresh TeamBrain clone is opened — before any `teamagent init` has had a chance to register the `.cjs` direct path. The bash wrapper:
 
-The `.cjs` files installed to `settings.local.json` by `teamagent init` are the **direct path** — faster (no bash spawn), but only present after init runs.
+1. Is tracked by `.claude/settings.json` (committed) so a fresh clone gets the enforcement immediately, no `teamagent init` required.
+2. Handles SIGTERM forwarding so `node` children aren't reparented to `launchd`/`init` when Claude Code times out the hook.
+3. Cross-platform path resolution (looks up its target in dev tree / pnpm hoisted / global install).
+
+The `.cjs` files installed to `settings.local.json` (project) and `~/.claude/settings.json` (user) by `teamagent init` are the **direct path** — faster (no bash spawn), present after init runs. v0.11.0 collapsed the digital-twin tap from a bash-wrapper-plus-cjs pair down to the cjs alone (eliminates the in-TeamBrain double-tap risk that PR #232 § 8 tracked).
 
 ## Archived scripts (2026-05-09)
 
@@ -126,8 +127,17 @@ The five gaps listed in the archive PR's "out of scope" section were closed in a
 - ✅ Folded `teamagent install-user-hook`'s SessionStart logic into `installHook()`'s user-level branch; standalone command emits a deprecation warning but remains functional for ≥ 1 major version.
 - ✅ Added `auditOrphanShellHooks(cwd)`; `teamagent init` now scans `.claude/hooks/*.sh` and warns on unreferenced files.
 
-## Future work (next major version)
+## Future work
 
-- Refactor project-level `installHook()` to use the same channelOps loop as user-level (eliminate inline blocks).
-- Remove `digital-twin-tap.sh` wrapper + drop its reference from committed `.claude/settings.json` once `bin-digital-twin-tap.cjs` is universally installed; this collapses to a single direct-`.cjs` Stop entry per project.
-- Delete the deprecated `teamagent install-user-hook` command after one major version.
+Two of the three follow-ups originally captured in PR #232 § 8 landed in v0.11.0
+(2026-05-09 cleanup PR — `docs/plans/2026-05-09-install-hook-cleanup-v0.11/`):
+
+- ✅ **v0.11.0** — refactor project-level `installHook()` to share the
+  `applyChannelOps` loop with user level (inline blocks gone).
+- ✅ **v0.11.0** — drop `digital-twin-tap.sh` wrapper + its reference from
+  committed `.claude/settings.json`. `bin-digital-twin-tap.cjs` is now the
+  sole digital-twin Stop path on every machine.
+- ⏳ **v1.0** — delete the deprecated `teamagent install-user-hook` command.
+  Currently a soft-retire shim delegating to `applyUserLevelChannelOps`;
+  removed when `postinstall.mjs:365` is also migrated to call `init` /
+  `install-hook` directly.

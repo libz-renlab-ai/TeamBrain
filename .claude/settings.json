@@ -9,11 +9,6 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/self-report-fused.sh\"",
             "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/digital-twin-tap.sh\"",
-            "timeout": 5
           }
         ]
       }
