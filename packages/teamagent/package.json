@@ -1,6 +1,6 @@
 {
   "name": "teamagent",
-  "version": "0.10.1",
+  "version": "0.10.5",
   "description": "自进化 AI 规则引擎 for Claude Code | Self-evolving AI rule engine",
   "keywords": [
     "claude-code",

@@ -13,6 +13,23 @@ artifacts the user sees) do NOT need an entry.
 
 ## Unreleased
 
+(no pending entries)
+
+## [0.10.5] — 2026-05-09
+
+### Added
+
+- **Issue #225**: Soft-force upgrade prompt — when a new version is available,
+  every SessionStart now surfaces a three-choice banner (`teamagent update --now`
+  立刻升级, `--snooze` 下次再说, `--never` 永远别问). Snooze backs off 24h →
+  48h → 7d so a user who keeps deferring isn't pestered every shell.
+  CHANGELOG-driven "what's new" bullets ride along on the prompt, the post-init
+  tail, and a new `teamagent whatsnew` command — all three surfaces share one
+  pure parser so they stay in sync. `TEAMAGENT_NEVER_PROMPT=1` env var is the
+  CI / dogfood-probe escape hatch; `teamagent update --enable` resets snooze +
+  never_prompt back to defaults. Auto-update polling itself is unchanged —
+  only the user-facing banner is upgraded.
+
 ### Removed
 
 - **PR #231 / Issue #229**: Removed `scripts/fixed-flow-watcher.sh` (the local

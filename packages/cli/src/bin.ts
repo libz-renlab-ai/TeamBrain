@@ -1070,6 +1070,13 @@ async function main(): Promise<void> {
       process.stdout.write(r.output);
       process.exit(r.ok ? 0 : 1);
     }
+    case "whatsnew": {
+      const { executeWhatsNew, parseWhatsNewArgs } = await import("./commands/whatsnew.js");
+      const opts = parseWhatsNewArgs(rest);
+      const r = executeWhatsNew(opts);
+      process.stdout.write(r.output);
+      process.exit(r.ok ? 0 : 1);
+    }
     case "pair": {
       const parsed = parsePairArgs(rest);
       if (parsed.subcommand === "capsule") {

@@ -1,4 +1,9 @@
-import { duckifyText } from "@teamagent/core";
+import {
+  duckifyText,
+  parseChangelog,
+  renderWhatsNewTail,
+} from "@teamagent/core";
+import { loadBundledChangelog } from "../changelog-loader.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -1475,7 +1480,53 @@ export function renderInitResult(result: InitResult): string {
     lines.push(result.packPrompt);
   }
 
+  // Issue #225 — post-init "what's new" tail. Only rendered on the ok path of
+  // a non-dry-run init so first-time users see what shipped with this version.
+  // Reads CHANGELOG via the same loader the SessionStart prompt uses; gracefully
+  // returns empty when CHANGELOG is missing (dev install / tarball without copy).
+  if (result.ok && !result.dryRun) {
+    const tail = buildPostInitWhatsNewTail();
+    if (tail.length > 0) {
+      lines.push(tail);
+    }
+  }
+
   return duckifyText(lines.join("\n") + "\n");
+}
+
+/**
+ * Issue #225 — builds the post-init "🆕 本次新增" tail by reading the bundled
+ * CHANGELOG.md and surfacing bullets from the second-newest H2 → newest H2.
+ *
+ * Returns empty string when:
+ *   - CHANGELOG.md cannot be loaded (dev install without bundled copy)
+ *   - fewer than 2 version sections exist (nothing to compare)
+ *   - no bullets in the range
+ *
+ * Lives next to renderInitResult so the post-init story stays self-contained;
+ * the bullet rendering itself is a pure function in @teamagent/core.
+ */
+function buildPostInitWhatsNewTail(): string {
+  let content = "";
+  try {
+    content = loadBundledChangelog();
+  } catch {
+    return "";
+  }
+  if (!content) return "";
+  const versionRe = /^##\s+(?:\[)?(\d+\.\d+\.\d+(?:[.-][\w.]+)?)(?:\])?/gm;
+  const versions: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = versionRe.exec(content)) !== null) {
+    if (m[1]) versions.push(m[1]);
+  }
+  if (versions.length < 2) return "";
+  const installedVersion = versions[0]!;
+  const since = versions[1]!;
+  const bullets = parseChangelog(content, since, installedVersion, {
+    maxBullets: 7,
+  });
+  return renderWhatsNewTail({ installedVersion, bullets });
 }
 
 function stepLabel(step: string): string {
