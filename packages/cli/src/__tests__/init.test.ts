@@ -1024,6 +1024,34 @@ describe("renderInitResult — new UX", () => {
     }
     expect(out).not.toContain("undefined");
   });
+
+  // Issue #218 — F12+F16 (review iter 2): F11 catches "every path appears"
+  // but NOT "this path is labeled X". Banner template renders [0] as
+  // "(TL;DR routing)" and [1]/[2]/[3] joined by " / " as "(canonical)".
+  // Reordering the const swaps labels silently — claim-to-merge would
+  // become a "canonical" doc and FIXEDFLOW.md would become "TL;DR routing".
+  // This test pins each label binding so any reorder of the const breaks
+  // CI loud and clear.
+  it("FIXEDFLOW banner labels [0] as 'TL;DR routing' and [1..3] joined as 'canonical'", () => {
+    const out = renderInitResult({
+      ok: true,
+      dryRun: false,
+      steps: [
+        { step: "pre-check", status: "ok" as const, detail: "ok" },
+      ],
+      summary: {
+        stack: "lang=typescript",
+        presetAdded: 0,
+        seedAdded: 0,
+        importedRules: 0,
+        totalActiveEntries: 0,
+      },
+    });
+    expect(out).toContain(`${FIXEDFLOW_BANNER_DOC_PATHS[0]} (TL;DR routing)`);
+    expect(out).toContain(
+      `${FIXEDFLOW_BANNER_DOC_PATHS[1]} / ${FIXEDFLOW_BANNER_DOC_PATHS[2]} / ${FIXEDFLOW_BANNER_DOC_PATHS[3]} (canonical)`,
+    );
+  });
 });
 
 // Issue #218 — F2 + F3: end-to-end coverage of doMirrorClaimToMergeSkill
