@@ -132,6 +132,9 @@ function snoozeCmd(): UpdateRunResult {
     ...s,
     snooze_level: result.snooze_level,
     snooze_until_ts: result.snooze_until_ts,
+    // Issue #225 iter-1: dismissing for THIS pending_banner.to so the prompt
+    // stops re-firing across SessionStarts (until a new version's banner lands).
+    prompt_dismissed_for_to: s.pending_banner?.to ?? "",
   });
   const hours = Math.round((result.snooze_until_ts - Date.now()) / (60 * 60 * 1000));
   const human =
@@ -153,7 +156,14 @@ function snoozeCmd(): UpdateRunResult {
  */
 function neverCmd(): UpdateRunResult {
   const s = readState();
-  writeState({ ...s, never_prompt: true });
+  writeState({
+    ...s,
+    never_prompt: true,
+    // Issue #225 iter-1: also dismiss the current pending_banner.to so even if
+    // the user later un-sets never_prompt via --enable, this version doesn't
+    // re-fire (a brand new pending_banner.to will fire fresh).
+    prompt_dismissed_for_to: s.pending_banner?.to ?? "",
+  });
   return {
     ok: true,
     output:
@@ -203,13 +213,21 @@ function enableCmd(): UpdateRunResult {
   // Issue #225: --enable also clears the soft-force opt-out + snooze so the
   // user can fully reset the prompt state with one command. Without this,
   // a user who set --never would have to hand-edit update-state.json.
+  // iter-1: also clears prompt_dismissed_for_to so the user explicitly opting
+  // back IN sees the current pending_banner's prompt next SessionStart.
   const s = readState();
-  if (s.never_prompt || s.snooze_level !== 0 || s.snooze_until_ts !== 0) {
+  if (
+    s.never_prompt ||
+    s.snooze_level !== 0 ||
+    s.snooze_until_ts !== 0 ||
+    s.prompt_dismissed_for_to !== ""
+  ) {
     writeState({
       ...s,
       never_prompt: false,
       snooze_level: 0,
       snooze_until_ts: 0,
+      prompt_dismissed_for_to: "",
     });
     return {
       ok: true,
@@ -281,12 +299,16 @@ async function nowCmd(): Promise<UpdateRunResult> {
   // Reset throttle so updater proceeds, then run in foreground.
   // Issue #225: also clear snooze + never_prompt — user just said "yes go",
   // so leaving the prompt silenced afterwards would be confusing.
+  // Issue #225 iter-1: also dismiss the current pending_banner.to so the
+  // prompt doesn't re-fire on the SessionStart immediately after `--now`
+  // (the user just acknowledged this version).
   const s = readState();
   s.last_check_ts = 0;
   s.consecutive_install_failures = 0;
   s.snooze_level = 0;
   s.snooze_until_ts = 0;
   s.never_prompt = false;
+  s.prompt_dismissed_for_to = s.pending_banner?.to ?? "";
   writeState(s);
   return new Promise((resolve) => {
     const updaterBin = findUpdaterBinary();

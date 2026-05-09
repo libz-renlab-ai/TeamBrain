@@ -62,6 +62,7 @@ describe("UpdateState", () => {
       snooze_until_ts: 0,
       snooze_level: 0,
       never_prompt: false,
+      prompt_dismissed_for_to: "",
     };
     expect(parseUpdateState(serializeUpdateState(s))).toEqual(s);
   });
@@ -98,6 +99,7 @@ describe("UpdateState", () => {
       snooze_until_ts: 0,
       snooze_level: 0,
       never_prompt: false,
+      prompt_dismissed_for_to: "",
     };
     expect(parseUpdateState(serializeUpdateState(s))).toEqual(s);
   });
@@ -115,8 +117,24 @@ describe("UpdateState", () => {
     expect(s.snooze_until_ts).toBe(0);
     expect(s.snooze_level).toBe(0);
     expect(s.never_prompt).toBe(false);
+    // iter-1 fix: prompt_dismissed_for_to also defaults to "" for old state
+    expect(s.prompt_dismissed_for_to).toBe("");
     // Existing field still parses
     expect(s.last_installed_sha).toBe("old-sha");
+  });
+
+  it("parseUpdateState round-trips prompt_dismissed_for_to (issue #225 iter-1)", () => {
+    const s = parseUpdateState(
+      JSON.stringify({ prompt_dismissed_for_to: "abc1234567" }),
+    );
+    expect(s.prompt_dismissed_for_to).toBe("abc1234567");
+  });
+
+  it("parseUpdateState falls back to empty string when prompt_dismissed_for_to has wrong type", () => {
+    const s = parseUpdateState(
+      JSON.stringify({ prompt_dismissed_for_to: 12345 }),
+    );
+    expect(s.prompt_dismissed_for_to).toBe("");
   });
 
   it("parseUpdateState round-trips snooze + never_prompt with non-default values", () => {
@@ -150,6 +168,7 @@ describe("UpdateState", () => {
     expect(d.snooze_until_ts).toBe(0);
     expect(d.snooze_level).toBe(0);
     expect(d.never_prompt).toBe(false);
+    expect(d.prompt_dismissed_for_to).toBe("");
   });
 
   // § 2.2 new fields — (b) backwards-compat: old state files without new fields

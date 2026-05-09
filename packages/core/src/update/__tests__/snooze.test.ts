@@ -116,16 +116,59 @@ describe("shouldPromptUpgrade", () => {
     ).toBe(true);
   });
 
-  it("returns false when banner shown=true and no explicit pending", () => {
+  it("re-fires even when banner shown=true (soft-force semantic — issue #225 iter-1)", () => {
+    // KEY: the legacy `pending_banner.shown` flag is owned by maybeShowPendingBanner
+    // (post-install celebration). Soft-force prompt re-fires regardless until the
+    // user dismisses via --now/--snooze/--never, which sets prompt_dismissed_for_to.
     expect(
       shouldPromptUpgrade({
         state: {
           ...baseState(),
-          pending_banner: { from: "a", to: "b", at: 0, shown: true },
+          pending_banner: { from: "a", to: "newSHA123", at: 0, shown: true },
+        },
+        now: 0,
+        env: {},
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false once user dismisses via prompt_dismissed_for_to matching pending_banner.to", () => {
+    expect(
+      shouldPromptUpgrade({
+        state: {
+          ...baseState(),
+          pending_banner: { from: "a", to: "newSHA123", at: 0, shown: true },
+          prompt_dismissed_for_to: "newSHA123",
         },
         now: 0,
         env: {},
       }),
     ).toBe(false);
+  });
+
+  it("re-fires when a NEW pending_banner.to lands after a prior dismissal", () => {
+    // Old dismissal was for "oldSHA"; new pending banner is for "newSHA"; the
+    // SHA mismatch means the user hasn't acknowledged this NEW version yet.
+    expect(
+      shouldPromptUpgrade({
+        state: {
+          ...baseState(),
+          pending_banner: { from: "a", to: "newSHA", at: 0, shown: false },
+          prompt_dismissed_for_to: "oldSHA",
+        },
+        now: 0,
+        env: {},
+      }),
+    ).toBe(true);
+  });
+
+  it("re-fires across two SessionStarts when no dismissal happens between", () => {
+    // Same state evaluated twice (no mutation); both calls return true.
+    const state = {
+      ...baseState(),
+      pending_banner: { from: "a", to: "newSHA", at: 0, shown: false },
+    };
+    expect(shouldPromptUpgrade({ state, now: 1000, env: {} })).toBe(true);
+    expect(shouldPromptUpgrade({ state, now: 2000, env: {} })).toBe(true);
   });
 });

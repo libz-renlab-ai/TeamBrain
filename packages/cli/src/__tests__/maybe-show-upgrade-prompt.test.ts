@@ -201,4 +201,56 @@ describe("maybeShowUpgradePrompt", () => {
     expect(captured).toContain("abcdef1");
     expect(captured).toContain("teamagent update --now");
   });
+
+  // Issue #225 iter-1 — soft-force re-fire semantic
+  it("re-fires across multiple SessionStarts when no dismissal happens between (issue #225 iter-1)", () => {
+    writeUpdateState({
+      ...defaultUpdateState(),
+      last_installed_version: "0.10.1",
+      pending_banner: { from: "old", to: "newSHA", at: 0, shown: false },
+    });
+    let firstCall = "";
+    let secondCall = "";
+    maybeShowUpgradePrompt((s) => { firstCall += s; }, () => 1000, loadFixtureChangelog);
+    maybeShowUpgradePrompt((s) => { secondCall += s; }, () => 2000, loadFixtureChangelog);
+    expect(firstCall).toContain("teamagent update --now");
+    expect(secondCall).toContain("teamagent update --now");
+  });
+
+  it("re-fires even when pending_banner.shown=true (decoupled from legacy banner)", () => {
+    writeUpdateState({
+      ...defaultUpdateState(),
+      last_installed_version: "0.10.1",
+      // shown=true would suppress the legacy maybeShowPendingBanner; the new
+      // soft-force prompt is decoupled and still fires.
+      pending_banner: { from: "old", to: "newSHA", at: 0, shown: true },
+    });
+    let captured = "";
+    maybeShowUpgradePrompt((s) => { captured += s; }, () => 1000, loadFixtureChangelog);
+    expect(captured).toContain("teamagent update --now");
+  });
+
+  it("stops re-firing once user dismisses via prompt_dismissed_for_to", () => {
+    writeUpdateState({
+      ...defaultUpdateState(),
+      last_installed_version: "0.10.1",
+      pending_banner: { from: "old", to: "newSHA", at: 0, shown: false },
+      prompt_dismissed_for_to: "newSHA",
+    });
+    let captured = "";
+    maybeShowUpgradePrompt((s) => { captured += s; }, () => 1000, loadFixtureChangelog);
+    expect(captured).toBe("");
+  });
+
+  it("re-fires when a NEW pending_banner.to lands after a prior dismissal", () => {
+    writeUpdateState({
+      ...defaultUpdateState(),
+      last_installed_version: "0.10.1",
+      pending_banner: { from: "old", to: "evenNewerSHA", at: 0, shown: false },
+      prompt_dismissed_for_to: "newSHA",
+    });
+    let captured = "";
+    maybeShowUpgradePrompt((s) => { captured += s; }, () => 1000, loadFixtureChangelog);
+    expect(captured).toContain("teamagent update --now");
+  });
 });
