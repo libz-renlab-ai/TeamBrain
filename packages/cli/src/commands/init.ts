@@ -1130,7 +1130,16 @@ async function doCompileSkills(
   }
 }
 
-function doMirrorClaimToMergeSkill(
+/**
+ * Mirror a project-level skill at `.claude/skills/<skillId>/SKILL.md` to the
+ * user-level skills dir. Designed so future per-skill mirrors (e.g. another
+ * routing skill) can call this directly without copy-pasting fs logic.
+ *
+ * Failure is intentionally non-fatal — see C2 (issue #218) for why.
+ */
+function mirrorProjectSkillToUserLevel(
+  skillId: string,
+  stepKey: string,
   paths: ReturnType<typeof resolvePaths>,
   dryRun: boolean,
 ): InitStepResult {
@@ -1138,27 +1147,22 @@ function doMirrorClaimToMergeSkill(
     paths.cwd,
     ".claude",
     "skills",
-    "claim-to-merge",
+    skillId,
     "SKILL.md",
   );
-  const targetPath = path.join(
-    paths.skillsDir,
-    "claim-to-merge",
-    "SKILL.md",
-  );
+  const targetPath = path.join(paths.skillsDir, skillId, "SKILL.md");
 
   if (!fs.existsSync(sourcePath)) {
     return {
-      step: MIRROR_CLAIM_STEP,
+      step: stepKey,
       status: "skipped",
-      detail:
-        "源 .claude/skills/claim-to-merge/SKILL.md 不存在（仅 TeamBrain 仓库需要）",
+      detail: `源 .claude/skills/${skillId}/SKILL.md 不存在（仅 TeamBrain 仓库需要）`,
     };
   }
 
   if (dryRun) {
     return okStep(
-      MIRROR_CLAIM_STEP,
+      stepKey,
       `(dry-run) 会复制 ${sourcePath} → ${targetPath}`,
     );
   }
@@ -1166,10 +1170,7 @@ function doMirrorClaimToMergeSkill(
   try {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.copyFileSync(sourcePath, targetPath);
-    return okStep(
-      MIRROR_CLAIM_STEP,
-      `已复制到 ${targetPath}（用户级 FIXEDFLOW 入口）`,
-    );
+    return okStep(stepKey, `已复制到 ${targetPath}（用户级 FIXEDFLOW 入口）`);
   } catch (err) {
     // Cosmetic mirror failure (e.g. $HOME read-only, disk full) must NOT
     // flip result.ok=false (line 517 aggregates `!steps.some(failed)`).
@@ -1179,10 +1180,22 @@ function doMirrorClaimToMergeSkill(
     // okStep with a warning prefix so the failure is reported but
     // non-fatal.
     return okStep(
-      MIRROR_CLAIM_STEP,
+      stepKey,
       `⚠️ 镜像失败但 init 继续（cosmetic）: ${String(err).slice(0, 160)}`,
     );
   }
+}
+
+function doMirrorClaimToMergeSkill(
+  paths: ReturnType<typeof resolvePaths>,
+  dryRun: boolean,
+): InitStepResult {
+  return mirrorProjectSkillToUserLevel(
+    "claim-to-merge",
+    MIRROR_CLAIM_STEP,
+    paths,
+    dryRun,
+  );
 }
 
 function doLinkCodexFiles(
