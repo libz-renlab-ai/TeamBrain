@@ -65,14 +65,14 @@ describe("executeInstallPlugins", () => {
 
   it("--only filters plugins but still registers all required marketplaces", async () => {
     const result = await executeInstallPlugins({
-      only: ["sales"],
+      only: ["code-review"],
       installer: fakeInstaller(),
     });
     expect(result.plugins).toHaveLength(1);
-    expect(result.plugins[0]!.name).toBe("sales@knowledge-work-plugins");
+    expect(result.plugins[0]!.name).toBe("code-review@claude-plugins-official");
     // marketplace set is just the ones needed by filtered plugins
     const mpNames = result.marketplaces.map((r) => r.name);
-    expect(mpNames).toEqual(["knowledge-work-plugins"]);
+    expect(mpNames).toEqual(["claude-plugins-official"]);
   });
 
   it("--only with unknown plugin returns failed entry without calling installer", async () => {
@@ -117,13 +117,13 @@ describe("executeInstallPlugins", () => {
     const result = await executeInstallPlugins({
       installer: fakeInstaller({
         plugin: (p) =>
-          p.plugin === "sales"
+          p.plugin === "commit-commands"
             ? { status: "failed", detail: "network down" }
             : { status: "added", detail: "ok" },
       }),
     });
-    const sales = result.plugins.find((r) => r.name.startsWith("sales@"));
-    expect(sales?.status).toBe("failed");
+    const failing = result.plugins.find((r) => r.name.startsWith("commit-commands@"));
+    expect(failing?.status).toBe("failed");
     // Others still attempted:
     expect(result.plugins.length).toBe(DEFAULT_PLUGINS.length);
     expect(result.summary.failed).toBeGreaterThan(0);
