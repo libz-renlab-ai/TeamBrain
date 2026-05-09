@@ -193,6 +193,11 @@ export {
   type ParseChangelogOptions,
 } from "./update/changelog-parser.js";
 export {
+  renderUpgradePrompt,
+  renderWhatsNewTail,
+  type RenderUpgradePromptInput,
+} from "./update/prompt-text.js";
+export {
   scanNarrative,
   formatPendingRecord,
   mergePending,
