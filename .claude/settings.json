@@ -12,7 +12,7 @@
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/packages/cli/dist/bin-digital-twin-tap.cjs\"",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/digital-twin-tap.sh\"",
             "timeout": 5
           }
         ]
