@@ -173,10 +173,15 @@ describe("statusline issue #168 — labelled fields + de-overlap + warning suppr
   it("HELPED_EVENT_KINDS and RISK_EVENT_KINDS arrays do not overlap (static check)", () => {
     const src = fs.readFileSync(STATUSLINE, "utf-8");
     function extractArray(name: string): string[] {
-      // 用 matchAll + 断言唯一声明，避免未来一次重复 const 把第二份 shadow 偷藏过去
-      // （/review adversarial pass finding #2，issue #168 PR）。
+      // /review iter-1 finding #2: matchAll + 断言唯一声明，避免 shadow 偷藏。
+      // /review iter-2 finding #3: 先剥掉行注释，避免 `// const NAME = [...]`
+      // 这种被 grep 套进来的注释行让"唯一声明"断言假阳性。
+      const stripped = src
+        .split("\n")
+        .map((line) => line.replace(/\/\/.*$/, ""))
+        .join("\n");
       const matches = Array.from(
-        src.matchAll(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`, "g")),
+        stripped.matchAll(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`, "g")),
       );
       expect(matches.length, `${name} should be declared exactly once`).toBe(1);
       const body = matches[0]?.[1];
@@ -195,6 +200,32 @@ describe("statusline issue #168 — labelled fields + de-overlap + warning suppr
     expect(risk.length).toBeGreaterThan(0);
     const overlap = helped.filter((k) => risk.includes(k));
     expect(overlap).toEqual([]);
+  });
+
+  it("clamps count window upper bound to now (future-dated events do not inflate counters)", () => {
+    // /review iter-2 finding #1: clock-skewed laptop or events synced from
+    // another machine with timestamp > now used to land in 今/周 forever.
+    const home = mkTmpHome();
+    try {
+      seedKnowledgeWithRows(home, [{ status: "active", type: "avoidance" }]);
+      // helper seedEvents only supports daysAgo (past). Manually insert future row:
+      const dir = path.join(home, ".teamagent");
+      fs.mkdirSync(dir, { recursive: true });
+      const db = new DatabaseSync(path.join(dir, "events.db"));
+      db.exec("CREATE TABLE events (kind TEXT, timestamp TEXT)");
+      const future = new Date();
+      future.setDate(future.getDate() + 5); // +5 days
+      db.prepare("INSERT INTO events (kind, timestamp) VALUES (?, ?)").run(
+        "hook-pre.passive_matched",
+        future.toISOString(),
+      );
+      db.close();
+      const r = runStatusline(home);
+      // future-dated event must NOT be counted in 今/周
+      expect(r.stdout).toContain("帮过:0今/0周");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it("does not count hook-post.result or error.candidate.rejected as helped (metadata events)", () => {

@@ -158,11 +158,17 @@ const RISK_EVENT_KINDS = [
   "error.candidate.added",
 ];
 
+// /review iter-2 finding #2: keep hints in sync with HELPED/RISK categorization.
+// `hook-post.result` and `error.candidate.rejected` are intentionally NOT in
+// either bucket (they are metadata/feedback, not help or risk signals). If they
+// were ever the "latest event", the old map's friendly hint would print while
+// 帮过/拦过 stayed 0 — visually contradicting the de-overlap fix. Drop them
+// here so getLatestContributionHint falls through to the idle/护航 path for
+// these kinds.
 const CONTRIBUTION_HINTS = {
   "hook-pre.passive_matched": "刚静默命中规则",
   "hook-pre.warned": "刚提醒风险",
   "hook-pre.blocked": "刚拦截风险",
-  "hook-post.result": "刚记录执行结果",
   "ai.override.ignored": "刚发现规则绕过",
   "ai.override.complied": "刚确认规则生效",
   "ai.override.blocked_circumvented": "刚发现拦截绕过",
@@ -174,7 +180,6 @@ const CONTRIBUTION_HINTS = {
   "scenario.run": "刚跑完场景",
   "error.candidate.added": "刚捕获失败信号",
   "error.candidate.approved": "刚沉淀新规则",
-  "error.candidate.rejected": "刚清理误报",
   "ai.output.bad_pattern": "刚发现输出问题",
   "ai.narrative.injected": "刚注入提醒",
   "ai.narrative.recurred": "刚发现重复踩坑",
@@ -192,13 +197,19 @@ function sinceIso(daysAgo) {
   return d.toISOString();
 }
 
+// /review iter-2 finding #1: clamp count window upper bound to "now" so a
+// clock-skewed laptop or events synced from another machine with timestamps
+// in the future do NOT inflate today/week counters until the future date.
 function countEventsSince(db, kinds, since) {
   if (!db || kinds.length === 0) return null;
   try {
+    const now = new Date().toISOString();
     const placeholders = kinds.map(() => "?").join(",");
     const row = db
-      .prepare(`SELECT COUNT(*) AS n FROM events WHERE kind IN (${placeholders}) AND timestamp >= ?`)
-      .get(...kinds, since);
+      .prepare(
+        `SELECT COUNT(*) AS n FROM events WHERE kind IN (${placeholders}) AND timestamp >= ? AND timestamp <= ?`,
+      )
+      .get(...kinds, since, now);
     return row ? row.n : null;
   } catch {
     return null;
