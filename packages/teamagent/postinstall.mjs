@@ -74,6 +74,71 @@ function vectorOptionalsInstalled(pkgDir) {
   return found;
 }
 
+/**
+ * Issue #158: detect whether the optional tree-sitter native deps
+ * (web-tree-sitter + tree-sitter-typescript + tree-sitter-python) are present.
+ * They have been removed from packages/teamagent/package.json entirely because
+ * their install scripts spawn cmd.exe on Windows during npm reify (ENOENT) and
+ * the partial install deletes the user's prior teamagent. Their absence is the
+ * default case post-#158; the matcher's `ast-context.ts:initAstMatcher` already
+ * has a try/catch fallback that returns false → "conservative mode" (don't
+ * filter comment/string false-positives). Surface the state in the banner so
+ * users grepping postinstall.log can distinguish "skipped on purpose" from
+ * "ast-matcher never reached" — symmetric to vectorOptionalsInstalled (#160).
+ */
+function treesitterOptionalsInstalled(pkgDir) {
+  // All three packages must be present for ast-context.ts to initialize all
+  // language parsers. Mirrors the AND check pattern from vectorOptionalsInstalled.
+  const wtsCandidates = [
+    path.join(pkgDir, "node_modules", "web-tree-sitter", "package.json"),
+    path.join(pkgDir, "..", "web-tree-sitter", "package.json"),
+  ];
+  const tsCandidates = [
+    path.join(pkgDir, "node_modules", "tree-sitter-typescript", "package.json"),
+    path.join(pkgDir, "..", "tree-sitter-typescript", "package.json"),
+  ];
+  const pyCandidates = [
+    path.join(pkgDir, "node_modules", "tree-sitter-python", "package.json"),
+    path.join(pkgDir, "..", "tree-sitter-python", "package.json"),
+  ];
+  const exists = (p) => { try { return fs.existsSync(p); } catch { return false; } };
+  const hasWts = wtsCandidates.some(exists);
+  const hasTs = tsCandidates.some(exists);
+  const hasPy = pyCandidates.some(exists);
+  let found = hasWts && hasTs && hasPy;
+
+  // pnpm content-addressable store fallback — same strategy as vector check.
+  if (!found) {
+    try {
+      const req = createRequire(pathToFileURL(path.join(pkgDir, "package.json")).href);
+      const knownRoots = [
+        pkgDir,
+        path.join(os.homedir(), ".local", "share", "pnpm"),
+        path.join(os.homedir(), ".npm-global"),
+        path.join(os.homedir(), ".pnpm-global"),
+      ];
+      const isUnderKnownRoot = (resolved) =>
+        knownRoots.some((root) => resolved.startsWith(root + path.sep) || resolved === root);
+      let wtsResolved, tsResolved, pyResolved;
+      try { wtsResolved = req.resolve("web-tree-sitter/package.json"); } catch { /* not found */ }
+      try { tsResolved = req.resolve("tree-sitter-typescript/package.json"); } catch { /* not found */ }
+      try { pyResolved = req.resolve("tree-sitter-python/package.json"); } catch { /* not found */ }
+      if (
+        wtsResolved && tsResolved && pyResolved &&
+        isUnderKnownRoot(wtsResolved) && isUnderKnownRoot(tsResolved) && isUnderKnownRoot(pyResolved)
+      ) {
+        found = true;
+      }
+    } catch {
+      // best-effort
+    }
+  }
+  if (process.env.TEAMAGENT_POSTINSTALL_DEBUG === "1") {
+    process.stderr.write(`DEBUG postinstall tree-sitter pkgDir=${pkgDir} found=${found} (wts=${hasWts} ts=${hasTs} py=${hasPy})\n`);
+  }
+  return found;
+}
+
 // --- duck-mode (issue #116) — inline because postinstall.mjs ships
 // standalone without bundled @teamagent/core. Full copy of the
 // authoritative table at packages/core/src/duck-mode/translations.ts.
@@ -440,6 +505,23 @@ async function main() {
     process.stderr.write(duckify(`ℹ️  update-state init 失败: ${e.message}\n`));
   }
 
+  // === Stage 4: tree-sitter AST matcher detection (issue #158) ===
+  // The 3 tree-sitter packages (web-tree-sitter, tree-sitter-typescript,
+  // tree-sitter-python) were removed from packages/teamagent/package.json
+  // because their native install scripts spawn cmd.exe on Windows and fail
+  // (ENOENT), and npm reify deletes the prior teamagent install before that
+  // failure surfaces — destroying user state. ast-context.ts:initAstMatcher
+  // already has a try/catch fallback returning false when import fails (=>
+  // matcher runs in conservative mode: comment/string false-positives are NOT
+  // filtered). Surface the state symmetric to vector-deps-absent (#160).
+  const haveTreesitter = treesitterOptionalsInstalled(pkgDir);
+  const astMatcherStatus = haveTreesitter ? "ready" : "skipped";
+  recordSetupStatus(
+    "ast-matcher",
+    astMatcherStatus,
+    haveTreesitter ? "tree-sitter-installed" : "tree-sitter-deps-absent",
+  );
+
   // === banner ===
   const n = seedRuleCount();
   const ruleMsg = n > 0 ? `${n} 条打包规则已就绪` : "无打包规则";
@@ -461,6 +543,12 @@ async function main() {
             : warmupStatus === "vector-deps-absent"
               ? "语义匹配: 未安装 (substring matcher 已就绪; 重装时设 TEAMAGENT_INCLUDE_OPTIONAL=1 启用 vector)"
               : "向量模型: 跳过预热 (TEAMAGENT_SKIP_WARMUP=1)";
+
+  // Issue #158: ast-matcher banner — symmetric to warmupMsg.
+  const astMsg =
+    astMatcherStatus === "ready"
+      ? "AST 精准过滤已启用 (web-tree-sitter)"
+      : "AST 过滤: 未安装 (matcher 跑保守模式; 注释/字符串里的关键词也会触发提醒)\n     · 启用精准过滤: npm install -g teamagent web-tree-sitter@^0.26 tree-sitter-typescript@^0.23 tree-sitter-python@^0.23";
 
   // B-152: previously the banner always said "✨ TeamAgent 安装成功" even when
   // install-user-hook failed (e.g., monorepo dev mode where dist/bin.js is
@@ -486,6 +574,7 @@ async function main() {
       `   · 知识种子: ${ruleMsg}`,
       `   · 自动初始化: ${userHookMsg}`,
       `   · 向量模型  : ${warmupMsg}`,
+      `   · AST 过滤  : ${astMsg}`,
       nextLine,
       "",
       closingLine,
