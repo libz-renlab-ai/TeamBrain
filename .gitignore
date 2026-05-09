@@ -44,8 +44,9 @@ packages/*/.cache/
 chaos-verify*.mjs
 # FASTPROBE timestamped scratch dirs (raw .result/.jsonl from claudefast probes; regenerated per run).
 .fastprobe/
-# FIXEDFLOW watcher runtime state (machine-local; processed-set + heartbeat per host).
-# See docs/FIXEDFLOW.md and scripts/fixed-flow-watcher.sh.
+# FIXEDFLOW driver runtime state (machine-local; per-iter token/iter counters
+# written by the manually-invoked /fixed-flow-driver skill).
+# See docs/FIXEDFLOW.md "driver 行为细则".
 .fixedflow/
 # DOGFOOD verify capture (regenerated each `bash docs/dogfood/verify-canned-answer.sh` run).
 docs/dogfood/.last-verify.out

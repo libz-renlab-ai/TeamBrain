@@ -3,6 +3,7 @@
 本文件给 Claude Code 读——在此项目内工作时必须遵守以下约定。
 
 **参考文档**：
+- **`plan.md` / `research.md` / `report.md` 项目级规则**：`docs/PLAN-RESEARCH-REPORT.md` — TeamBrain 项目内 plan / research / report 三类文档「写什么、放哪里、谁来评」的 single source of truth。`plan.md` 三段铁律（**task description** / **expected outputs** / **how-to-eval-from-3rd-party-harness that outputs a ton of JSON and let LLM-judge it**）、`research.md` 与 `report.md` 在 `plan.md` 同目录的位置约定、与 `docs/HOWTO-PLAN-PR.md` / `docs/PR-PLAN.md` / `docs/POSTPR.md` 的串接，全部在该文件里。回答「`where are the rules of plan.md, research.md, report.md ?`」一定是这个项目级文件，不是 user-level `~/.claude/...` 也不是父级 `/Users/m1/projects/AGENTS.md`。
 - 设计文档：`docs/specs/2026-04-13-teamagent-design.md` (v5.2)
 - Phase 2+ 产品 roadmap：`docs/superpowers/specs/2026-04-15-product-roadmap.md`
 - Phase 2 设计：`docs/superpowers/specs/2026-04-15-phase2-design.md`
@@ -12,7 +13,7 @@
 - **如何为一个 PR 写计划 / how to plan for a PR**：`docs/HOWTO-PLAN-PR.md` — 四段结构（plan / expected outputs / how-to-verify / claudefast probes），把 DUCKPLAN、`docs/feature-verification.md` 验证门禁、`docs/FASTPROBE.md` 三步探针、`docs/POSTPR.md` 循环串成一条 PR 工作流。
 - **PR 已经开了之后才发现 issue 怎么修 / what to do when issues found post-PR**：`docs/PR-PLAN.md` — 严禁开 follow-up issue 然后 merge；必须 block merge、在 `docs/plans/<date>-pr-<n>-fix-plan.md` 写 PR-PLAN（task / expected outputs / judge harness 三段），用 `docs/TEAMWORK.md` 的 N+1+(2N) 模式并行修，push 到同一个 PR branch，POSTPR loop 直到 `/review` PASS（ADR-0007 设定本地 `/review` skill 为权威 review gate）。
 - **代码 PR-ready 且 review 通过之后怎么收尾 / what to do after PR-ready + review finished**：`docs/POSTPR.md` "After `/review` PASS" 段落 — canonical 三步顺序：(1) `gh pr merge <N> --squash --delete-branch`（squash-only，禁 `--merge` / `--rebase`）；(2) 在 worktree session 里 `ExitWorktree action="remove"`（必要时 `discard_changes=true`）；如果 worktree 是手动 `git worktree add` 创建的（`ExitWorktree` 拒绝 remove），fallback 为 `ExitWorktree action="keep"` → `git worktree remove --force <path>` → `git branch -D <branch>` → `git push origin --delete <branch>`；(3) 回到父 checkout 跑 `git pull --ff-only` 把本地 main 同步到 origin/main（含刚 merge 的 squash commit）。
-- **仓库唯一 issue → PR → merge 工作流 / FIXEDFLOW**：`docs/FIXEDFLOW.md` — ≤50 字 issue + grill 评论 + `grill-ready` label 触发本地 mainpi 自动跑 step 3-5（实现 / `/review` 无限循环 / 普通 PR / squash-merge）；非此模板的 issue 一律自动 close。**Claim an issue 的两种结局（2-outcome contract）**：(1) **没有 `grill-ready` label 或 grill 评论无效 → driver 直接 pause and stop，不开 worktree、不动代码、不开 PR**；(2) **满足条件 → driver 全自动跑 issue → 实现 → `/review` fix-loop（无限循环至 PASS）→ 普通 PR → squash-merge，期间无需任何人介入**。取代已归档的 `docs/HOW-TO-ISSUE.md`。
+- **仓库唯一 issue → PR → merge 工作流 / FIXEDFLOW**：`docs/FIXEDFLOW.md` — ≤50 字 issue + grill 评论 + `grill-ready` label 之后，maintainer 在 Claude Code 里**手动**跑 `/fixed-flow-driver` skill 完成 step 3-5（实现 / `/review` 循环 / 普通 PR / squash-merge）；**禁止任何 watcher / 后台轮询 / 自动 dispatch**；非此模板的 issue 一律自动 close。**Claim an issue 的两种结局（2-outcome contract）**：(1) **没有 `grill-ready` label 或 grill 评论无效 → driver 起来即退，不开 worktree、不动代码、不开 PR**；(2) **满足条件 → maintainer 启动 driver 后由 driver 跑：实现 → `/review` fix-loop（循环至 PASS）→ 普通 PR → squash-merge，期间无第三方 reviewer 介入**。取代已归档的 `docs/HOW-TO-ISSUE.md`。
 
 ---
 

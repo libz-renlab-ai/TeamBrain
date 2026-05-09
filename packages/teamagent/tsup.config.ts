@@ -79,6 +79,15 @@ export default defineConfig([
           );
         }
       }
+      // Issue #225 — soft-force upgrade banner needs CHANGELOG.md at runtime
+      // to render the "what's new" bullets. Copy repo-root CHANGELOG.md →
+      // dist/CHANGELOG.md so resolveBundledChangelog() in update/changelog-loader
+      // can find it next to bin.js. Best-effort: missing CHANGELOG falls back
+      // to a generic prompt without bullets (still functional).
+      const srcChangelog = path.resolve(__dirname, "../..", "CHANGELOG.md");
+      if (fs.existsSync(srcChangelog)) {
+        fs.copyFileSync(srcChangelog, path.resolve(__dirname, "dist", "CHANGELOG.md"));
+      }
     },
   },
   {

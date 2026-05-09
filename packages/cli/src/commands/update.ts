@@ -5,6 +5,7 @@ import { execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   defaultUpdateState,
+  nextSnooze,
   parseUpdateState,
   serializeUpdateState,
   type UpdateState,
@@ -36,7 +37,8 @@ const REPO_NAME = "TeamBrain";
 const REPO_BRANCH = "release";
 
 export type UpdateSubcommand =
-  | "check" | "now" | "status" | "disable" | "enable" | "rollback" | "logs";
+  | "check" | "now" | "status" | "disable" | "enable" | "rollback" | "logs"
+  | "snooze" | "never";
 
 export interface UpdateRunResult { ok: boolean; output: string; }
 
@@ -111,7 +113,64 @@ export async function runUpdateCommand(sub: UpdateSubcommand, args: string[] = [
     case "check":    return checkCmd();
     case "now":      return nowCmd();
     case "rollback": return rollbackCmd(args[0]);
+    case "snooze":   return snoozeCmd();
+    case "never":    return neverCmd();
   }
+}
+
+/**
+ * Issue #225 — soft-force upgrade snooze advance.
+ *
+ * Reads `state.snooze_level`, calls `nextSnooze` to compute the new
+ * `snooze_until_ts`, persists. Returns a one-line confirmation telling
+ * the user how long the banner will stay silent.
+ */
+function snoozeCmd(): UpdateRunResult {
+  const s = readState();
+  const result = nextSnooze(s.snooze_level, Date.now());
+  writeState({
+    ...s,
+    snooze_level: result.snooze_level,
+    snooze_until_ts: result.snooze_until_ts,
+    // Issue #225 iter-1: dismissing for THIS pending_banner.to so the prompt
+    // stops re-firing across SessionStarts (until a new version's banner lands).
+    prompt_dismissed_for_to: s.pending_banner?.to ?? "",
+  });
+  const hours = Math.round((result.snooze_until_ts - Date.now()) / (60 * 60 * 1000));
+  const human =
+    hours >= 24 ? `${Math.round(hours / 24)} 天` : `${hours} 小时`;
+  return {
+    ok: true,
+    output:
+      `升级提示已 snooze 到 ${new Date(result.snooze_until_ts).toLocaleString()}` +
+      ` (静音约 ${human}, 当前 snooze 级别 ${result.snooze_level})\n` +
+      `撤销: teamagent update --enable\n`,
+  };
+}
+
+/**
+ * Issue #225 — set never_prompt=true (permanent opt-out for the upgrade
+ * banner). Does NOT touch the auto-update.disabled marker — auto-update
+ * itself stays enabled (user can still run `teamagent update --now`),
+ * only the SessionStart prompt is silenced.
+ */
+function neverCmd(): UpdateRunResult {
+  const s = readState();
+  writeState({
+    ...s,
+    never_prompt: true,
+    // Issue #225 iter-1: also dismiss the current pending_banner.to so even if
+    // the user later un-sets never_prompt via --enable, this version doesn't
+    // re-fire (a brand new pending_banner.to will fire fresh).
+    prompt_dismissed_for_to: s.pending_banner?.to ?? "",
+  });
+  return {
+    ok: true,
+    output:
+      `升级提示已永久关闭 (never_prompt=true)。\n` +
+      `auto-update 仍开启 — 升级请手动跑 teamagent update --now。\n` +
+      `撤销: teamagent update --enable\n`,
+  };
 }
 
 function statusCmd(): UpdateRunResult {
@@ -130,6 +189,15 @@ function statusCmd(): UpdateRunResult {
     `pending_banner: ${s.pending_banner
       ? `${(s.pending_banner.from || "(none)").slice(0, 7)} -> ${s.pending_banner.to.slice(0, 7)} (shown=${s.pending_banner.shown})`
       : "none"}`,
+    // Issue #225: surface soft-force prompt state so support can diagnose
+    // "why is the upgrade banner not showing?" without dumping JSON.
+    `never_prompt: ${s.never_prompt ? "true (set by --never; clear with --enable)" : "false"}`,
+    `snooze_level: ${s.snooze_level}`,
+    `snooze_until: ${
+      s.snooze_until_ts
+        ? new Date(s.snooze_until_ts).toISOString()
+        : "(none)"
+    }`,
   ];
   return { ok: true, output: lines.join("\n") + "\n" };
 }
@@ -142,6 +210,30 @@ function disableCmd(): UpdateRunResult {
 
 function enableCmd(): UpdateRunResult {
   if (fs.existsSync(disabledPath())) fs.unlinkSync(disabledPath());
+  // Issue #225: --enable also clears the soft-force opt-out + snooze so the
+  // user can fully reset the prompt state with one command. Without this,
+  // a user who set --never would have to hand-edit update-state.json.
+  // iter-1: also clears prompt_dismissed_for_to so the user explicitly opting
+  // back IN sees the current pending_banner's prompt next SessionStart.
+  const s = readState();
+  if (
+    s.never_prompt ||
+    s.snooze_level !== 0 ||
+    s.snooze_until_ts !== 0 ||
+    s.prompt_dismissed_for_to !== ""
+  ) {
+    writeState({
+      ...s,
+      never_prompt: false,
+      snooze_level: 0,
+      snooze_until_ts: 0,
+      prompt_dismissed_for_to: "",
+    });
+    return {
+      ok: true,
+      output: "auto-update enabled (升级提示也已恢复: never_prompt=false, snooze 已重置)\n",
+    };
+  }
   return { ok: true, output: "auto-update enabled\n" };
 }
 
@@ -204,10 +296,19 @@ async function checkCmd(): Promise<UpdateRunResult> {
 }
 
 async function nowCmd(): Promise<UpdateRunResult> {
-  // Reset throttle so updater proceeds, then run in foreground
+  // Reset throttle so updater proceeds, then run in foreground.
+  // Issue #225: also clear snooze + never_prompt — user just said "yes go",
+  // so leaving the prompt silenced afterwards would be confusing.
+  // Issue #225 iter-1: also dismiss the current pending_banner.to so the
+  // prompt doesn't re-fire on the SessionStart immediately after `--now`
+  // (the user just acknowledged this version).
   const s = readState();
   s.last_check_ts = 0;
   s.consecutive_install_failures = 0;
+  s.snooze_level = 0;
+  s.snooze_until_ts = 0;
+  s.never_prompt = false;
+  s.prompt_dismissed_for_to = s.pending_banner?.to ?? "";
   writeState(s);
   return new Promise((resolve) => {
     const updaterBin = findUpdaterBinary();
@@ -275,6 +376,8 @@ export function parseUpdateArgs(argv: string[]): { sub: UpdateSubcommand; rest: 
     if (a === "--disable") return { sub: "disable", rest: [] };
     if (a === "--enable") return { sub: "enable", rest: [] };
     if (a === "--logs") return { sub: "logs", rest: [] };
+    if (a === "--snooze") return { sub: "snooze", rest: [] };
+    if (a === "--never") return { sub: "never", rest: [] };
     if (a === "--rollback") {
       const idx = argv.indexOf("--rollback");
       return { sub: "rollback", rest: argv.slice(idx + 1).filter((x) => !x.startsWith("--")) };

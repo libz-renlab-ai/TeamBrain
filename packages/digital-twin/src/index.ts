@@ -11,15 +11,24 @@ export {
   saveConfig,
   defaultConfig,
   isEnabled,
+  ensureDefaultConfig,
+  TEAM_SHARED_TOKEN,
   type DigitalTwinConfig,
   type DefaultConfigInput,
+  type EnsureDefaultConfigDeps,
 } from './config.js';
 
 export {
   startMockServer,
+  safeUserId,
+  dateStamp,
   type MockServerOptions,
   type MockServerHandle,
 } from './mock-server.js';
+
+export { DASHBOARD_HTML } from './dashboard-html.js';
+
+export { runProdServer, type RunProdServerDeps } from './bin-prod-server.js';
 
 export {
   tapSession,

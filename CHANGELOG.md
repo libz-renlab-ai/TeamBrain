@@ -13,19 +13,23 @@ artifacts the user sees) do NOT need an entry.
 
 ## Unreleased
 
+(no pending entries)
+
 ## 0.11.0 — 2026-05-09
 
-Closes the three follow-ups captured in PR #232 § 8 ("Follow-up captured for next major version") via one bundled cleanup PR. See `docs/plans/2026-05-09-install-hook-cleanup-v0.11/plan.md` for the full scope decision.
+Closes the three follow-ups captured in PR #232 § 8 ("Follow-up captured for next major version") via one bundled cleanup PR. See `docs/plans/2026-05-09-install-hook-cleanup-v0.11/plan.md` for the full scope decision. Bumps from 0.10.x with one user-visible deprecation and one performance fix specific to working inside the TeamBrain repo itself.
 
 ### Deprecated
 
 - **`teamagent install-user-hook` is now a soft-retire shim**. The
   command body is reduced to a thin wrapper around the shared
   `applyUserLevelChannelOps` helper added in this PR; the deprecation
-  warning is updated to mention the new helper name. The standalone
-  command remains functional through the v1.0 deprecation window because
-  `packages/teamagent/postinstall.mjs:365` still calls it directly during
-  every `npm install -g teamagent` — hard-deletion is the v1.0 cut.
+  banner now points users at `teamagent init` and avoids leaking
+  internal helper names. The standalone command remains functional
+  through the v1.0 deprecation window because
+  `packages/teamagent/postinstall.mjs:365` still calls it directly
+  during every `npm install -g teamagent` — hard-deletion is the v1.0
+  cut.
 
 ### Fixed
 
@@ -38,6 +42,40 @@ Closes the three follow-ups captured in PR #232 § 8 ("Follow-up captured for ne
   reads (~50ms per Stop) added up. v0.11.0 drops the `.sh` wrapper and
   collapses to the `.cjs` user-level path alone — net 1 spawn per Stop
   in TeamBrain (previously 2) and unchanged in other projects (still 1).
+
+## [0.10.5] — 2026-05-09
+
+### Added
+
+- **Issue #225**: Soft-force upgrade prompt — when a new version is available,
+  every SessionStart now surfaces a three-choice banner (`teamagent update --now`
+  立刻升级, `--snooze` 下次再说, `--never` 永远别问). Snooze backs off 24h →
+  48h → 7d so a user who keeps deferring isn't pestered every shell.
+  CHANGELOG-driven "what's new" bullets ride along on the prompt, the post-init
+  tail, and a new `teamagent whatsnew` command — all three surfaces share one
+  pure parser so they stay in sync. `TEAMAGENT_NEVER_PROMPT=1` env var is the
+  CI / dogfood-probe escape hatch; `teamagent update --enable` resets snooze +
+  never_prompt back to defaults. Auto-update polling itself is unchanged —
+  only the user-facing banner is upgraded.
+
+### Removed
+
+- **PR #231 / Issue #229**: Removed `scripts/fixed-flow-watcher.sh` (the local
+  poller that watched GitHub for `grill-ready` issues and forked `mainpi` to
+  run the FIXEDFLOW driver) and its companion `.github/workflows/fixed-flow-heartbeat.yml`
+  (which posted a "queued for local pipeline" comment when the label was added).
+  FIXEDFLOW step 3-5 no longer supports any watcher / background poll / cron /
+  auto-dispatch path: maintainers must invoke the `/fixed-flow-driver` skill
+  manually inside a Claude Code session. The original auto-dispatch chain
+  shipped in PR #200 was always gated behind `FIXEDFLOW_DRIVER_ENABLED=0`
+  and never ran in production, so removing it changes no observable runtime
+  behaviour — but it removes a wired-but-unused mechanism that the docs
+  treated as canonical. `docs/FIXEDFLOW.md` v4 explicitly bans watchers /
+  background polling / auto-dispatch. The env vars `FIXEDFLOW_DRIVER_ENABLED`
+  and `FIXEDFLOW_POLL_INTERVAL` are no longer read by any script. (#229, #231)
+
+### Fixed
+
 - **Issue #158**: `npm i -g github:libz-renlab-ai/TeamBrain#release` no longer
   fails on Windows + destroys the user's prior teamagent install. The 3
   tree-sitter native deps (`web-tree-sitter`, `tree-sitter-typescript`,
@@ -55,7 +93,17 @@ Closes the three follow-ups captured in PR #232 § 8 ("Follow-up captured for ne
   reached." Users wanting AST-precise filtering can opt back in:
   `npm install -g teamagent web-tree-sitter@^0.26 tree-sitter-typescript@^0.23 tree-sitter-python@^0.23`.
   Defense-in-depth install-time backup + rollback in `release/install.sh`
-  guards against future analogous failures (any cause). (#158)
+  guards against future analogous failures (any cause). The rollback path
+  (both shell + `packages/cli/src/lib/install-backup.ts`) validates the
+  backup tarball with `tar -tzf` BEFORE `rm -rf $INSTALL_DIR`; a corrupt
+  or truncated backup would otherwise wipe the install dir and then fail
+  to extract — recreating the very partial-install corruption #158 was
+  filed for. The backup canary uses `dist/bin.js` existence (not just
+  "directory non-empty") so spurious .nfs* / .smbXXXX cruft on hostile
+  filesystems isn't archived as garbage. `treeSitterDepsInstalled`
+  `knownRoots` includes Windows %LOCALAPPDATA%/pnpm and %APPDATA%/npm so
+  Windows users who explicitly install the tree-sitter packages aren't
+  permanently flagged as "AST 过滤: 未安装". (#158)
 - **Issue #160**: `teamagent warmup` now exits 0 with a friendly skip message
   when the optional vector deps (`@xenova/transformers` + `onnxruntime-node`)
   are not installed, instead of exit 1 with a misleading "warmup failed"

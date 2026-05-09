@@ -265,6 +265,19 @@ _backup_existing_install() {
     _log_setup "stage=backup status=skipped reason=empty-install"
     return 0
   fi
+  # /review iter-1 hardening: only back up directories that look like a
+  # real teamagent install. ls -A on a freshly-mkdired dir is empty so the
+  # original guard already handles "first install" (skip), but on hostile
+  # filesystems (network FS with eventual consistency, chroot leaving
+  # spurious .nfs* / .smbXXXX files) it returns non-empty. Use dist/bin.js
+  # as the canary — that's the file the symlink points at and it must
+  # exist for any teamagent to be functional.
+  if [ ! -f "$INSTALL_DIR/dist/bin.js" ]; then
+    BACKUP_PATH=""
+    _log_setup "stage=backup status=skipped reason=no-dist-bin"
+    printf '[install] no functional teamagent at %s (missing dist/bin.js) — skip backup\n' "$INSTALL_DIR"
+    return 0
+  fi
   local ts
   ts=$(_iso_now)
   BACKUP_PATH="${BACKUP_DIR}/${ts}.tgz"
@@ -297,6 +310,18 @@ _rollback_from_backup() {
   if [ -z "${BACKUP_PATH:-}" ] || [ ! -f "$BACKUP_PATH" ]; then
     _log_setup "stage=install status=rollback-skipped reason=no-backup-available"
     printf '\n[install] install failed and no backup was available to restore.\n' >&2
+    return 0
+  fi
+  # /review iter-1 hardening: validate the tarball BEFORE rm -rf $INSTALL_DIR.
+  # If the backup is corrupt (truncated by SIGINT during _backup_existing_install,
+  # bit-flip, exhausted disk during gzip flush) and we rm -rf first, the user
+  # is left with an empty $INSTALL_DIR — exactly the partial-install corruption
+  # #158 set out to prevent. `tar -tzf` lists contents without extraction; any
+  # corrupt-header / truncation / gzip-checksum failure returns non-zero and
+  # we leave the install untouched.
+  if ! tar -tzf "$BACKUP_PATH" >/dev/null 2>&1; then
+    _log_setup "stage=install status=rollback-skipped reason=backup-unreadable"
+    printf '\n[install] backup unreadable; leaving existing install untouched: %s\n' "$BACKUP_PATH" >&2
     return 0
   fi
   rm -rf "$INSTALL_DIR" 2>/dev/null

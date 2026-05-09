@@ -1,6 +1,6 @@
 ---
 name: fixed-flow-driver
-description: TeamBrain FIXEDFLOW step-3-to-5 driver. Reads a grill-ready issue, creates a worktree, implements per the grill comment, loops /review until PASS, opens a normal PR, squash-merges, cleans up. Invoked by mainpi from scripts/fixed-flow-watcher.sh. Do NOT invoke unless an issue has been verified to have a valid grill comment + grill-ready label.
+description: TeamBrain FIXEDFLOW step-3-to-5 driver. Reads a grill-ready issue, creates a worktree, implements per the grill comment, loops /review until PASS, opens a normal PR, squash-merges, cleans up. Invoked manually by a maintainer in a Claude Code session — there is no watcher, no background dispatcher, no automatic trigger. Do NOT invoke unless an issue has been verified to have a valid grill comment + grill-ready label.
 ---
 
 <what-to-do>
@@ -108,7 +108,7 @@ After successful merge:
 
 ## 8. Stop
 
-Exit cleanly. mainpi will free the slot for the next grill-ready issue.
+Exit cleanly. The maintainer can pick up the next grill-ready issue when ready by re-invoking this skill manually.
 
 </procedure>
 

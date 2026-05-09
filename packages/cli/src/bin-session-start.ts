@@ -54,6 +54,7 @@ import {
   spawnUpdater,
   maybeShowPendingBanner,
   maybeShowReinstallBanner,
+  maybeShowUpgradePrompt,
 } from "./session-start-logic.js";
 import { cleanupWikiResidue } from "./wiki-residue-cleanup.js";
 import { cleanupDbBackups } from "./db-backup-cleanup.js";
@@ -183,6 +184,14 @@ async function main(): Promise<void> {
       try {
         maybeShowReinstallBanner((s) => ctx.mirrorSystemMessage(s.replace(/\n$/, "")));
       } catch (e) { logError("reinstall-banner-failed", e); }
+      // Issue #225: soft-force upgrade prompt. Re-fires every SessionStart
+      // until the user picks A/B/C; honors snooze backoff + never_prompt +
+      // TEAMAGENT_NEVER_PROMPT env override. Shown AFTER the pending /
+      // reinstall banners so a successful auto-update gets its "✨ 已更新"
+      // celebration first, then the next-version prompt (if any) follows.
+      try {
+        maybeShowUpgradePrompt((s) => ctx.mirrorSystemMessage(s.replace(/\n$/, "")));
+      } catch (e) { logError("upgrade-prompt-failed", e); }
       try {
         if (shouldSpawnUpdater()) spawnUpdater();
       } catch (e) {

@@ -38,6 +38,44 @@ export interface UpdateState {
 
   /** Counter for exponential backoff. Reset to 0 on any successful fetch. */
   consecutive_rate_limits: number;
+
+  /**
+   * Issue #225 — soft-force upgrade snooze state machine.
+   *
+   * Epoch ms; the upgrade banner stays silent until now >= snooze_until_ts.
+   * 0 = no active snooze. Reset to 0 by `teamagent update --now` (user
+   * accepted) or by `teamagent update --enable` (user lifted opt-out).
+   */
+  snooze_until_ts: number;
+
+  /**
+   * Issue #225 — current snooze level. Drives the 24h → 48h → 7d backoff
+   * curve in `snooze.ts:nextSnooze`. Reset to 0 on accept/enable.
+   */
+  snooze_level: number;
+
+  /**
+   * Issue #225 — permanent opt-out. Set to true by `teamagent update --never`.
+   * Cleared by `teamagent update --enable`. When true the SessionStart hook
+   * never surfaces the upgrade banner regardless of pending state. Independent
+   * of `auto-update.disabled` marker (which gates whether we POLL the remote)
+   * — never_prompt only controls the USER-FACING banner.
+   */
+  never_prompt: boolean;
+
+  /**
+   * Issue #225 / iter-1 fix — the `pending_banner.to` SHA the user has
+   * acknowledged via --now / --snooze / --never. Used by the soft-force
+   * banner to decide whether to re-fire on subsequent SessionStarts:
+   *
+   *   re-fire iff prompt_dismissed_for_to !== state.pending_banner.to
+   *
+   * Empty string = never dismissed. Set whenever the user picks one of the
+   * three CLI choices (clears each time a NEW pending_banner.to lands so
+   * the next version's prompt fires fresh). Distinct from `pending_banner.shown`
+   * which is tied to the legacy "✨ 已自动更新" one-shot celebration.
+   */
+  prompt_dismissed_for_to: string;
 }
 
 export function defaultUpdateState(): UpdateState {
@@ -55,6 +93,10 @@ export function defaultUpdateState(): UpdateState {
     last_branch_sha: "",
     next_check_after_ts: 0,
     consecutive_rate_limits: 0,
+    snooze_until_ts: 0,
+    snooze_level: 0,
+    never_prompt: false,
+    prompt_dismissed_for_to: "",
   };
 }
 
@@ -80,6 +122,16 @@ export function parseUpdateState(raw: string): UpdateState {
         typeof obj.next_check_after_ts === "number" ? obj.next_check_after_ts : def.next_check_after_ts,
       consecutive_rate_limits:
         typeof obj.consecutive_rate_limits === "number" ? obj.consecutive_rate_limits : def.consecutive_rate_limits,
+      snooze_until_ts:
+        typeof obj.snooze_until_ts === "number" ? obj.snooze_until_ts : def.snooze_until_ts,
+      snooze_level:
+        typeof obj.snooze_level === "number" ? obj.snooze_level : def.snooze_level,
+      never_prompt:
+        typeof obj.never_prompt === "boolean" ? obj.never_prompt : def.never_prompt,
+      prompt_dismissed_for_to:
+        typeof obj.prompt_dismissed_for_to === "string"
+          ? obj.prompt_dismissed_for_to
+          : def.prompt_dismissed_for_to,
     };
   } catch {
     return def;

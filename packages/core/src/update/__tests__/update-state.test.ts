@@ -59,6 +59,10 @@ describe("UpdateState", () => {
       last_branch_sha: "",
       next_check_after_ts: 0,
       consecutive_rate_limits: 0,
+      snooze_until_ts: 0,
+      snooze_level: 0,
+      never_prompt: false,
+      prompt_dismissed_for_to: "",
     };
     expect(parseUpdateState(serializeUpdateState(s))).toEqual(s);
   });
@@ -92,8 +96,79 @@ describe("UpdateState", () => {
       last_branch_sha: "deadbeef",
       next_check_after_ts: 1700000000000,
       consecutive_rate_limits: 2,
+      snooze_until_ts: 0,
+      snooze_level: 0,
+      never_prompt: false,
+      prompt_dismissed_for_to: "",
     };
     expect(parseUpdateState(serializeUpdateState(s))).toEqual(s);
+  });
+
+  // Issue #225 — soft-force upgrade snooze fields backwards-compat:
+  // pre-#225 state files have no snooze_until_ts / snooze_level / never_prompt.
+  // Parser must default to 0/0/false so existing users don't get spurious
+  // snooze suppression after the upgrade.
+  it("parseUpdateState 兼容旧版没有 snooze/never_prompt 的 state 文件 (issue #225)", () => {
+    const legacy = JSON.stringify({
+      last_installed_sha: "old-sha",
+      last_installed_version: "0.10.1",
+    });
+    const s = parseUpdateState(legacy);
+    expect(s.snooze_until_ts).toBe(0);
+    expect(s.snooze_level).toBe(0);
+    expect(s.never_prompt).toBe(false);
+    // iter-1 fix: prompt_dismissed_for_to also defaults to "" for old state
+    expect(s.prompt_dismissed_for_to).toBe("");
+    // Existing field still parses
+    expect(s.last_installed_sha).toBe("old-sha");
+  });
+
+  it("parseUpdateState round-trips prompt_dismissed_for_to (issue #225 iter-1)", () => {
+    const s = parseUpdateState(
+      JSON.stringify({ prompt_dismissed_for_to: "abc1234567" }),
+    );
+    expect(s.prompt_dismissed_for_to).toBe("abc1234567");
+  });
+
+  it("parseUpdateState falls back to empty string when prompt_dismissed_for_to has wrong type", () => {
+    const s = parseUpdateState(
+      JSON.stringify({ prompt_dismissed_for_to: 12345 }),
+    );
+    expect(s.prompt_dismissed_for_to).toBe("");
+  });
+
+  it("parseUpdateState round-trips snooze + never_prompt with non-default values", () => {
+    const s = parseUpdateState(
+      JSON.stringify({
+        snooze_until_ts: 1_700_000_000_000 + 24 * 3600 * 1000,
+        snooze_level: 2,
+        never_prompt: true,
+      }),
+    );
+    expect(s.snooze_until_ts).toBe(1_700_000_000_000 + 24 * 3600 * 1000);
+    expect(s.snooze_level).toBe(2);
+    expect(s.never_prompt).toBe(true);
+  });
+
+  it("parseUpdateState falls back when snooze fields have wrong type", () => {
+    const s = parseUpdateState(
+      JSON.stringify({
+        snooze_until_ts: "not-a-number",
+        snooze_level: false,
+        never_prompt: "yes",
+      }),
+    );
+    expect(s.snooze_until_ts).toBe(0);
+    expect(s.snooze_level).toBe(0);
+    expect(s.never_prompt).toBe(false);
+  });
+
+  it("defaultUpdateState() includes new soft-force fields with safe defaults", () => {
+    const d = defaultUpdateState();
+    expect(d.snooze_until_ts).toBe(0);
+    expect(d.snooze_level).toBe(0);
+    expect(d.never_prompt).toBe(false);
+    expect(d.prompt_dismissed_for_to).toBe("");
   });
 
   // § 2.2 new fields — (b) backwards-compat: old state files without new fields
@@ -108,13 +183,18 @@ describe("UpdateState", () => {
       last_install_error: null,
       pending_banner: null,
       reinstall_banner_shown_at: 0,
-      // No last_branch_etag, last_branch_sha, next_check_after_ts, consecutive_rate_limits
+      // No last_branch_etag, last_branch_sha, next_check_after_ts, consecutive_rate_limits,
+      //    snooze_until_ts, snooze_level, never_prompt
     });
     const s = parseUpdateState(oldState);
     expect(s.last_branch_etag).toBe("");
     expect(s.last_branch_sha).toBe("");
     expect(s.next_check_after_ts).toBe(0);
     expect(s.consecutive_rate_limits).toBe(0);
+    // Issue #225 fields also default
+    expect(s.snooze_until_ts).toBe(0);
+    expect(s.snooze_level).toBe(0);
+    expect(s.never_prompt).toBe(false);
     // Existing fields should still parse correctly
     expect(s.last_installed_sha).toBe("old-sha");
     expect(s.interval_hours).toBe(6);

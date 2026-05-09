@@ -180,6 +180,24 @@ export {
 } from "./update/update-state.js";
 export { shouldCheckUpdate, type ShouldCheckInput } from "./update/should-check.js";
 export {
+  nextSnooze,
+  shouldPromptUpgrade,
+  SNOOZE_DURATIONS_MS,
+  type SnoozeResult,
+  type ShouldPromptInput,
+} from "./update/snooze.js";
+export {
+  parseChangelog,
+  compareVersion,
+  type ChangelogBullet,
+  type ParseChangelogOptions,
+} from "./update/changelog-parser.js";
+export {
+  renderUpgradePrompt,
+  renderWhatsNewTail,
+  type RenderUpgradePromptInput,
+} from "./update/prompt-text.js";
+export {
   scanNarrative,
   formatPendingRecord,
   mergePending,

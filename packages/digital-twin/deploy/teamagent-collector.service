@@ -1,0 +1,22 @@
+[Unit]
+Description=TeamAgent Digital Twin Collector (HTTP receiver for cc-sessions + recordings)
+Documentation=https://github.com/libz-renlab-ai/TeamBrain/issues/146
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jushi
+Group=jushi
+WorkingDirectory=/home/jushi/teamagent-collector
+Environment=PORT=8080
+Environment=HOST=0.0.0.0
+Environment=TEAMAGENT_COLLECTOR_DIR=/home/jushi/teamagent-collector/data
+ExecStart=/usr/bin/node /home/jushi/teamagent-collector/bin/bin-prod-server.cjs
+Restart=always
+RestartSec=3
+StandardOutput=append:/home/jushi/teamagent-collector/logs/collector.log
+StandardError=append:/home/jushi/teamagent-collector/logs/collector.err
+
+[Install]
+WantedBy=multi-user.target
