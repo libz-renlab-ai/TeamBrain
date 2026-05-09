@@ -154,6 +154,24 @@ function recordSetupFailure(stage, err) {
   }
 }
 
+/**
+ * Issue #160: positive log entry for non-failure outcomes (skipped / ok). The
+ * warmup gate skips silently when optional vector deps are absent, but users
+ * grepping postinstall.log for `stage=warmup` should still see the decision —
+ * "no warmup attempted" is meaningfully different from "no log line at all"
+ * (the latter looks like postinstall.mjs never reached Stage 2).
+ */
+function recordSetupStatus(stage, status, detail) {
+  try {
+    fs.mkdirSync(path.dirname(setupLogPath), { recursive: true });
+    const ts = new Date().toISOString();
+    const detailStr = detail ? ` reason=${detail}` : "";
+    fs.appendFileSync(setupLogPath, `[${ts}] stage=${stage} status=${status}${detailStr}\n`, "utf-8");
+  } catch {
+    // best-effort; never block install
+  }
+}
+
 function seedRuleCount() {
   try {
     if (!fs.existsSync(seedPath)) return 0;
@@ -324,6 +342,8 @@ async function main() {
   const haveVectorOptionals = vectorOptionalsInstalled(pkgDir);
   if (process.env.TEAMAGENT_SKIP_WARMUP === "1") {
     process.stderr.write(duckify("[2/2] warmup: 跳过 (TEAMAGENT_SKIP_WARMUP=1)\n"));
+    // Issue #160: positive log entry so postinstall.log records the decision.
+    recordSetupStatus("warmup", "skipped", "env-skip-warmup");
   } else if (!haveVectorOptionals) {
     // @xenova/transformers and onnxruntime-node have been removed from
     // package.json entirely (npm 10 ignores --omit=optional for tarball
@@ -338,6 +358,11 @@ async function main() {
           "     或者直接：npm install -g teamagent @xenova/transformers@^2.17.0 onnxruntime-node@1.14.0\n",
       ),
     );
+    // Issue #160: postinstall.log no longer goes silent on the skip path —
+    // it records `status=skipped reason=optional-not-installed` so doctor
+    // and bug-report tooling can distinguish "skipped on purpose" from
+    // "warmup never reached" (which previously looked identical).
+    recordSetupStatus("warmup", "skipped", "optional-not-installed");
   } else if (process.env.TEAMAGENT_FOREGROUND_WARMUP === "1") {
     process.stderr.write(duckify("[2/2] 下载向量模型 (TEAMAGENT_FOREGROUND_WARMUP=1; ~120MB):\n"));
     const t2 = Date.now();
@@ -350,6 +375,8 @@ async function main() {
       );
       warmupStatus = "foreground-ok";
       process.stderr.write(`     warmup: ok · ${Date.now() - t2}ms\n`);
+      // Issue #160: positive log entry symmetric with the skip case.
+      recordSetupStatus("warmup", "ok", "foreground");
     } catch (err) {
       warmupStatus = "foreground-failed";
       recordSetupFailure("warmup", err);
@@ -366,6 +393,11 @@ async function main() {
       process.stderr.write(
         `     warmup: 后台 pid=${detach.pid} state=${detach.statePath} · ${Date.now() - t2}ms\n`,
       );
+      // Issue #160: detached spawn succeeded; child's terminal status flips
+      // ~/.teamagent/.warmup-state.json once it lands. postinstall.log only
+      // records the parent decision (we forked the warmup; we did not block
+      // on it).
+      recordSetupStatus("warmup", "detached", "background");
     } else {
       warmupStatus = "detached-failed";
       recordSetupFailure("warmup-detach", { message: detach.detail });

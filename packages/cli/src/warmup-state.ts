@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-export type WarmupStatus = "downloading" | "ready" | "failed";
+export type WarmupStatus = "downloading" | "ready" | "failed" | "skipped";
 
 export interface WarmupProgress {
   loaded_bytes: number;
@@ -116,7 +116,7 @@ export function isPidAlive(pid: number): boolean {
  */
 export function describeWarmupReadiness(filePath: string): {
   ready: boolean;
-  reason: "ready" | "missing" | "downloading" | "failed" | "stale_downloading" | "malformed";
+  reason: "ready" | "missing" | "downloading" | "failed" | "skipped" | "stale_downloading" | "malformed";
   state: WarmupState | null;
 } {
   const raw = (() => {
@@ -138,6 +138,9 @@ export function describeWarmupReadiness(filePath: string): {
   }
   if (state.status === "failed") {
     return { ready: false, reason: "failed", state };
+  }
+  if (state.status === "skipped") {
+    return { ready: false, reason: "skipped", state };
   }
   // status === "downloading"
   if (!isPidAlive(state.pid)) {
