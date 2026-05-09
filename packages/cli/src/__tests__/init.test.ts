@@ -115,6 +115,15 @@ describe("executeInit", () => {
     expect(r.summary.presetAdded).toBe(8);
     expect(r.summary.importedRules).toBe(2);
     expect(r.summary.totalActiveEntries).toBeGreaterThanOrEqual(10);
+
+    // Issue #218 — F6: lock down that without seeding the source SKILL.md,
+    // the mirror step records 'skipped' (and is non-fatal). Stops a
+    // regression where the step accidentally becomes 'failed' or vanishes.
+    const mirrorStep = r.steps.find(
+      (s) => s.step === "mirror-claim-to-merge-skill",
+    );
+    expect(mirrorStep?.status).toBe("skipped");
+    expect(mirrorStep?.detail).toContain("不存在");
   });
 
   it("target=codex exports Skills and links .codex/skills", async () => {
@@ -885,6 +894,89 @@ describe("renderInitResult — new UX", () => {
     expect(out).toContain("docs/FIXEDFLOW.md");
   });
 
+  // Issue #218 — F4 banner edge case: mirror step itself failed under
+  // ok=true (i.e. cosmetic-only failure). Per F1, mirror failure now
+  // returns okStep with "⚠️" prefix instead of failStep, so result.ok
+  // stays true and the banner SHOULD still print. Lock that contract.
+  it("ok=true && mirror step status='ok' with ⚠️ warning detail → banner still prints", () => {
+    const out = renderInitResult({
+      ok: true,
+      dryRun: false,
+      steps: [
+        { step: "pre-check", status: "ok" as const, detail: "ok" },
+        { step: "compile-skills", status: "ok" as const, detail: "导出 3 条" },
+        {
+          step: "mirror-claim-to-merge-skill",
+          status: "ok" as const,
+          detail: "⚠️ 镜像失败但 init 继续（cosmetic）: EACCES",
+        },
+      ],
+      summary: {
+        stack: "lang=typescript",
+        presetAdded: 4,
+        seedAdded: 0,
+        importedRules: 0,
+        totalActiveEntries: 4,
+      },
+    });
+    expect(out).toContain("FIXEDFLOW");
+    expect(out).toContain("⚠️ 镜像失败但 init 继续");
+  });
+
+  // Issue #218 — F4 banner edge case: mirror step skipped (non-TeamBrain
+  // repo, source SKILL.md absent). Banner still SHOULD print — the
+  // FIXEDFLOW guidance is generic enough to be useful even when the
+  // mirror skill itself isn't installed.
+  it("ok=true && mirror step status='skipped' (non-TeamBrain repo) → banner still prints", () => {
+    const out = renderInitResult({
+      ok: true,
+      dryRun: false,
+      steps: [
+        { step: "pre-check", status: "ok" as const, detail: "ok" },
+        { step: "compile-skills", status: "ok" as const, detail: "导出 0 条" },
+        {
+          step: "mirror-claim-to-merge-skill",
+          status: "skipped" as const,
+          detail:
+            "源 .claude/skills/claim-to-merge/SKILL.md 不存在（仅 TeamBrain 仓库需要）",
+        },
+      ],
+      summary: { stack: "", presetAdded: 0, seedAdded: 0, importedRules: 0, totalActiveEntries: 0 },
+    });
+    expect(out).toContain("FIXEDFLOW");
+  });
+
+  // Issue #218 — F5 stepGroups + stepLabel rendering contract: a typo in
+  // either mapping would silently render the step under the wrong icon
+  // group or with label "unknown". Assert the rendered output ties the
+  // step to "📄 导出 Skills" and "FIXEDFLOW Skill".
+  it("mirror step renders under '📄 导出 Skills' group with 'FIXEDFLOW Skill' label", () => {
+    const out = renderInitResult({
+      ok: true,
+      dryRun: false,
+      steps: [
+        { step: "compile-skills", status: "ok" as const, detail: "导出 3 条" },
+        {
+          step: "mirror-claim-to-merge-skill",
+          status: "ok" as const,
+          detail: "已复制到 /tmp/.claude/skills/teamagent/claim-to-merge/SKILL.md",
+        },
+      ],
+      summary: {
+        stack: "lang=typescript",
+        presetAdded: 0,
+        seedAdded: 0,
+        importedRules: 0,
+        totalActiveEntries: 0,
+      },
+    });
+    expect(out).toContain("FIXEDFLOW Skill");
+    expect(out).toContain("📄 导出 Skills");
+    const idxGroup = out.indexOf("📄 导出 Skills");
+    const idxLabel = out.indexOf("FIXEDFLOW Skill");
+    expect(idxLabel).toBeGreaterThan(idxGroup);
+  });
+
   // Issue #218 — F8 path-exists guard. Banner mentions a fixed list of doc
   // paths; if any of them is renamed/moved without updating
   // FIXEDFLOW_BANNER_DOC_PATHS, the banner silently lies. Lock it down by
@@ -902,5 +994,166 @@ describe("renderInitResult — new UX", () => {
         `FIXEDFLOW banner doc ${rel} does not exist at ${abs}`,
       ).toBe(true);
     }
+  });
+});
+
+// Issue #218 — F2 + F3: end-to-end coverage of doMirrorClaimToMergeSkill
+// (success + dryRun + skipped + non-fatal failure) and the
+// targetIncludesClaude conditional that decides whether the step runs.
+describe("executeInit — mirror-claim-to-merge-skill (issue #218)", () => {
+  let tmp: ReturnType<typeof mkTmp>;
+  let ctr = 0;
+  beforeEach(() => {
+    tmp = mkTmp();
+    ctr = 0;
+  });
+  afterEach(() => tmp.cleanup());
+
+  const commonOpts = () => ({
+    cwd: tmp.cwd,
+    homeDir: tmp.home,
+    skipHook: true,
+    skipSeed: true,
+    idGen: () => `pers-test-${++ctr}`,
+    now: () => new Date("2026-04-14T12:00:00Z"),
+  });
+
+  // Plant a stub source SKILL.md under tmp.cwd so the mirror step's
+  // success branch fires.
+  function seedClaimToMergeSource(
+    body = "# claim-to-merge\nFIXEDFLOW routing stub for tests\n",
+  ): { sourcePath: string; userTargetPath: string } {
+    const sourceDir = path.join(tmp.cwd, ".claude", "skills", "claim-to-merge");
+    nodeFs.mkdirSync(sourceDir, { recursive: true });
+    const sourcePath = path.join(sourceDir, "SKILL.md");
+    nodeFs.writeFileSync(sourcePath, body);
+    const userTargetPath = path.join(
+      tmp.home,
+      ".claude",
+      "skills",
+      "teamagent",
+      "claim-to-merge",
+      "SKILL.md",
+    );
+    return { sourcePath, userTargetPath };
+  }
+
+  it("F2 success: copies source SKILL.md to user-level target byte-for-byte", async () => {
+    const { userTargetPath } = seedClaimToMergeSource(
+      "# claim-to-merge\nrouting body for byte-equality assertion\n",
+    );
+    const r = await executeInit({
+      ...commonOpts(),
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    const step = r.steps.find(
+      (s) => s.step === "mirror-claim-to-merge-skill",
+    );
+    expect(step?.status).toBe("ok");
+    expect(step?.detail).toContain("已复制到");
+    expect(nodeFs.existsSync(userTargetPath)).toBe(true);
+    expect(nodeFs.readFileSync(userTargetPath, "utf-8")).toBe(
+      "# claim-to-merge\nrouting body for byte-equality assertion\n",
+    );
+  });
+
+  it("F2 source-missing: step skipped with informative detail, no target written", async () => {
+    // Do NOT seed the source.
+    const r = await executeInit({
+      ...commonOpts(),
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    const step = r.steps.find(
+      (s) => s.step === "mirror-claim-to-merge-skill",
+    );
+    expect(step?.status).toBe("skipped");
+    expect(step?.detail).toContain("不存在");
+    expect(step?.detail).toContain("仅 TeamBrain 仓库需要");
+    expect(
+      nodeFs.existsSync(
+        path.join(
+          tmp.home,
+          ".claude",
+          "skills",
+          "teamagent",
+          "claim-to-merge",
+          "SKILL.md",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("F2 dryRun: step ok with '(dry-run) 会复制' detail, no target written", async () => {
+    const { userTargetPath } = seedClaimToMergeSource();
+    const r = await executeInit({
+      ...commonOpts(),
+      dryRun: true,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    const step = r.steps.find(
+      (s) => s.step === "mirror-claim-to-merge-skill",
+    );
+    expect(step?.status).toBe("ok");
+    expect(step?.detail).toMatch(/^\(dry-run\) 会复制/);
+    expect(nodeFs.existsSync(userTargetPath)).toBe(false);
+  });
+
+  it("F2 + F1 non-fatal failure: copyFileSync throws → status='ok' with ⚠️ prefix; result.ok stays true", async () => {
+    seedClaimToMergeSource();
+    // Force fs.copyFileSync to throw for any user-level target write,
+    // simulating $HOME read-only / disk full / EPERM.
+    const copySpy = vi
+      .spyOn(nodeFs, "copyFileSync")
+      .mockImplementation((src, dest) => {
+        if (String(dest).includes("/.claude/skills/teamagent/claim-to-merge/")) {
+          throw new Error("EACCES: simulated permission denied");
+        }
+        // Defer to real impl for other writes (none expected in this test).
+        throw new Error(
+          `unexpected copyFileSync target in test: ${String(dest)}`,
+        );
+      });
+
+    const r = await executeInit({
+      ...commonOpts(),
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    copySpy.mockRestore();
+
+    const step = r.steps.find(
+      (s) => s.step === "mirror-claim-to-merge-skill",
+    );
+    // F1 contract: cosmetic failure must NOT flip result.ok.
+    expect(step?.status).toBe("ok");
+    expect(step?.detail).toMatch(/^⚠️ 镜像失败但 init 继续/);
+    expect(step?.detail).toContain("EACCES");
+    expect(r.ok).toBe(true);
+  });
+
+  it("F3 target=codex: mirror step is NOT included (writes to ~/.claude/, codex-only install must not touch it)", async () => {
+    seedClaimToMergeSource();
+    const r = await executeInit({
+      ...commonOpts(),
+      target: "codex",
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    const step = r.steps.find(
+      (s) => s.step === "mirror-claim-to-merge-skill",
+    );
+    expect(step).toBeUndefined();
+  });
+
+  it("F3 target=both: mirror step IS included with status='ok' when source is seeded", async () => {
+    const { userTargetPath } = seedClaimToMergeSource();
+    const r = await executeInit({
+      ...commonOpts(),
+      target: "both",
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    const step = r.steps.find(
+      (s) => s.step === "mirror-claim-to-merge-skill",
+    );
+    expect(step?.status).toBe("ok");
+    expect(nodeFs.existsSync(userTargetPath)).toBe(true);
   });
 });
