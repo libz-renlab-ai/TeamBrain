@@ -7,6 +7,7 @@ import {
   parseInitArgs,
   renderInitResult,
   FIXEDFLOW_BANNER_DOC_PATHS,
+  mirrorProjectSkillToUserLevel,
 } from "../commands/init.js";
 import { DualLayerStore, SqliteKnowledgeStore, openDb } from "@teamagent/adapters";
 import type { LLMClient } from "@teamagent/ports";
@@ -1212,5 +1213,61 @@ describe("executeInit — mirror-claim-to-merge-skill (issue #218)", () => {
     );
     expect(step?.status).toBe("ok");
     expect(nodeFs.existsSync(userTargetPath)).toBe(true);
+  });
+
+  // Issue #218 — F15 (review iter 2): mirrorProjectSkillToUserLevel takes
+  // skillId as a string and joins it into a fs path. Today the only
+  // caller is hardcoded to "claim-to-merge", but the helper docstring
+  // explicitly invites future callers. Defend against a future caller
+  // deriving skillId from config/CLI input by enforcing
+  // SKILL_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/ at entry.
+  it.each([
+    ["..", "path traversal up"],
+    ["../etc", "path traversal explicit"],
+    ["foo/bar", "embedded slash"],
+    ["foo/../bar", "traversal in middle"],
+    ["", "empty string"],
+    ["UPPERCASE", "uppercase rejected"],
+    ["-leading-hyphen", "leading hyphen"],
+    ["a".repeat(65), "over 64 chars"],
+  ])("F15 rejects skillId %j (%s) with failed status", (badId, _label) => {
+    const result = mirrorProjectSkillToUserLevel(
+      badId,
+      "test-step-key",
+      {
+        home: tmp.home,
+        cwd: tmp.cwd,
+        projectDbPath: "",
+        userGlobalDbPath: "",
+        claudeMdPath: "",
+        agentsMdPath: "",
+        skillsDir: path.join(tmp.home, ".claude", "skills", "teamagent"),
+        installLogPath: "",
+      },
+      false,
+    );
+    expect(result.status).toBe("failed");
+    expect(result.detail).toContain("invalid skillId");
+  });
+
+  it("F15 accepts well-formed skillId 'claim-to-merge'", () => {
+    seedClaimToMergeSource("# stub\n");
+    const result = mirrorProjectSkillToUserLevel(
+      "claim-to-merge",
+      "test-step-key",
+      {
+        home: tmp.home,
+        cwd: tmp.cwd,
+        projectDbPath: "",
+        userGlobalDbPath: "",
+        claudeMdPath: "",
+        agentsMdPath: "",
+        skillsDir: path.join(tmp.home, ".claude", "skills", "teamagent"),
+        installLogPath: "",
+      },
+      false,
+    );
+    expect(result.status).toBe("ok");
+    expect(result.detail).toContain("已复制到");
   });
 });

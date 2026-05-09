@@ -1152,18 +1152,36 @@ async function doCompileSkills(
 }
 
 /**
+ * Allowed shape of a project-level skill directory name. Matches the
+ * convention used by `.claude/skills/<id>/SKILL.md` (lowercase, digits,
+ * hyphens; max 64 chars). Used to refuse `..`, slashes, or any
+ * input-driven skillId from a future caller.
+ */
+const SKILL_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/**
  * Mirror a project-level skill at `.claude/skills/<skillId>/SKILL.md` to the
  * user-level skills dir. Designed so future per-skill mirrors (e.g. another
  * routing skill) can call this directly without copy-pasting fs logic.
  *
  * Failure is intentionally non-fatal — see C2 (issue #218) for why.
+ *
+ * skillId MUST match SKILL_ID_PATTERN — defends against path traversal if
+ * a future caller derives skillId from config/seed/CLI input instead of a
+ * hard-coded literal.
  */
-function mirrorProjectSkillToUserLevel(
+export function mirrorProjectSkillToUserLevel(
   skillId: string,
   stepKey: string,
   paths: ReturnType<typeof resolvePaths>,
   dryRun: boolean,
 ): InitStepResult {
+  if (!SKILL_ID_PATTERN.test(skillId)) {
+    return failStep(
+      stepKey,
+      `invalid skillId "${skillId.slice(0, 32)}" — must match ${SKILL_ID_PATTERN}`,
+    );
+  }
   const sourcePath = path.join(
     paths.cwd,
     ".claude",
