@@ -995,6 +995,35 @@ describe("renderInitResult — new UX", () => {
       ).toBe(true);
     }
   });
+
+  // Issue #218 — F11 (introduced by C4): appendFixedflowBanner indexes
+  // FIXEDFLOW_BANNER_DOC_PATHS by [0]/[1]/[2]/[3]. If the const shrinks
+  // or reorders, the banner silently lies (undefined or wrong order)
+  // and the path-exists test above wouldn't catch it. Couple them here:
+  // every path in the const MUST appear in the rendered banner output.
+  it("FIXEDFLOW banner output references every path in FIXEDFLOW_BANNER_DOC_PATHS", () => {
+    const out = renderInitResult({
+      ok: true,
+      dryRun: false,
+      steps: [
+        { step: "pre-check", status: "ok" as const, detail: "ok" },
+      ],
+      summary: {
+        stack: "lang=typescript",
+        presetAdded: 0,
+        seedAdded: 0,
+        importedRules: 0,
+        totalActiveEntries: 0,
+      },
+    });
+    for (const rel of FIXEDFLOW_BANNER_DOC_PATHS) {
+      expect(
+        out,
+        `banner output is missing FIXEDFLOW_BANNER_DOC_PATHS entry "${rel}" — appendFixedflowBanner indexed access likely out of sync with the const`,
+      ).toContain(rel);
+    }
+    expect(out).not.toContain("undefined");
+  });
 });
 
 // Issue #218 — F2 + F3: end-to-end coverage of doMirrorClaimToMergeSkill
