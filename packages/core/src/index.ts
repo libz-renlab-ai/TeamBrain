@@ -198,6 +198,15 @@ export {
   type RenderUpgradePromptInput,
 } from "./update/prompt-text.js";
 export {
+  makeUpdatePromptShownEvent,
+  makeUpdateSnoozedEvent,
+  makeUpdateNeverSetEvent,
+  makeUpdateInstalledEvent,
+  isUpgradeAttributionEvent,
+  attributionToPersistedRow,
+  type UpgradePersistedRow,
+} from "./update/upgrade-events.js";
+export {
   scanNarrative,
   formatPendingRecord,
   mergePending,

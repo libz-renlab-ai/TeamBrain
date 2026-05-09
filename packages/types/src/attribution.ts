@@ -373,6 +373,55 @@ export interface UserPromptFlaggedEvent extends AttributionEventBase {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// update channel —— issue #245: 装机率/snooze 转化率遥测
+//
+// 升级流程的 4 个生命周期事件，对应 grill plan 的 4 个 emit 点：
+//   - update-prompt-shown : SessionStart hook 弹 soft-force banner 时
+//   - update-snoozed      : `teamagent update --snooze`
+//   - update-never-set    : `teamagent update --never`
+//   - update-installed    : runUpdater 写入新 last_installed_sha 时
+//
+// payload 字段保持小、扁平，便于 `teamagent stats` 与第三方 telemetry 聚合。
+// 详见 docs/plans/2026-05-10-issue-245/research.md。
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface UpdatePromptShownEvent extends AttributionEventBase {
+  kind: "update-prompt-shown";
+  source: "update";
+  /** 当前安装的版本（可能为空字符串——首次装机用户没有 last_installed_version） */
+  fromVer: string;
+  /** 远端要升级到的版本（CHANGELOG 推断，回退到 SHA 7 位） */
+  toVer: string;
+  /** banner 弹出时的 snooze level（0 = 从未 snooze） */
+  snoozeLevel: number;
+}
+
+export interface UpdateSnoozedEvent extends AttributionEventBase {
+  kind: "update-snoozed";
+  source: "update";
+  /** snooze 级别（snooze 后的新 level，>=1） */
+  level: number;
+  /** 静音到的 epoch ms */
+  untilTs: number;
+}
+
+export interface UpdateNeverSetEvent extends AttributionEventBase {
+  kind: "update-never-set";
+  source: "update";
+}
+
+export interface UpdateInstalledEvent extends AttributionEventBase {
+  kind: "update-installed";
+  source: "update";
+  /** 升级前 sha（首次装机为空字符串） */
+  fromVer: string;
+  /** 新装好的 sha */
+  toVer: string;
+  /** 从 fetchRemoteSha 成功到 install+migrate 完成的耗时 ms */
+  durationMs: number;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // 顶层 union
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -418,7 +467,11 @@ export type AttributionEvent =
   | HookPreMatchedEvent
   | HookPrePassedEvent
   | UserPromptInjectedEvent
-  | UserPromptFlaggedEvent;
+  | UserPromptFlaggedEvent
+  | UpdatePromptShownEvent
+  | UpdateSnoozedEvent
+  | UpdateNeverSetEvent
+  | UpdateInstalledEvent;
 
 /** 所有合法的 kind 字面量集合，便于 runtime 校验/枚举。 */
 export type AttributionEventKind = AttributionEvent["kind"];

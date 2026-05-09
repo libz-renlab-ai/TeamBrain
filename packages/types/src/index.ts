@@ -69,6 +69,10 @@ export {
   type HookPrePassedEvent,
   type UserPromptInjectedEvent,
   type UserPromptFlaggedEvent,
+  type UpdatePromptShownEvent,
+  type UpdateSnoozedEvent,
+  type UpdateNeverSetEvent,
+  type UpdateInstalledEvent,
 } from "./attribution.js";
 
 export type {

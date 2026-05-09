@@ -100,6 +100,15 @@ function describeAction(event: AttributionEvent): string {
       return `user-prompt 注入 ${event.injectedIds.length} 条规则`;
     case "user-prompt.flagged":
       return `user-prompt 标记规则 ${event.ruleId}`;
+    // issue #245: 升级流程遥测
+    case "update-prompt-shown":
+      return `升级 banner 已弹出: ${event.fromVer || "(初装)"} → ${event.toVer} (snooze 级别 ${event.snoozeLevel})`;
+    case "update-snoozed":
+      return `升级 snooze 到级别 ${event.level} (静音至 ${new Date(event.untilTs).toISOString()})`;
+    case "update-never-set":
+      return "升级 banner 已永久关闭 (never_prompt=true)";
+    case "update-installed":
+      return `升级完成: ${event.fromVer || "(初装)"} → ${event.toVer} (用时 ${event.durationMs}ms)`;
     default: {
       // 编译期 exhaustiveness check：如果 AttributionEvent union 增加新 kind
       // 而这里漏了 case，TS 会在 `_exhaustive: never = event` 这行报错。

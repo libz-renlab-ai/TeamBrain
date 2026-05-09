@@ -40,7 +40,14 @@ export interface PersistedEvent {
     | "ai.user_input.flagged"       // user-input channel rule matched the incoming user prompt
     // From PR #74 (commit 654f0b9): wire calibrator-v2 negative-reinforcement signals
     | "validator.failure"           // Rule was injected as hint; AI complied (no wrong_pattern) but didn't use correct_pattern
-    | "calibrator.user_reject";     // User typed a wrong_pattern → negative reinforcement to v2 demerit engine
+    | "calibrator.user_reject"      // User typed a wrong_pattern → negative reinforcement to v2 demerit engine
+    // issue #245: 升级流程 4 个生命周期事件 → events.db
+    // payload 通过 *_PAYLOAD_KEYS 持久化到 events.payload 列（JSON），
+    // `teamagent stats` 用 `kind LIKE 'update-%'` 聚合 7d 计数。
+    | "update-prompt-shown"
+    | "update-snoozed"
+    | "update-never-set"
+    | "update-installed";
   /** Claude Code 会话 id（从 hook input 拿到） */
   session_id?: string;
   /** 涉及的知识条目 id（如 hook 命中某条规则） */
