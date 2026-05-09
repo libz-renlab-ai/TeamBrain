@@ -2,9 +2,10 @@ import {
   type UpdateState,
   type PendingBanner,
 } from "@teamagent/core";
+import type { FetchShaResult } from "./github-api.js";
 
 export interface UpdaterDeps {
-  fetchRemoteSha(): Promise<string | null>;
+  fetchRemoteSha(): Promise<FetchShaResult>;
   runNpmInstall(): Promise<{ ok: boolean; error?: string }>;
   runMigrateAuto(): Promise<{ ok: boolean; error?: string }>;
   /** Returns absolute path to backup directory (or empty string if backup not feasible). */
@@ -26,17 +27,59 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
   }
   try {
     const state = deps.readState();
+
+    // Backoff guard (§ 2.5): if a previous rate-limit set next_check_after_ts,
+    // skip this cycle until the backoff window expires.
+    if (state.next_check_after_ts > 0 && deps.now() < state.next_check_after_ts) {
+      deps.log(`backoff active until ${new Date(state.next_check_after_ts).toISOString()}; skip`);
+      return;
+    }
+
     state.last_check_ts = deps.now();
     deps.writeState(state);
 
-    let remoteSha: string | null;
+    // fetchRemoteSha contract: MUST NOT throw. But keep a defensive catch just
+    // in case a future mock or implementation violates the contract.
+    let result: FetchShaResult;
     try {
-      remoteSha = await deps.fetchRemoteSha();
+      result = await deps.fetchRemoteSha();
     } catch (e) {
       deps.log(`fetch error: ${(e as Error).message}`);
       return;
     }
-    if (!remoteSha) { deps.log("fetch failed or empty"); return; }
+
+    if (!result.ok) {
+      if (result.reason === "rate_limit_anonymous" || result.reason === "rate_limit_authed") {
+        // Exponential backoff: 1h, 2h, 4h, 8h, 16h, 24h, 24h, …
+        const next = state.consecutive_rate_limits + 1;
+        const delayHours = Math.min(2 ** (next - 1), 24);
+        // IMPORTANT: do NOT bump consecutive_install_failures or set
+        // last_install_error here. Those fields are reserved for actual
+        // install/migrate failures (runNpmInstall / runMigrateAuto).
+        // Mixing rate-limit signals into install-failure counters would
+        // compound two backoffs and break shouldCheckUpdate gating.
+        deps.writeState({
+          ...state,
+          consecutive_rate_limits: next,
+          next_check_after_ts: deps.now() + delayHours * 3600 * 1000,
+        });
+        deps.log(`rate-limited (${result.reason}); backoff ${delayHours}h`);
+        return;
+      }
+      deps.log(`fetch failed (${result.reason}): ${result.message}`);
+      return;
+    }
+
+    // Success path: reset rate-limit counters, persist ETag/sha (§ 2.5)
+    const remoteSha = result.sha;
+    deps.writeState({
+      ...state,
+      consecutive_rate_limits: 0,
+      next_check_after_ts: 0,
+      last_branch_etag: result.etag ?? "",
+      last_branch_sha: remoteSha,
+    });
+
     if (remoteSha === state.last_installed_sha) {
       deps.log("up-to-date");
       return;

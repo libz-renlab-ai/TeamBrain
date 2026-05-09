@@ -9,6 +9,19 @@ import {
   serializeUpdateState,
   type UpdateState,
 } from "@teamagent/core";
+import type { FetchShaFailure } from "../github-api.js";
+
+/**
+ * Resolve a GitHub token for authenticated API calls.
+ * Strict priority: TEAMAGENT_GITHUB_TOKEN > GITHUB_TOKEN > GH_TOKEN > undefined.
+ * Empty string counts as unset.
+ */
+export function resolveGithubToken(): string | undefined {
+  return process.env["TEAMAGENT_GITHUB_TOKEN"]
+      || process.env["GITHUB_TOKEN"]
+      || process.env["GH_TOKEN"]
+      || undefined;
+}
 
 function home(): string {
   return process.env["TEAMAGENT_HOME"] ?? path.join(os.homedir(), ".teamagent");
@@ -104,13 +117,27 @@ function logsCmd(): UpdateRunResult {
   return { ok: true, output: tail + "\n" };
 }
 
+function formatCheckFailure(result: FetchShaFailure): string {
+  return result.message;
+}
+
 async function checkCmd(): Promise<UpdateRunResult> {
   const { fetchRemoteSha } = await import("../github-api.js");
-  const remote = await fetchRemoteSha({ owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH });
-  const local = readState().last_installed_sha;
-  if (!remote) return { ok: false, output: "fetch failed (network/rate-limit)\n" };
-  if (remote === local) return { ok: true, output: `up-to-date (${local.slice(0, 7)})\n` };
-  return { ok: true, output: `update available: ${(local || "(none)").slice(0, 7)} -> ${remote.slice(0, 7)}\n` };
+  const s = readState();
+  const result = await fetchRemoteSha({
+    owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH,
+    token: resolveGithubToken(),
+    ifNoneMatch: s.last_branch_etag || undefined,
+    cachedSha: s.last_branch_sha || undefined,
+  });
+  if (!result.ok) {
+    return { ok: false, output: formatCheckFailure(result) + "\n" };
+  }
+  // Persist etag/sha for next conditional GET (§ 2.4)
+  writeState({ ...s, last_branch_etag: result.etag ?? "", last_branch_sha: result.sha });
+  const local = s.last_installed_sha;
+  if (result.sha === local) return { ok: true, output: `up-to-date (${local.slice(0, 7)})\n` };
+  return { ok: true, output: `update available: ${(local || "(none)").slice(0, 7)} -> ${result.sha.slice(0, 7)}\n` };
 }
 
 async function nowCmd(): Promise<UpdateRunResult> {

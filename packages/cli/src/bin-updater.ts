@@ -52,6 +52,7 @@ import {
 } from "@teamagent/core";
 import { runUpdater } from "./updater-logic.js";
 import { fetchRemoteSha } from "./github-api.js";
+import { resolveGithubToken } from "./commands/update.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
 
 function teamagentHome(): string {
@@ -260,7 +261,19 @@ async function main(): Promise<void> {
     handler: async () => {
       log("updater started");
       await runUpdater({
-        fetchRemoteSha: () => fetchRemoteSha({ owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH }),
+        // Closure reads state + token per call so ETag and token are always
+        // fresh at call time (§ 2.6). State is read independently here from
+        // the state already read inside runUpdater; the extra read is cheap
+        // and ensures the latest persisted ETag is sent.
+        fetchRemoteSha: () => {
+          const s = readState();
+          return fetchRemoteSha({
+            owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH,
+            token: resolveGithubToken(),
+            ifNoneMatch: s.last_branch_etag || undefined,
+            cachedSha: s.last_branch_sha || undefined,
+          });
+        },
         runNpmInstall,
         runMigrateAuto,
         backupCurrentInstall,
