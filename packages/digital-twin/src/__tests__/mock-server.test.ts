@@ -168,7 +168,7 @@ describe('mock-server', () => {
     expect(res.status).toBe(400);
   });
 
-  it('falls back to "unknown-<ts>" when session_id missing', async () => {
+  it('falls back to "unknown-<ts>-<rand>" when session_id missing', async () => {
     const transcript = '{"x":1}\n';
     const compressed = gzipSync(Buffer.from(transcript));
     const payload = {
@@ -183,7 +183,57 @@ describe('mock-server', () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; id: string };
-    expect(body.id).toMatch(/^unknown-\d+$/);
+    // Tail random suffix is 8 hex chars from a UUID — avoids collisions across
+    // two concurrent uploads racing inside the same millisecond.
+    expect(body.id).toMatch(/^unknown-\d+-[0-9a-f]{8}$/);
+  });
+
+  it('rejects POST with session_id containing path traversal (P1: attacker write outside outputDir)', async () => {
+    const transcript = '{"x":1}\n';
+    const compressed = gzipSync(Buffer.from(transcript));
+    const payload = {
+      schema_version: '1.0',
+      envelope: {
+        session_id: '../../../etc/cron.d/evil',
+        user_id: 'attacker',
+      },
+      transcript: { content: compressed.toString('base64') },
+    };
+    const res = await fetch(`${server.url}/v1/cc-sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('invalid id');
+  });
+
+  it('rejects POST with session_id containing slash', async () => {
+    const transcript = '{"x":1}\n';
+    const compressed = gzipSync(Buffer.from(transcript));
+    const res = await fetch(`${server.url}/v1/cc-sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        envelope: { session_id: 'foo/bar', user_id: 'a' },
+        transcript: { content: compressed.toString('base64') },
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects POST body larger than MAX_BODY_BYTES with 413', async () => {
+    // 33 MB of "A" characters — exceeds the 32 MB cap.
+    const huge = Buffer.alloc(33 * 1024 * 1024, 0x41);
+    const res = await fetch(`${server.url}/v1/cc-sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: huge,
+    });
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('payload too large');
   });
 });
 

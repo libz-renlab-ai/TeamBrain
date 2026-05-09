@@ -29,7 +29,14 @@ export async function runProdServer(deps: RunProdServerDeps = {}): Promise<() =>
   const home = (deps.homedir ?? homedir)();
   const log = deps.log ?? ((msg: string) => process.stderr.write(`${msg}\n`));
 
-  const port = Number(env.PORT ?? 8080);
+  const portRaw = env.PORT ?? '8080';
+  const portParsed = Number(portRaw);
+  if (!Number.isInteger(portParsed) || portParsed < 0 || portParsed > 65535) {
+    throw new Error(
+      `[teamagent-collector] invalid PORT='${portRaw}' — must be an integer 0-65535`,
+    );
+  }
+  const port = portParsed;
   const host = env.HOST ?? '0.0.0.0';
   const outputDir = env.TEAMAGENT_COLLECTOR_DIR ?? join(home, 'teamagent-collector');
 

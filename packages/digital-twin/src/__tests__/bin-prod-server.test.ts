@@ -66,4 +66,24 @@ describe('runProdServer', () => {
     expect(info!.outputDir).toBe(join(fakeHome, 'teamagent-collector'));
     await close();
   });
+
+  it('throws on non-integer PORT (e.g. PORT=foo) instead of silently binding random port', async () => {
+    await expect(
+      runProdServer({
+        env: { PORT: 'foo', HOST: '127.0.0.1' } as NodeJS.ProcessEnv,
+        homedir: () => tmpdir(),
+        log: () => {},
+      }),
+    ).rejects.toThrow(/invalid PORT/);
+  });
+
+  it('throws on out-of-range PORT', async () => {
+    await expect(
+      runProdServer({
+        env: { PORT: '99999', HOST: '127.0.0.1' } as NodeJS.ProcessEnv,
+        homedir: () => tmpdir(),
+        log: () => {},
+      }),
+    ).rejects.toThrow(/invalid PORT/);
+  });
 });

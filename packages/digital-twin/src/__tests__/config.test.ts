@@ -234,5 +234,22 @@ describe('config', () => {
       // Sanity: dir really existed.
       expect(existsSync(teamagentDir)).toBe(true);
     });
+
+    it('shape-invalid JSON (missing uploader block) → returns null, file untouched', () => {
+      const home = freshHome();
+      const file = digitalTwinPaths(home).configFile;
+      // Ensure parent dir exists, then write a JSON-valid but shape-broken
+      // config (no uploader, no identity).
+      saveConfig(defaultConfig({ user_id: 'placeholder', machine_id: 'p' }), file);
+      writeFileSync(file, JSON.stringify({ schema_version: '1' }), 'utf-8');
+
+      const before = readFileSync(file, 'utf-8');
+      // Must not throw — earlier versions crashed on undefined.uploader.enabled.
+      const cfg = ensureDefaultConfig(home, fakeDeps);
+
+      expect(cfg).toBeNull();
+      const after = readFileSync(file, 'utf-8');
+      expect(after).toBe(before);
+    });
   });
 });

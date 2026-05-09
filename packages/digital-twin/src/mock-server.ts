@@ -4,17 +4,26 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import type { Socket } from 'node:net';
 import { gunzipSync } from 'node:zlib';
 import {
   writeFileSync,
+  renameSync,
+  unlinkSync,
   mkdirSync,
   readdirSync,
   statSync,
   existsSync,
   readFileSync,
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join, resolve as resolvePath, sep } from 'node:path';
 import { DASHBOARD_HTML } from './dashboard-html.js';
+
+/** Cap raw POST body to bound memory + reject obvious DoS payloads. */
+export const MAX_BODY_BYTES = 32 * 1024 * 1024;
+/** Cap gzip output to defeat zip-bomb DoS (jsonl rarely compresses >30x). */
+export const MAX_DECOMPRESSED_BYTES = 256 * 1024 * 1024;
 
 export interface MockServerOptions {
   /** Port to bind. Use 0 to pick an ephemeral port. */
@@ -107,10 +116,30 @@ function validateDateParam(raw: string | undefined): string | null {
   return raw;
 }
 
-function validateIdParam(raw: string | undefined): string | null {
+export function validateIdParam(raw: string | undefined): string | null {
   if (typeof raw !== 'string' || raw.length === 0) return null;
   if (raw.includes('..')) return null;
   return ID_RE.test(raw) ? raw : null;
+}
+
+/**
+ * Atomic write via tmp + rename. Prevents the dashboard from reading a
+ * half-written file and also avoids data loss on concurrent writes.
+ */
+function atomicWriteFileSync(target: string, data: Buffer): void {
+  const tmp = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  writeFileSync(tmp, data);
+  try {
+    renameSync(tmp, target);
+  } catch {
+    // Windows: rename can fail if target exists. Fall back to unlink + rename.
+    try {
+      unlinkSync(target);
+    } catch {
+      // target may not exist; ignore
+    }
+    renameSync(tmp, target);
+  }
 }
 
 function validateExtParam(raw: string | undefined): 'jsonl' | 'ogg' | null {
@@ -277,6 +306,9 @@ function handleGet(
         res.setHeader('content-type', 'audio/ogg');
       }
       res.setHeader('content-length', String(buf.length));
+      // Swallow client-disconnect EPIPE/ECONNRESET — already-sent response,
+      // nothing to recover. Without this listener the error crashes Node.
+      res.on('error', () => {});
       res.end(buf);
     } catch (err) {
       send(res, 500, {
@@ -311,9 +343,24 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       return;
     }
 
+    let bodyBytes = 0;
+    let aborted = false;
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('data', (chunk: Buffer) => {
+      if (aborted) return;
+      bodyBytes += chunk.length;
+      if (bodyBytes > MAX_BODY_BYTES) {
+        aborted = true;
+        send(res, 413, { error: 'payload too large', limit: MAX_BODY_BYTES });
+        // Do NOT destroy the request — that races the response flush and the
+        // client sees ECONNRESET instead of 413. Just discard subsequent chunks
+        // (memory stays bounded by the per-chunk handler's early-return).
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => {
+      if (aborted) return;
       let json: unknown;
       try {
         json = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -329,9 +376,18 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       const obj = json as Record<string, unknown>;
       const envelope = (obj.envelope ?? {}) as Record<string, unknown>;
       const idRaw = isLog ? envelope.session_id : envelope.recording_id;
-      const id = typeof idRaw === 'string' && idRaw.length > 0
-        ? idRaw
-        : `unknown-${Date.now()}`;
+      let id: string;
+      if (typeof idRaw === 'string' && idRaw.length > 0) {
+        const validated = validateIdParam(idRaw);
+        if (validated === null) {
+          send(res, 400, { error: 'invalid id', detail: 'id must match [A-Za-z0-9._-]+ and not contain ".."' });
+          return;
+        }
+        id = validated;
+      } else {
+        // Fallback for missing id — randomized to avoid collisions on concurrent uploads.
+        id = `unknown-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      }
 
       const payloadBlock = (isLog ? obj.transcript : obj.audio) as
         | Record<string, unknown>
@@ -344,13 +400,28 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
 
       try {
         const buf = Buffer.from(contentB64, 'base64');
-        const decoded = isLog ? gunzipSync(buf) : buf;
+        const decoded = isLog
+          ? gunzipSync(buf, { maxOutputLength: MAX_DECOMPRESSED_BYTES })
+          : buf;
+        if (decoded.length > MAX_DECOMPRESSED_BYTES) {
+          send(res, 413, {
+            error: 'decompressed payload too large',
+            limit: MAX_DECOMPRESSED_BYTES,
+          });
+          return;
+        }
         const ext = isLog ? 'jsonl' : 'ogg';
         const userIdSafe = safeUserId(envelope.user_id);
         const date = dateStamp(envelope.captured_at, now());
         const targetDir = join(outputDir, userIdSafe, date);
+        const targetFile = join(targetDir, `${id}.${ext}`);
+        // Defense-in-depth: confirm the resolved write path stays under outputDir.
+        if (!isUnder(outputDir, targetFile)) {
+          send(res, 400, { error: 'invalid path' });
+          return;
+        }
         mkdirSync(targetDir, { recursive: true });
-        writeFileSync(join(targetDir, `${id}.${ext}`), decoded);
+        atomicWriteFileSync(targetFile, decoded);
         send(res, 200, { ok: true, id, user_id: userIdSafe, date });
       } catch (err) {
         send(res, 500, {
@@ -360,8 +431,18 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       }
     });
     req.on('error', () => {
-      send(res, 500);
+      if (!res.headersSent) {
+        send(res, 500);
+      }
     });
+  });
+
+  // Track open sockets so close() can force-destroy slow connections instead of
+  // hanging until systemd's TimeoutStopSec SIGKILL.
+  const sockets = new Set<Socket>();
+  server.on('connection', (socket: Socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
   });
 
   return new Promise<MockServerHandle>((resolve, reject) => {
@@ -377,9 +458,13 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
         port: addr.port,
         outputDir,
         close: () =>
-          new Promise<void>((r, rej) =>
-            server.close((err) => (err ? rej(err) : r())),
-          ),
+          new Promise<void>((r, rej) => {
+            server.close((err) => (err ? rej(err) : r()));
+            // Force-destroy any in-flight connections so a slowloris client
+            // can't keep the process alive past graceful close.
+            for (const s of sockets) s.destroy();
+            sockets.clear();
+          }),
       });
     });
   });

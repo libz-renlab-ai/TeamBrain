@@ -140,6 +140,18 @@ export function ensureDefaultConfig(
       // Malformed JSON — leave alone, behave as before (silent skip upstream).
       return null;
     }
+    // Shape-check: a syntactically-valid JSON file may still be missing the
+    // expected blocks (e.g. {} or hand-edited). Treat shape-invalid configs
+    // like malformed JSON: leave the file untouched, let isEnabled fall to
+    // false upstream.
+    if (
+      typeof existing.uploader !== 'object' ||
+      existing.uploader === null ||
+      typeof existing.identity !== 'object' ||
+      existing.identity === null
+    ) {
+      return null;
+    }
     // Patch case: enabled but no token → inject team-shared sentinel.
     if (existing.uploader.enabled && !existing.uploader.token) {
       const patched: DigitalTwinConfig = {
