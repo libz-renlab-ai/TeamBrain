@@ -83,3 +83,39 @@ export {
 } from './daemon/process-manager.js';
 
 export { runDaemon } from './bin-uploader.js';
+
+export {
+  buildRecordingEnvelope,
+  isRecordingMetadata,
+  RECORDING_CODEC_DEFAULTS,
+  type RecordingEnvelope,
+  type RecordingMetadata,
+  type BuildRecordingEnvelopeInput,
+} from './schemas/recording.js';
+
+export {
+  resolvePlatformInput,
+  installHintForPlatform,
+  type PlatformInput,
+  type ResolvePlatformInputOptions,
+} from './recorder/platform-input.js';
+
+export {
+  start,
+  stop,
+  importRecording,
+  detectFfmpegDefault,
+  RECORDING_CODEC_FLAGS,
+  type StartInput,
+  type StartDeps,
+  type StartResult,
+  type StopInput,
+  type StopDeps,
+  type StopResult,
+  type StopStatus,
+  type ImportInput,
+  type ImportDeps,
+  type ImportResult,
+  type ImportStatus,
+  type FfmpegProbe,
+} from './recorder/ffmpeg-wrapper.js';
