@@ -117,6 +117,12 @@ function readState(): UpdateState {
  *   foreground owns:    snooze_level, snooze_until_ts, never_prompt,
  *                       prompt_dismissed_for_to.
  *
+ *   session-start owns: reinstall_banner_shown_at (set by
+ *                       maybeShowReinstallBanner in session-start-logic.ts to
+ *                       throttle the "auto-update has been failing" banner;
+ *                       NOT in the overlay below, so the live-state spread
+ *                       preserves it across updater writes).
+ *
  *   shared/structural:  interval_hours (only set on init from defaults).
  *
  * Atomic write (tmp + rename, EPERM/EBUSY retry) lives inside
