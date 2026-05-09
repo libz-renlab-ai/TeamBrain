@@ -782,6 +782,8 @@ describe("doctor --fix safety net (issue #172)", () => {
     expect(out).toContain("doctor --fix");
     expect(out).toContain("已剥离");
     expect(out).toContain("备份: /tmp/home/.teamagent/backups/CLAUDE.md.2026-05-09T16-22-34-000Z.bak");
-    expect(out).toContain("还原: cp /tmp/home/.teamagent/backups/CLAUDE.md.2026-05-09T16-22-34-000Z.bak /tmp/proj/CLAUDE.md");
+    expect(out).toContain(
+      `还原: cp "/tmp/home/.teamagent/backups/CLAUDE.md.2026-05-09T16-22-34-000Z.bak" "/tmp/proj/CLAUDE.md"`,
+    );
   });
 });

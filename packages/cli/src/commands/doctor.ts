@@ -984,7 +984,10 @@ export function renderDoctorResult(result: DoctorResult): string {
         lines.push(`✅ ${outcome.name.padEnd(16)}  ${outcome.detail}`);
         if (outcome.backupPath && outcome.filePath) {
           lines.push(`   备份: ${outcome.backupPath}`);
-          lines.push(`   还原: cp ${outcome.backupPath} ${outcome.filePath}`);
+          // Quote both paths so the printed command stays valid when the user's
+          // home or project path contains spaces (common on macOS, e.g.
+          // "/Users/alice/Library/Application Support/...").
+          lines.push(`   还原: cp "${outcome.backupPath}" "${outcome.filePath}"`);
         }
       } else if (outcome.status === "skipped") {
         lines.push(`⏭  ${outcome.name.padEnd(16)}  ${outcome.detail}`);
