@@ -122,9 +122,18 @@ function tryStealStaleLock(lockPath: string): boolean {
     const raw = fs.readFileSync(lockPath, "utf-8");
     const pid = parseInt(raw.trim(), 10);
     if (!Number.isFinite(pid) || pid <= 0) {
-      // Garbage in lock file; treat as stale.
-      fs.unlinkSync(lockPath);
-      return tryCreateLock(lockPath);
+      // Empty / non-numeric content. Almost always a TOCTOU artifact: the
+      // current holder is mid-acquireLock — `openSync(path, "wx")` has created
+      // the file but `writeSync(fd, pid)` hasn't landed yet. Stealing here
+      // would unlink the holder's lock and let two writers proceed
+      // concurrently, defeating the whole point of #244.
+      // Return false; the outer retry loop will re-read on next attempt, by
+      // which point the holder has finished writing pid and stale-detection
+      // works correctly. If it's truly garbage (corrupt write), we'll
+      // eventually fall through to the non-locked write fallback after
+      // MAX_ACQUIRE_ATTEMPTS — same fail-open semantic the helper already
+      // uses for any other unrecoverable lock state.
+      return false;
     }
     try {
       process.kill(pid, 0); // throws if dead

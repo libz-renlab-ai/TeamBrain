@@ -209,4 +209,43 @@ describe("withUpdateStateLock", () => {
     expect(persisted.last_branch_etag).toBe("etag-xyz");
     expect(persisted.last_branch_sha).toBe("sha-abcdef");
   });
+
+  it("empty lock file: tryStealStaleLock must NOT steal mid-creation", () => {
+    // TOCTOU regression test for /review iter-2 finding.
+    //
+    // acquireLock creates the lock file via `openSync(path, "wx")` and then
+    // writes the pid in a second syscall. Between those two calls the file
+    // exists but is empty. A racing caller used to read empty content,
+    // parseInt → NaN → "garbage, treat as stale" → unlinkSync the file →
+    // tryCreateLock for itself. End result: two callers both believe they
+    // hold the lock and mutate concurrently — exactly the race #244 set out
+    // to fix.
+    //
+    // Repro: plant an empty lock file and call withUpdateStateLock. The
+    // stale-detection path must NOT steal it. Behavior we want: every retry
+    // returns false from tryStealStaleLock, the outer loop exhausts retries
+    // (~750 ms), and the helper falls through to its non-locked write
+    // fallback. The lock file we planted stays untouched (no one stole it).
+    const lockPath = path.join(tempHome, "update-state.lock");
+    fs.mkdirSync(tempHome, { recursive: true });
+    fs.writeFileSync(lockPath, "", "utf-8"); // simulate mid-create empty file
+
+    const result = withUpdateStateLock(tempHome, (s) => ({
+      ...s,
+      snooze_level: 7,
+    }));
+
+    // Fallback write still landed.
+    expect(result.snooze_level).toBe(7);
+    const persisted = parseUpdateState(
+      fs.readFileSync(path.join(tempHome, "update-state.json"), "utf-8")
+    );
+    expect(persisted.snooze_level).toBe(7);
+
+    // Critical assertion: the planted empty lock file was NOT stolen.
+    // If tryStealStaleLock had stolen it, the file would now contain
+    // process.pid (the would-be thief's pid). It must still be empty.
+    expect(fs.existsSync(lockPath)).toBe(true);
+    expect(fs.readFileSync(lockPath, "utf-8")).toBe("");
+  });
 });
