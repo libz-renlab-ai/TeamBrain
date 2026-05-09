@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TeamBrain Statusline Designs - Issue #168</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --panel-2: #1d2230;
+    --ink: #d8dee9;
+    --ink-dim: #8b95a7;
+    --accent: #7ab7ff;
+    --accent-dim: #3b6ea8;
+    --border: #2a3040;
+    --term-bg: #0a0d12;
+    --term-ink: #c9d1d9;
+    --term-warn: #ffb454;
+    --good: #8ec07c;
+    --bad: #f07178;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  header h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  header .sub {
+    margin-top: 4px;
+    color: var(--ink-dim);
+    font-size: 12px;
+  }
+  header .sub code {
+    background: var(--panel-2);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 0;
+    min-height: calc(100vh - 64px);
+  }
+  .controls {
+    padding: 20px 20px 40px;
+    border-right: 1px solid var(--border);
+    background: var(--panel);
+    overflow-y: auto;
+    max-height: calc(100vh - 64px);
+  }
+  .preview {
+    padding: 24px;
+    overflow-y: auto;
+  }
+  fieldset {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px 12px;
+    margin: 0 0 16px;
+    background: var(--panel-2);
+  }
+  legend {
+    padding: 0 6px;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .opt {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 0;
+    cursor: pointer;
+    color: var(--ink);
+    font-size: 13px;
+  }
+  .opt input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+  .opt .lbl { flex: 1; }
+  .opt .lbl .name {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .opt .lbl .ex {
+    display: block;
+    color: var(--ink-dim);
+    font-size: 11px;
+    margin-top: 2px;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .row {
+    margin-bottom: 22px;
+  }
+  .row-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .row-title {
+    font-size: 12px;
+    color: var(--ink-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .row-title b { color: var(--ink); font-weight: 600; }
+  .row-meta {
+    font-size: 11px;
+    color: var(--ink-dim);
+  }
+  .term {
+    background: var(--term-bg);
+    color: var(--term-ink);
+    padding: 12px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 13px;
+    white-space: pre;
+    overflow-x: auto;
+    line-height: 1.45;
+  }
+  .term .warn { color: var(--term-warn); }
+  .tmpl {
+    margin-top: 6px;
+    background: #11151c;
+    color: var(--ink-dim);
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px dashed var(--border);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .tmpl-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin-top: 6px;
+  }
+  .tmpl-row .tmpl { flex: 1; margin-top: 0; }
+  button {
+    background: var(--accent-dim);
+    color: var(--ink);
+    border: 1px solid var(--accent);
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    transition: background 0.1s;
+  }
+  button:hover { background: var(--accent); color: #0a0d12; }
+  button.ok { background: var(--good); color: #0a0d12; border-color: var(--good); }
+  .legend-strip {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    background: var(--panel-2);
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    margin-bottom: 18px;
+    font-size: 11.5px;
+    color: var(--ink-dim);
+  }
+  .legend-strip code {
+    color: var(--ink);
+    background: #0a0d12;
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+  .preset-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .preset-row button {
+    background: var(--panel-2);
+    border-color: var(--border);
+    color: var(--ink-dim);
+  }
+  .preset-row button:hover {
+    background: var(--accent-dim);
+    color: var(--ink);
+  }
+  .footer-note {
+    margin-top: 22px;
+    padding: 12px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--ink-dim);
+    line-height: 1.6;
+  }
+  .footer-note strong { color: var(--ink); }
+  .footer-note .gap { display: block; margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TeamBrain statusline design explorer - issue #168</h1>
+  <div class="sub">
+    Source: <code>scripts/teamagent-statusline.cjs:247</code>
+    &nbsp;&middot;&nbsp; Three problems: ambiguous <code>helped:T/W</code>, misleading <code>risk:T</code>, noisy <code>ExperimentalWarning</code>.
+    Toggle dimensions on the left, watch how each design behaves with fresh / light / heavy data on the right.
+  </div>
+</header>
+
+<main>
+  <aside class="controls">
+
+    <div class="preset-row">
+      <button data-preset="current">current behavior</button>
+      <button data-preset="b-lite">B-lite proposal</button>
+      <button data-preset="full-clarity">full clarity</button>
+      <button data-preset="emoji-min">emoji minimal</button>
+    </div>
+
+    <fieldset>
+      <legend>1. Label style</legend>
+      <label class="opt"><input type="radio" name="style" value="bare" checked>
+        <span class="lbl"><span class="name">bare</span><span class="ex">rules:N &middot; helped:T/W &middot; risk:T</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="style" value="english">
+        <span class="lbl"><span class="name">english</span><span class="ex">rules:N &middot; helped today:T week:W &middot; risk today:T</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="style" value="chinese">
+        <span class="lbl"><span class="name">chinese</span><span class="ex">规则:N &middot; 帮过:T今/W周 &middot; 拦过:T今</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="style" value="emoji">
+        <span class="lbl"><span class="name">emoji</span><span class="ex">&#128203; N &middot; &#10003; T/W &middot; &#9888; T</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="style" value="mixed">
+        <span class="lbl"><span class="name">mixed</span><span class="ex">&#128203; 规则:N &middot; &#10003; 帮过 T/W &middot; &#9888; 拦过 T</span></span>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>2. Field separator</legend>
+      <label class="opt"><input type="radio" name="sep" value="middot" checked>
+        <span class="lbl"><span class="name">middot &middot;</span><span class="ex">U+00B7 - current</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="sep" value="pipe">
+        <span class="lbl"><span class="name">pipe |</span><span class="ex">U+007C - terminal-friendly</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="sep" value="bullet">
+        <span class="lbl"><span class="name">bullet &bull;</span><span class="ex">U+2022 - heavier dot</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="sep" value="space">
+        <span class="lbl"><span class="name">two spaces</span><span class="ex">"&nbsp;&nbsp;" - no glyph</span></span>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>3. Idle hint when 0/0/0</legend>
+      <label class="opt"><input type="radio" name="hint" value="vague" checked>
+        <span class="lbl"><span class="name">护航中</span><span class="ex">current - vague, no action</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="hint" value="lite">
+        <span class="lbl"><span class="name">待命中（让我学几条规则吧）</span><span class="ex">B-lite - explicit invite</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="hint" value="emoji">
+        <span class="lbl"><span class="name">&#128737; 待命中</span><span class="ex">shield emoji + standby</span></span>
+      </label>
+      <label class="opt"><input type="radio" name="hint" value="tutorial">
+        <span class="lbl"><span class="name">tutorial: &#128280;&#128280;&#128280;&#128280;&#128280; 0/5 hooks</span><span class="ex">gamified onboarding</span></span>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>4. Node noise</legend>
+      <label class="toggle">
+        <input type="checkbox" id="warn">
+        <span>Append <code class="mono">ExperimentalWarning: SQLite</code></span>
+      </label>
+      <div style="font-size: 11px; color: var(--ink-dim); margin-top: 6px; line-height: 1.5;">
+        Claude Code concatenates stdout+stderr from the statusline script onto a single line. Toggle on to see what new users actually see when they install on Node 22+ without the suppression patch.
+      </div>
+    </fieldset>
+
+  </aside>
+
+  <section class="preview">
+    <div class="legend-strip">
+      <span><b style="color:var(--ink)">Sample data:</b></span>
+      <span><code>fresh-install</code> 0/0/0</span>
+      <span><code>light-use</code> 5 / 3-12 / 1</span>
+      <span><code>heavy-use</code> 57 / 77-393 / 23</span>
+    </div>
+
+    <div class="row" data-sample="fresh">
+      <div class="row-header">
+        <div class="row-title"><b>fresh-install</b> &middot; new user, no events yet</div>
+        <div class="row-meta">rules=0 helpedToday=0 helpedWeek=0 riskToday=0</div>
+      </div>
+      <div class="term" id="term-fresh"></div>
+      <div class="tmpl-row">
+        <div class="tmpl" id="tmpl-fresh"></div>
+        <button data-copy="tmpl-fresh">Copy template</button>
+      </div>
+    </div>
+
+    <div class="row" data-sample="light">
+      <div class="row-header">
+        <div class="row-title"><b>light-use</b> &middot; first week, a few hooks fired</div>
+        <div class="row-meta">rules=5 helpedToday=3 helpedWeek=12 riskToday=1</div>
+      </div>
+      <div class="term" id="term-light"></div>
+      <div class="tmpl-row">
+        <div class="tmpl" id="tmpl-light"></div>
+        <button data-copy="tmpl-light">Copy template</button>
+      </div>
+    </div>
+
+    <div class="row" data-sample="heavy">
+      <div class="row-header">
+        <div class="row-title"><b>heavy-use</b> &middot; mature install, weeks of activity</div>
+        <div class="row-meta">rules=57 helpedToday=77 helpedWeek=393 riskToday=23</div>
+      </div>
+      <div class="term" id="term-heavy"></div>
+      <div class="tmpl-row">
+        <div class="tmpl" id="tmpl-heavy"></div>
+        <button data-copy="tmpl-heavy">Copy template</button>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      <strong>How to read this:</strong> the rendered statusline shows what the user actually sees in their Claude Code statusline; the dashed box below shows the JS template literal that produced it (drop straight into <code class="mono">teamagent-statusline.cjs:247</code>).
+      <span class="gap"><strong>For fresh-install (0/0/0):</strong> the script falls back to the idle hint instead of showing zero counts - so the design choice for hint #3 dominates first impressions.</span>
+      <span class="gap"><strong>For light/heavy:</strong> the idle hint disappears, label-style #1 dominates legibility. Pay attention to whether <code class="mono">risk:23</code> reads as "danger=23" or "blocked 23 times today".</span>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const SAMPLES = {
+  fresh: { rules: 0, helpedToday: 0, helpedWeek: 0, riskToday: 0 },
+  light: { rules: 5, helpedToday: 3, helpedWeek: 12, riskToday: 1 },
+  heavy: { rules: 57, helpedToday: 77, helpedWeek: 393, riskToday: 23 },
+};
+
+const SEPS = {
+  middot: " · ",
+  pipe:   " | ",
+  bullet: " • ",
+  space:  "  ",
+};
+
+const HINTS = {
+  vague:    "护航中",
+  lite:     "待命中（让我学几条规则吧）",
+  emoji:    "🛡 待命中",
+  tutorial: "tutorial: 🔘🔘🔘🔘🔘 0/5 hooks",
+};
+
+const WARNING = "(node:46569) ExperimentalWarning: SQLite is an experimental feature";
+
+const PRESETS = {
+  current:       { style: "bare",    sep: "middot", hint: "vague",    warn: true  },
+  "b-lite":      { style: "chinese", sep: "middot", hint: "lite",     warn: false },
+  "full-clarity":{ style: "english", sep: "pipe",   hint: "tutorial", warn: false },
+  "emoji-min":   { style: "emoji",   sep: "middot", hint: "emoji",    warn: false },
+};
+
+const state = {
+  style: "bare",
+  sep:   "middot",
+  hint:  "vague",
+  warn:  false,
+};
+
+// Render the metric segment "rules / helped / risk" using the chosen label style.
+function renderMetrics(s, sample) {
+  const r = sample.rules, ht = sample.helpedToday, hw = sample.helpedWeek, rt = sample.riskToday;
+  switch (s.style) {
+    case "bare":
+      return [`rules:${r}`, `helped:${ht}/${hw}`, `risk:${rt}`];
+    case "english":
+      return [`rules:${r}`, `helped today:${ht} week:${hw}`, `risk today:${rt}`];
+    case "chinese":
+      return [`规则:${r}`, `帮过:${ht}今/${hw}周`, `拦过:${rt}今`];
+    case "emoji":
+      return [`📋 ${r}`, `✓ ${ht}/${hw}`, `⚠ ${rt}`];
+    case "mixed":
+      return [`📋 规则:${r}`, `✓ 帮过 ${ht}/${hw}`, `⚠ 拦过 ${rt}`];
+    default:
+      return [`rules:${r}`, `helped:${ht}/${hw}`, `risk:${rt}`];
+  }
+}
+
+// Build the rendered statusline as it appears in the terminal.
+function renderStatusline(sample) {
+  const sep = SEPS[state.sep];
+  const isFresh = sample.rules === 0 && sample.helpedToday === 0 && sample.helpedWeek === 0 && sample.riskToday === 0;
+  const hint = HINTS[state.hint];
+
+  let line;
+  if (isFresh) {
+    // Mirror the real script: when there's no contribution hint we still print the metrics block,
+    // but the trailing position carries the idle hint. With 0/0/0 the metrics read as visual noise,
+    // so we drop the metric block entirely and let the hint stand alone - this is the design
+    // question the playground exists to answer.
+    line = `TeamAgent${sep}${hint}`;
+  } else {
+    const parts = renderMetrics(state, sample);
+    // For non-fresh we keep the trailing hint slot, but it's set to a contribution hint not the
+    // idle string. We render `护航中` only when there *is* no recent hint - in this
+    // playground we assume the hint slot is filled by a contribution and elide it for clarity.
+    line = `TeamAgent${sep}${parts.join(sep)}`;
+  }
+  return line;
+}
+
+// Build the JS template literal that would produce this statusline.
+function renderTemplateString(sample) {
+  const sep = SEPS[state.sep];
+  const sepStr = JSON.stringify(sep);
+  const isFresh = sample.rules === 0 && sample.helpedToday === 0 && sample.helpedWeek === 0 && sample.riskToday === 0;
+
+  if (isFresh) {
+    const hint = HINTS[state.hint];
+    return `\`TeamAgent\${${sepStr}}\${hint}\`  // hint = ${JSON.stringify(hint)}`;
+  }
+
+  let metricExpr;
+  switch (state.style) {
+    case "bare":
+      metricExpr = "`rules:${rules} ${SEP} helped:${helpedToday}/${helpedWeek} ${SEP} risk:${riskToday}`";
+      break;
+    case "english":
+      metricExpr = "`rules:${rules} ${SEP} helped today:${helpedToday} week:${helpedWeek} ${SEP} risk today:${riskToday}`";
+      break;
+    case "chinese":
+      metricExpr = "`\\u89C4\\u5219:${rules} ${SEP} \\u5E2E\\u8FC7:${helpedToday}\\u4ECA/${helpedWeek}\\u5468 ${SEP} \\u62E6\\u8FC7:${riskToday}\\u4ECA`";
+      break;
+    case "emoji":
+      metricExpr = "`\\uD83D\\uDCCB ${rules} ${SEP} \\u2713 ${helpedToday}/${helpedWeek} ${SEP} \\u26A0 ${riskToday}`";
+      break;
+    case "mixed":
+      metricExpr = "`\\uD83D\\uDCCB \\u89C4\\u5219:${rules} ${SEP} \\u2713 \\u5E2E\\u8FC7 ${helpedToday}/${helpedWeek} ${SEP} \\u26A0 \\u62E6\\u8FC7 ${riskToday}`";
+      break;
+  }
+  // Replace the literal " ${SEP} " placeholder with the actual separator literal.
+  metricExpr = metricExpr.replace(/ \$\{SEP\} /g, sepStr.slice(1, -1));
+  return `\`TeamAgent\${${sepStr}}\${metrics}\`  // metrics = ${metricExpr}`;
+}
+
+function paint() {
+  for (const key of Object.keys(SAMPLES)) {
+    const sample = SAMPLES[key];
+    const line = renderStatusline(sample);
+    const termEl = document.getElementById(`term-${key}`);
+    const tmplEl = document.getElementById(`tmpl-${key}`);
+
+    termEl.textContent = "";
+    const main = document.createElement("span");
+    main.textContent = line;
+    termEl.appendChild(main);
+
+    if (state.warn) {
+      const warnEl = document.createElement("span");
+      warnEl.className = "warn";
+      warnEl.textContent = " " + WARNING;
+      termEl.appendChild(warnEl);
+    }
+
+    tmplEl.textContent = renderTemplateString(sample) + (state.warn ? " + stderrTail" : "");
+  }
+}
+
+function syncControls() {
+  document.querySelector(`input[name="style"][value="${state.style}"]`).checked = true;
+  document.querySelector(`input[name="sep"][value="${state.sep}"]`).checked = true;
+  document.querySelector(`input[name="hint"][value="${state.hint}"]`).checked = true;
+  document.getElementById("warn").checked = state.warn;
+}
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  if (!p) return;
+  Object.assign(state, p);
+  syncControls();
+  paint();
+}
+
+function wire() {
+  for (const inp of document.querySelectorAll('input[name="style"]')) {
+    inp.addEventListener("change", e => { state.style = e.target.value; paint(); });
+  }
+  for (const inp of document.querySelectorAll('input[name="sep"]')) {
+    inp.addEventListener("change", e => { state.sep = e.target.value; paint(); });
+  }
+  for (const inp of document.querySelectorAll('input[name="hint"]')) {
+    inp.addEventListener("change", e => { state.hint = e.target.value; paint(); });
+  }
+  document.getElementById("warn").addEventListener("change", e => {
+    state.warn = e.target.checked;
+    paint();
+  });
+  for (const btn of document.querySelectorAll('button[data-preset]')) {
+    btn.addEventListener("click", () => applyPreset(btn.dataset.preset));
+  }
+  for (const btn of document.querySelectorAll('button[data-copy]')) {
+    btn.addEventListener("click", () => {
+      const el = document.getElementById(btn.dataset.copy);
+      const text = el.textContent;
+      const orig = btn.textContent;
+      const finish = ok => {
+        btn.textContent = ok ? "Copied!" : "Copy failed";
+        btn.classList.toggle("ok", ok);
+        setTimeout(() => {
+          btn.textContent = orig;
+          btn.classList.remove("ok");
+        }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => finish(true), () => finish(false));
+      } else {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          finish(true);
+        } catch (e) { finish(false); }
+      }
+    });
+  }
+}
+
+wire();
+paint();
+</script>
+</body>
+</html>
