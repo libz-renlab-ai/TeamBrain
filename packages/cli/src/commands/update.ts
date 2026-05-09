@@ -7,10 +7,10 @@ import {
   defaultUpdateState,
   nextSnooze,
   parseUpdateState,
-  serializeUpdateState,
   type UpdateState,
 } from "@teamagent/core";
 import type { FetchShaFailure } from "../github-api.js";
+import { withUpdateStateLock } from "../lib/update-state-lock.js";
 
 /**
  * Resolve a GitHub token for authenticated API calls.
@@ -50,44 +50,21 @@ export function readState(): UpdateState {
 }
 
 export function writeState(s: UpdateState): void {
-  // Atomic write: tmp file + rename. Guards against truncation when checkCmd
-  // (foreground) and bin-updater (background) write concurrently — without this,
-  // a Windows reader can observe a half-written JSON file and parseUpdateState
-  // falls back to defaults, losing last_installed_sha and triggering a spurious
-  // reinstall. POSIX rename is atomic; Windows rename over an existing file
-  // (since Node 12) uses MoveFileEx with MOVEFILE_REPLACE_EXISTING.
-  const dir = home();
-  fs.mkdirSync(dir, { recursive: true });
-  atomicWriteFile(statePath(), serializeUpdateState(s));
-}
-
-/**
- * Write `body` to `target` atomically: write to a per-pid+random tmp path,
- * then rename. The randomness defeats PID-reuse collisions when two writers
- * happen to share a PID. On Windows, rename can transiently fail with
- * EPERM/EBUSY when antivirus scans the tmp file — retry up to 3 times with
- * a 50ms sleep before giving up.
- */
-function atomicWriteFile(target: string, body: string): void {
-  const tmp = `${target}.tmp.${process.pid}.${Math.random().toString(36).slice(2, 10)}`;
-  fs.writeFileSync(tmp, body, "utf-8");
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      fs.renameSync(tmp, target);
-      return;
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if ((code === "EPERM" || code === "EBUSY") && attempt < 2) {
-        // Busy-wait briefly; cross-platform sleepSync without async.
-        const until = Date.now() + 50;
-        while (Date.now() < until) { /* spin */ }
-        continue;
-      }
-      // Best-effort cleanup of the tmp before re-throwing.
-      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
-      throw e;
-    }
-  }
+  // Issue #244: route every persist of update-state.json through the file lock
+  // helper. Each cmd here (snoozeCmd / neverCmd / enableCmd / nowCmd / checkCmd
+  // / rollbackCmd) does a read → mutate → write sequence; without serialization
+  // a concurrent SessionStart hook + a foreground update cmd can interleave and
+  // silently lose either side's mutation. The helper wraps the persist under an
+  // exclusive lock at <home>/update-state.lock and writes atomically (tmp +
+  // rename, same primitive that previously lived inline here).
+  //
+  // Caller still passes a fully-formed `s`, so the mutator is a passthrough —
+  // we explicitly want the foreground command's intent to win for the fields
+  // it touched, including timestamps. This intentionally does NOT re-merge with
+  // a fresh read inside the lock: cmd writers already read state ~1 ms before
+  // calling writeState, so the staleness window is microseconds and the
+  // simpler passthrough preserves prior caller contracts.
+  withUpdateStateLock(home(), () => s);
 }
 
 export function findUpdaterBinary(baseUrl = import.meta.url): string | null {
