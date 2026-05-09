@@ -1,6 +1,8 @@
 # Stop Hooks
 
-This document describes the current stop-hook configuration for the TeamBrain project (effective after PR #106).
+This document describes the current stop-hook configuration for the TeamBrain project (effective after PR #106; orphan scripts archived 2026-05-09).
+
+For the full project-level hook lifecycle (all 8 channels, .sh + .cjs), see [`docs/features/hooks-status.md`](./features/hooks-status.md).
 
 ## Active Project-Level Stop Hook
 
@@ -20,12 +22,12 @@ This document describes the current stop-hook configuration for the TeamBrain pr
 
 **`.claude/settings.local.json`** (gitignored, per-host) points to the same `self-report-fused.sh` script with the same 10s timeout.
 
-## Orphaned Scripts
+## Archived Scripts
 
-These scripts are still present in the git tree but are no longer wired in `settings.json`:
+Removed 2026-05-09 (recoverable from git history):
 
-- `.claude/hooks/teamagent-stop.sh` — legacy TeamAgent learning loop shim (previously ran `bin-stop.cjs`)
-- `.claude/hooks/laziness-self-report.sh` — legacy 6-field `<laziness-self-report>` version, superseded by the 12-field `<self-report>` format
+- `.claude/hooks/teamagent-stop.sh` — legacy TeamAgent learning loop shim. `bin-stop.cjs` is now installed directly into `.claude/settings.local.json` by `teamagent init`, so the shim is unnecessary.
+- `.claude/hooks/laziness-self-report.sh` — legacy 6-field `<laziness-self-report>` version, superseded by the 12-field `<self-report>` format enforced by `self-report-fused.sh`.
 
 ## Other Hook Channels
 

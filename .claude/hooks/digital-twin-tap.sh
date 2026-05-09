@@ -1,7 +1,8 @@
 #!/bin/bash
-# issue #204: digital-twin Stop hook tap shim — mirrors the B-103 pattern
-# already established by .claude/hooks/teamagent-stop.sh, plus two extra
-# safeguards added in PR #205 review per adversarial findings:
+# issue #204: digital-twin Stop hook tap shim — implements the B-103 pattern
+# (committed shell wrapper around a node bin so a fresh clone gets the hook
+# without `teamagent install-hook`), plus two extra safeguards added in
+# PR #205 review per adversarial findings:
 #
 # (1) SIGNAL FORWARDING. Claude Code SIGTERMs the bash wrapper at the 5s hook
 #     timeout. A naive `... | node "$BIN"` pipeline gets bash killed and
