@@ -1,9 +1,11 @@
 #!/bin/bash
-# self-report-fused.sh — Stop hook fusing laziness-self-report + blocker-self-check.
+# self-report-fused.sh — single Stop hook enforcing the 12-field <self-report> block.
 #
-# Replaces the two-hook chain that caused ping-pong loops:
-#   old: Stop -> [laziness, blocker] both can block independently
-#   new: Stop -> [self-report-fused] one block, one decision
+# Historical context: replaced an earlier two-hook chain (a 6-field laziness
+# self-report + a separate blocker self-check) that caused ping-pong loops,
+# because each could block independently. The fused single-decision design is
+# the only Stop self-report hook in the project. Companion docs:
+# docs/STOP-HOOKS.md (contract) and docs/features/hooks-status.md (full lifecycle).
 #
 # Required block at end of every assistant message (uniform "true = bad"):
 #
