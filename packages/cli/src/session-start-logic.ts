@@ -7,7 +7,6 @@ import { dirname, join } from "node:path";
 import os from "node:os";
 import {
   parseUpdateState,
-  serializeUpdateState,
   defaultUpdateState,
   shouldCheckUpdate,
   shouldPromptUpgrade,
@@ -19,6 +18,7 @@ import { loadBundledChangelog } from "./changelog-loader.js";
 import { rotateIfTooLarge } from "./log-rotate.js";
 import { findTeamagentRoot } from "./lib/walk-up.js";
 import { hasProjectMarker } from "./lib/project-markers.js";
+import { withUpdateStateLock } from "./lib/update-state-lock.js";
 
 export const DEFAULT_DEBOUNCE_HOURS = 24;
 
@@ -154,10 +154,14 @@ export function readUpdateState(): UpdateState {
 }
 
 export function writeUpdateState(s: UpdateState): void {
+  // Issue #244: serialize the read-modify-write under a file lock so concurrent
+  // SessionStart hooks + foreground CLI commands don't lose updates. This
+  // helper used to do a non-atomic plain `writeFileSync`; the lock indirectly
+  // upgrades the write to atomic tmp+rename too. Caller passes a fully formed
+  // state, so the mutator is a no-op replacement returning `s`.
   try {
-    fs.mkdirSync(teamagentHome(), { recursive: true });
-    fs.writeFileSync(updateStatePath(), serializeUpdateState(s), "utf-8");
-  } catch { /* silent */ }
+    withUpdateStateLock(teamagentHome(), () => s);
+  } catch { /* silent — same fail-soft semantic as before */ }
 }
 
 /** Check whether to spawn updater this SessionStart. */
