@@ -29,7 +29,7 @@ export interface DefaultConfigInput {
   endpoint?: string;
 }
 
-const DEFAULT_ENDPOINT = 'http://localhost:8080';
+const DEFAULT_ENDPOINT = 'http://192.168.22.88:8080';
 
 export function defaultConfig(input: DefaultConfigInput): DigitalTwinConfig {
   return {

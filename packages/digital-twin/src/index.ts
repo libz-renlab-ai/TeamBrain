@@ -17,9 +17,13 @@ export {
 
 export {
   startMockServer,
+  safeUserId,
+  dateStamp,
   type MockServerOptions,
   type MockServerHandle,
 } from './mock-server.js';
+
+export { runProdServer, type RunProdServerDeps } from './bin-prod-server.js';
 
 export {
   tapSession,

@@ -15,6 +15,8 @@ export interface MockServerOptions {
   outputDir?: string;
   /** Bind host. Defaults to 127.0.0.1. */
   host?: string;
+  /** Clock for date-stamping subdirectories. Defaults to () => new Date(). */
+  now?: () => Date;
 }
 
 export interface MockServerHandle {
@@ -37,10 +39,31 @@ function send(res: ServerResponse, status: number, body?: unknown): void {
   }
 }
 
+export function safeUserId(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.length === 0) return 'unknown';
+  let cleaned = raw.replace(/[^a-zA-Z0-9._@+-]/g, '_').slice(0, 80);
+  cleaned = cleaned.replace(/\.{2,}/g, '_');
+  cleaned = cleaned.replace(/^[._-]+/, '').replace(/[._-]+$/, '');
+  return cleaned.length > 0 ? cleaned : 'unknown';
+}
+
+export function dateStamp(raw: unknown, now: Date): string {
+  let d = now;
+  if (typeof raw === 'string' && raw.length > 0) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) d = parsed;
+  }
+  const yyyy = d.getUTCFullYear().toString().padStart(4, '0');
+  const mm = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+  const dd = d.getUTCDate().toString().padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export async function startMockServer(opts: MockServerOptions): Promise<MockServerHandle> {
   const outputDir = opts.outputDir ?? join(process.cwd(), 'test-output');
   mkdirSync(outputDir, { recursive: true });
   const host = opts.host ?? '127.0.0.1';
+  const now = opts.now ?? (() => new Date());
 
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     if (req.method !== 'POST') {
@@ -88,8 +111,12 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
         const buf = Buffer.from(contentB64, 'base64');
         const decoded = isLog ? gunzipSync(buf) : buf;
         const ext = isLog ? 'jsonl' : 'ogg';
-        writeFileSync(join(outputDir, `${id}.${ext}`), decoded);
-        send(res, 200, { ok: true, id });
+        const userIdSafe = safeUserId(envelope.user_id);
+        const date = dateStamp(envelope.captured_at, now());
+        const targetDir = join(outputDir, userIdSafe, date);
+        mkdirSync(targetDir, { recursive: true });
+        writeFileSync(join(targetDir, `${id}.${ext}`), decoded);
+        send(res, 200, { ok: true, id, user_id: userIdSafe, date });
       } catch (err) {
         send(res, 500, {
           error: 'decode or write failed',

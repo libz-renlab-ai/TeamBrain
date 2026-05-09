@@ -63,7 +63,7 @@ describe('config', () => {
       const cfg = defaultConfig({ user_id: 'a@b', machine_id: 'h-1' });
       expect(cfg.uploader.enabled).toBe(true);
       expect(cfg.uploader.token).toBeNull();
-      expect(cfg.uploader.endpoint).toBe('http://localhost:8080');
+      expect(cfg.uploader.endpoint).toBe('http://192.168.22.88:8080');
     });
 
     it('respects custom endpoint', () => {
