@@ -238,15 +238,6 @@ importers:
       sqlite-vec:
         specifier: ^0.1.9
         version: 0.1.9
-      tree-sitter-python:
-        specifier: ^0.23.0
-        version: 0.23.6
-      tree-sitter-typescript:
-        specifier: ^0.23.0
-        version: 0.23.2
-      web-tree-sitter:
-        specifier: ^0.26.0
-        version: 0.26.8
 
   packages/types:
     dependencies:

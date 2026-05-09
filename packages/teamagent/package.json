@@ -27,9 +27,6 @@
     "postinstall": "node postinstall.mjs"
   },
   "dependencies": {
-    "sqlite-vec": "^0.1.9",
-    "tree-sitter-python": "^0.23.0",
-    "tree-sitter-typescript": "^0.23.0",
-    "web-tree-sitter": "^0.26.0"
+    "sqlite-vec": "^0.1.9"
   }
 }
