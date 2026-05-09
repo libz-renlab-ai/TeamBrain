@@ -16,6 +16,8 @@
 
 TeamBrain 的全局安装 (`teamagent` CLI) 会**在每次 Claude Code 会话开始时**静默检查并升级自己。本文是 user-facing canonical doc，权威来源是 `docs/superpowers/specs/2026-04-29-auto-update-design.md`（实现 spec，462 行）。
 
+> **See also**: 升级**之后**用户怎么知道版本里加了啥、怎么暂停 / 永久关掉提示，见 [docs/features/soft-force-upgrade.md](features/soft-force-upgrade.md)（issue #225 — soft-force prompt + CHANGELOG-driven what's-new + `teamagent whatsnew` + `--snooze` / `--never`）。本文档管"轮询 + 安装"（POLL），soft-force-upgrade 文档管"安装后弹什么"（SHOW）。
+
 ## TL;DR
 
 - **触发**：每次 `SessionStart` hook（即每开一次 Claude Code 都可能跑），但有 1 小时节流。
