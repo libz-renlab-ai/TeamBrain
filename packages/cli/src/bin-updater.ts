@@ -46,7 +46,6 @@ import os from "node:os";
 import { spawn } from "node:child_process";
 import {
   parseUpdateState,
-  serializeUpdateState,
   defaultUpdateState,
   type UpdateState,
 } from "@teamagent/core";
@@ -54,6 +53,7 @@ import { runUpdater } from "./updater-logic.js";
 import { fetchRemoteSha } from "./github-api.js";
 import { resolveGithubToken } from "./commands/update.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
+import { withUpdateStateLock } from "./lib/update-state-lock.js";
 
 function teamagentHome(): string {
   return process.env["TEAMAGENT_HOME"] ?? path.join(os.homedir(), ".teamagent");
@@ -92,32 +92,52 @@ function readState(): UpdateState {
   }
 }
 
+/**
+ * Issue #244 — field-ownership-aware merge under withUpdateStateLock.
+ *
+ * Why a merge and not a passthrough: bin-updater reads `state` once at the
+ * top of `runUpdater` and then runs an HTTP fetch + npm install + migrate
+ * sequence that can take many seconds. While that's happening, a foreground
+ * `teamagent update --snooze` can persist a new `snooze_level` /
+ * `snooze_until_ts` / `never_prompt`. If bin-updater later writes a
+ * `{ ...staleState, last_branch_etag, last_branch_sha }`, the foreground
+ * snooze gets silently overwritten — the original lost-update bug from a
+ * different angle.
+ *
+ * The fix: at write time we re-read the persisted state inside the lock and
+ * keep the foreground-owned fields from disk while overlaying only the
+ * fields bin-updater is contractually allowed to mutate. Field ownership:
+ *
+ *   bin-updater owns:   last_check_ts, last_branch_etag, last_branch_sha,
+ *                       last_installed_sha, last_installed_version,
+ *                       installed_at, consecutive_install_failures,
+ *                       last_install_error, pending_banner,
+ *                       consecutive_rate_limits, next_check_after_ts.
+ *
+ *   foreground owns:    snooze_level, snooze_until_ts, never_prompt,
+ *                       prompt_dismissed_for_to.
+ *
+ *   shared/structural:  interval_hours (only set on init from defaults).
+ *
+ * Atomic write (tmp + rename, EPERM/EBUSY retry) lives inside
+ * withUpdateStateLock now, so we drop the inline duplicate.
+ */
 function writeState(s: UpdateState): void {
-  // Atomic write: tmp file + rename. Same rationale as commands/update.ts —
-  // checkCmd and bin-updater both write update-state.json without sharing a
-  // lock; non-atomic writes can produce a half-written file that
-  // parseUpdateState rejects, falling back to defaults and triggering a
-  // spurious reinstall. Tmp filename includes randomness to defeat PID-reuse
-  // collisions; rename retries on Windows EPERM/EBUSY (transient AV holds).
-  ensureDir(teamagentHome());
-  const target = statePath();
-  const tmp = `${target}.tmp.${process.pid}.${Math.random().toString(36).slice(2, 10)}`;
-  fs.writeFileSync(tmp, serializeUpdateState(s), "utf-8");
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      fs.renameSync(tmp, target);
-      return;
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if ((code === "EPERM" || code === "EBUSY") && attempt < 2) {
-        const until = Date.now() + 50;
-        while (Date.now() < until) { /* spin */ }
-        continue;
-      }
-      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
-      throw e;
-    }
-  }
+  withUpdateStateLock(teamagentHome(), (live) => ({
+    ...live, // start from disk → preserves foreground-owned fields
+    // updater-owned fields overlay the live read:
+    last_check_ts: s.last_check_ts,
+    last_branch_etag: s.last_branch_etag,
+    last_branch_sha: s.last_branch_sha,
+    last_installed_sha: s.last_installed_sha,
+    last_installed_version: s.last_installed_version,
+    installed_at: s.installed_at,
+    consecutive_install_failures: s.consecutive_install_failures,
+    last_install_error: s.last_install_error,
+    pending_banner: s.pending_banner,
+    consecutive_rate_limits: s.consecutive_rate_limits,
+    next_check_after_ts: s.next_check_after_ts,
+  }));
 }
 
 function acquireLock(): boolean {
