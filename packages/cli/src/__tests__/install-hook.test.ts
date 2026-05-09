@@ -566,10 +566,21 @@ describe("installHook — userLevel (issue #161)", () => {
     );
     expect(taggedPre).toBeDefined();
 
-    // SessionStart channel completely untouched (not one we manage here).
+    // B+C scope (2026-05-09): SessionStart was previously "not managed here"
+    // but is now folded into installHook user-level. The foreign entry must
+    // still be preserved; the teamagent entry is added alongside.
     expect(content.hooks.SessionStart).toBeDefined();
-    expect(content.hooks.SessionStart).toHaveLength(1);
-    expect(content.hooks.SessionStart[0].hooks[0].command).toBe("user-session.sh");
+    const foreignSession = content.hooks.SessionStart.find(
+      (h: { hooks: { command: string }[] }) => h.hooks?.[0]?.command === "user-session.sh",
+    );
+    expect(foreignSession).toBeDefined();
+    expect(foreignSession._teamagentTag).toBeUndefined();
+    // teamagent's SessionStart entry only registers if the bundle exists on
+    // disk (default path = dist/bin-session-start.cjs from cliRoot). In dev
+    // builds that bundle is present after `pnpm install`; in test
+    // environments without the bundle it may be skipped. Either way the
+    // foreign entry survives, which is the load-bearing assertion.
+    expect(content.hooks.SessionStart.length).toBeGreaterThanOrEqual(1);
   });
 
   it("userLevel: false does NOT touch ~/.claude/settings.json", () => {
@@ -1114,5 +1125,275 @@ describe("installHook — PR #181 fix-cycle", () => {
     const projectPath = path.join(tmp.cwd, ".claude", "settings.local.json");
     const proj = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
     expect(proj.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
+  });
+});
+
+// B+C scope (2026-05-09): four new channels folded into installHook —
+// SessionStart / SessionEnd / PreCompact / DigitalTwinTap. SessionEnd and
+// PreCompact write to BOTH project and user-level settings (mirroring the
+// existing four). SessionStart and DigitalTwinTap write to user-level ONLY,
+// for reasons documented inline in install-hook.ts.
+describe("installHook — B+C scope new channels (2026-05-09)", () => {
+  let tmp: ReturnType<typeof mkTmp>;
+  let fakeHome: string;
+
+  beforeEach(() => {
+    tmp = mkTmp();
+    fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-bc-home-"));
+  });
+
+  afterEach(() => {
+    tmp.cleanup();
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  });
+
+  it("registers SessionEnd + PreCompact at project level (settings.local.json)", () => {
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      sessionEndEntry: FAKE_HOOK_ENTRY,
+      preCompactEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: false,
+    });
+
+    const projectPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    const proj = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
+    expect(proj.hooks.SessionEnd?.[0]?._teamagentTag).toBe("teamagent-session-end");
+    expect(proj.hooks.SessionEnd[0].hooks[0].timeout).toBe(30);
+    expect(proj.hooks.PreCompact?.[0]?._teamagentTag).toBe("teamagent-pre-compact");
+    expect(proj.hooks.PreCompact[0].hooks[0].timeout).toBe(30);
+  });
+
+  it("does NOT register SessionStart or DigitalTwinTap at project level", () => {
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      sessionStartEntry: FAKE_HOOK_ENTRY,
+      digitalTwinEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: false,
+    });
+
+    const projectPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    const proj = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
+    expect(proj.hooks.SessionStart).toBeUndefined();
+    // Stop has bin-stop only at project level; the digital-twin tag belongs to
+    // the user-level mirror. Verify only one Stop entry with the bin-stop tag.
+    expect(proj.hooks.Stop).toHaveLength(1);
+    expect(proj.hooks.Stop[0]._teamagentTag).toBe("teamagent-stop");
+  });
+
+  it("registers all 8 channel tags at user level (~/.claude/settings.json)", () => {
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      sessionStartEntry: FAKE_HOOK_ENTRY,
+      sessionEndEntry: FAKE_HOOK_ENTRY,
+      preCompactEntry: FAKE_HOOK_ENTRY,
+      digitalTwinEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: true,
+    });
+
+    const userSettings = JSON.parse(
+      fs.readFileSync(path.join(fakeHome, ".claude", "settings.json"), "utf-8"),
+    );
+    const allTags = new Set<string>();
+    for (const ch of Object.keys(userSettings.hooks ?? {})) {
+      const list = userSettings.hooks[ch] as Array<{ _teamagentTag?: string }>;
+      for (const entry of list) {
+        if (entry._teamagentTag) allTags.add(entry._teamagentTag);
+      }
+    }
+    expect(allTags).toEqual(
+      new Set([
+        "teamagent-pre-tool-use",
+        "teamagent-post-tool-use",
+        "teamagent-user-prompt-submit",
+        "teamagent-stop",
+        "teamagent-session-start",
+        "teamagent-session-end",
+        "teamagent-pre-compact",
+        "teamagent-digital-twin-tap",
+      ]),
+    );
+    // Stop should host BOTH the bin-stop tag and the digital-twin-tap tag.
+    expect(userSettings.hooks.Stop).toHaveLength(2);
+  });
+
+  it("uninstallHook cleans SessionEnd / PreCompact / DigitalTwinTap tags", () => {
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      postHookEntry: FAKE_HOOK_ENTRY,
+      userPromptEntry: FAKE_HOOK_ENTRY,
+      stopEntry: FAKE_HOOK_ENTRY,
+      sessionEndEntry: FAKE_HOOK_ENTRY,
+      preCompactEntry: FAKE_HOOK_ENTRY,
+      digitalTwinEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      userLevel: false,
+    });
+
+    // Sanity: project-level entries exist before uninstall.
+    const projectPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    const before = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
+    expect(before.hooks.SessionEnd).toBeDefined();
+    expect(before.hooks.PreCompact).toBeDefined();
+
+    const r = uninstallHook({ cwd: tmp.cwd });
+    expect(r.removed).toBe(true);
+
+    const after = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
+    expect(after.hooks?.SessionEnd).toBeUndefined();
+    expect(after.hooks?.PreCompact).toBeUndefined();
+    expect(after.hooks?.Stop).toBeUndefined(); // only TeamAgent tags existed
+  });
+});
+
+describe("auditOrphanShellHooks (B+C scope, 2026-05-09)", () => {
+  let tmp: ReturnType<typeof mkTmp>;
+
+  beforeEach(() => {
+    tmp = mkTmp();
+  });
+
+  afterEach(() => {
+    tmp.cleanup();
+  });
+
+  it("returns empty list when .claude/hooks is missing", async () => {
+    const { auditOrphanShellHooks } = await import("../commands/install-hook.js");
+    expect(auditOrphanShellHooks(tmp.cwd)).toEqual([]);
+  });
+
+  it("returns empty list when no .sh files exist", async () => {
+    fs.mkdirSync(path.join(tmp.cwd, ".claude", "hooks"), { recursive: true });
+    const { auditOrphanShellHooks } = await import("../commands/install-hook.js");
+    expect(auditOrphanShellHooks(tmp.cwd)).toEqual([]);
+  });
+
+  it("flags an orphan .sh that no settings file references", async () => {
+    const hooksDir = path.join(tmp.cwd, ".claude", "hooks");
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(path.join(hooksDir, "orphan.sh"), "#!/bin/bash\n");
+
+    const { auditOrphanShellHooks } = await import("../commands/install-hook.js");
+    expect(auditOrphanShellHooks(tmp.cwd)).toEqual(["orphan.sh"]);
+  });
+
+  it("does NOT flag a .sh that committed settings.json references", async () => {
+    const claudeDir = path.join(tmp.cwd, ".claude");
+    const hooksDir = path.join(claudeDir, "hooks");
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(path.join(hooksDir, "wired.sh"), "#!/bin/bash\n");
+    fs.writeFileSync(
+      path.join(claudeDir, "settings.json"),
+      JSON.stringify({
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                { type: "command", command: "bash .claude/hooks/wired.sh", timeout: 5 },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const { auditOrphanShellHooks } = await import("../commands/install-hook.js");
+    expect(auditOrphanShellHooks(tmp.cwd)).toEqual([]);
+  });
+
+  it("does NOT flag a .sh that settings.local.json references", async () => {
+    const claudeDir = path.join(tmp.cwd, ".claude");
+    const hooksDir = path.join(claudeDir, "hooks");
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(path.join(hooksDir, "host-local.sh"), "#!/bin/bash\n");
+    fs.writeFileSync(
+      path.join(claudeDir, "settings.local.json"),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                { type: "command", command: "bash .claude/hooks/host-local.sh" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const { auditOrphanShellHooks } = await import("../commands/install-hook.js");
+    expect(auditOrphanShellHooks(tmp.cwd)).toEqual([]);
+  });
+
+  it("returns sorted list when multiple orphans", async () => {
+    const hooksDir = path.join(tmp.cwd, ".claude", "hooks");
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(path.join(hooksDir, "z-orphan.sh"), "#!/bin/bash\n");
+    fs.writeFileSync(path.join(hooksDir, "a-orphan.sh"), "#!/bin/bash\n");
+    fs.writeFileSync(path.join(hooksDir, "m-orphan.sh"), "#!/bin/bash\n");
+
+    const { auditOrphanShellHooks } = await import("../commands/install-hook.js");
+    expect(auditOrphanShellHooks(tmp.cwd)).toEqual([
+      "a-orphan.sh",
+      "m-orphan.sh",
+      "z-orphan.sh",
+    ]);
+  });
+
+  it("survives malformed settings.json (treats as zero references, all .sh are orphans)", async () => {
+    const claudeDir = path.join(tmp.cwd, ".claude");
+    const hooksDir = path.join(claudeDir, "hooks");
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(path.join(hooksDir, "lonely.sh"), "#!/bin/bash\n");
+    fs.writeFileSync(path.join(claudeDir, "settings.json"), "{ malformed json");
+
+    const { auditOrphanShellHooks } = await import("../commands/install-hook.js");
+    // Malformed file is treated as "no references" → the .sh shows as orphan.
+    expect(auditOrphanShellHooks(tmp.cwd)).toEqual(["lonely.sh"]);
+  });
+});
+
+describe("install-user-hook deprecation (B+C scope, 2026-05-09)", () => {
+  it("installUserHook emits a deprecation warning to stderr", async () => {
+    const { installUserHook } = await import("../commands/install-user-hook.js");
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-iuh-home-"));
+    try {
+      const captured: string[] = [];
+      const origWrite = process.stderr.write.bind(process.stderr);
+      const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: any) => {
+        captured.push(typeof chunk === "string" ? chunk : String(chunk));
+        return true;
+      });
+      try {
+        installUserHook({
+          homeDir: fakeHome,
+          sessionStartEntry: FAKE_HOOK_ENTRY,
+        });
+      } finally {
+        writeSpy.mockRestore();
+        // safety: never let mocked stderr leak across tests
+        void origWrite;
+      }
+
+      const joined = captured.join("");
+      expect(joined.toLowerCase()).toContain("deprecat");
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
   });
 });

@@ -35,14 +35,14 @@ For the multi-tool channel design, see [`docs/features/multi-tool.md`](./multi-t
 
 | Asset class | Count | Detail |
 |-------------|-------|--------|
-| 🟢 Active Node bundles installed by `teamagent init` | 4 | `bin-{pre-tool-use, post-tool-use, user-prompt-submit, stop}.cjs` |
+| 🟢 Active Node bundles installed by `teamagent init` (project-level) | 6 | `bin-{pre-tool-use, post-tool-use, user-prompt-submit, stop, session-end, pre-compact}.cjs` |
+| 🟢 Active Node bundles installed by `teamagent init` (user-level additive) | 2 | `bin-session-start.cjs`, `bin-digital-twin-tap.cjs` (both write to `~/.claude/settings.json` only) |
 | 🟢 Active statusLine script (single-slot, chain-wraps user cmd) | 1 | `dist/teamagent-statusline.cjs` |
 | 🟢 Active `.sh` scripts wired by committed `.claude/settings.json` | 2 | `self-report-fused.sh`, `digital-twin-tap.sh` |
-| 🟡 SessionStart bundle installed only by separate command | 1 | `teamagent install-user-hook` writes `bin-session-start.cjs` to `~/.claude/settings.json` |
-| 🟠 Built but not yet wired by any installer | 3 | `bin-{session-end, pre-compact, digital-twin-tap}.ts` (sources exist; not in `installHook` channelOps) |
-| ⚪ Updater (not a hook) | 1 | `bin-updater.ts` |
+| 🟡 Deprecated standalone command (still functional) | 1 | `teamagent install-user-hook` — SessionStart logic folded into `installHook()`; emits deprecation warning |
+| ⚪ Updater (not a hook) | 1 | `bin-updater.ts` (CLI self-update; intentionally excluded from hook installation) |
 
-**Total**: 12 production assets. Coverage by `teamagent init`: 5/12 ≈ 42% (the gap is tracked as a separate B+C scope PR — see "Out of scope" below).
+**Total**: 12 production assets. Coverage by `teamagent init` after the B+C scope PR (2026-05-09): **11/12 ≈ 92%** — only `bin-updater.ts` is excluded by design. Note: `digital-twin-tap.cjs` is wired user-level only because committed `.claude/settings.json` already routes the `.sh` wrapper (which internally spawns the `.cjs`); writing the `.cjs` to project-level too would double-tap when working IN TeamBrain. User-level write means OTHER projects get one tap (via the .cjs); TeamBrain itself stays at one tap (via the .sh wrapper).
 
 ## Channel-by-channel
 
@@ -117,11 +117,17 @@ These shell scripts were removed in this PR and are tracked in git history:
 
 To restore: `git show <pre-archive-sha>:.claude/hooks/<filename>`.
 
-## Out of scope (next PR — B+C scope)
+## B+C scope — completed 2026-05-09
 
-The following gaps were intentionally not closed in this archive PR:
-- Wire `bin-session-end.cjs` / `bin-pre-compact.cjs` / `bin-digital-twin-tap.cjs` into `installHook()` channelOps array (`packages/cli/src/commands/install-hook.ts:654-687`).
-- Fold `teamagent install-user-hook`'s SessionStart logic into `installHook()` user-level branch; deprecate the separate command.
-- Add an orphan-`.sh` scanner to `installHook()` so future stale shell scripts surface a warning during `teamagent init`.
+The five gaps listed in the archive PR's "out of scope" section were closed in a follow-up PR (see `docs/plans/2026-05-09-install-hook-bc-scope/plan.md`):
+- ✅ Wired `bin-session-end.cjs` into `installHook()` channelOps (project + user level).
+- ✅ Wired `bin-pre-compact.cjs` into `installHook()` channelOps (project + user level).
+- ✅ Wired `bin-digital-twin-tap.cjs` as a second Stop entry — user-level only, to avoid double-tap with the committed `.sh` wrapper.
+- ✅ Folded `teamagent install-user-hook`'s SessionStart logic into `installHook()`'s user-level branch; standalone command emits a deprecation warning but remains functional for ≥ 1 major version.
+- ✅ Added `auditOrphanShellHooks(cwd)`; `teamagent init` now scans `.claude/hooks/*.sh` and warns on unreferenced files.
 
-These are tracked in `docs/plans/2026-05-09-hook-archive-docs/plan.md` § 6.
+## Future work (next major version)
+
+- Refactor project-level `installHook()` to use the same channelOps loop as user-level (eliminate inline blocks).
+- Remove `digital-twin-tap.sh` wrapper + drop its reference from committed `.claude/settings.json` once `bin-digital-twin-tap.cjs` is universally installed; this collapses to a single direct-`.cjs` Stop entry per project.
+- Delete the deprecated `teamagent install-user-hook` command after one major version.

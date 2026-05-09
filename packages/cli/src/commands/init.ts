@@ -38,7 +38,7 @@ import {
 import type { LLMClient } from "@teamagent/ports";
 import type { KnowledgeEntry } from "@teamagent/types";
 import { computeEnforcement } from "@teamagent/types";
-import { installHook } from "./install-hook.js";
+import { auditOrphanShellHooks, installHook } from "./install-hook.js";
 import { findTeamagentRoot } from "../lib/walk-up.js";
 
 export interface InitOptions {
@@ -228,6 +228,10 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     steps.push(
       doInstallHook(paths.cwd, opts.hookEntry, dryRun, opts.userLevelHook ?? true),
     );
+    // B+C scope (2026-05-09): orphan .sh scanner. Surface unreferenced shell
+    // hooks as a soft warning so future drift is visible during init. Never
+    // blocks — orphans may be intentional user customizations.
+    steps.push(doAuditOrphanShellHooks(paths.cwd, dryRun));
   } else if (targetIncludesCodex(target) && !targetIncludesClaude(target)) {
     steps.push({
       step: "install-hook",
@@ -1009,6 +1013,38 @@ async function doInstallPlugins(
   }
 }
 
+function doAuditOrphanShellHooks(cwd: string, dryRun: boolean): InitStepResult {
+  if (dryRun) {
+    return okStep(
+      "audit-orphan-hooks",
+      "(dry-run) 会扫描 .claude/hooks/*.sh 检查是否仍被 settings 引用",
+    );
+  }
+  try {
+    const orphans = auditOrphanShellHooks(cwd);
+    if (orphans.length === 0) {
+      return okStep("audit-orphan-hooks", "无孤儿 .sh");
+    }
+    // Soft warning — surface in step detail; non-blocking.
+    process.stderr.write(
+      `[teamagent init] 发现 ${orphans.length} 个未引用的 .claude/hooks/*.sh：\n`,
+    );
+    for (const o of orphans) {
+      process.stderr.write(`  - ${o}\n`);
+    }
+    process.stderr.write(
+      "  这些脚本不在 settings.json 或 settings.local.json 中。可能是历史遗留或用户自定义。\n",
+    );
+    return {
+      step: "audit-orphan-hooks",
+      status: "ok",
+      detail: `⚠️  发现 ${orphans.length} 个孤儿 .sh: ${orphans.join(", ")}`,
+    };
+  } catch (err) {
+    return failStep("audit-orphan-hooks", String(err).slice(0, 200));
+  }
+}
+
 function doInstallHook(
   cwd: string,
   hookEntry: string | undefined,
@@ -1305,7 +1341,7 @@ export function renderInitResult(result: InitResult): string {
   const stepGroups: Array<{ icon: string; label: string; stepKeys: string[] }> = [
     { icon: "🔍", label: "检测项目环境", stepKeys: ["detect-stack"] },
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
-    { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook"] },
+    { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook", "audit-orphan-hooks"] },
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
     { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills"] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
@@ -1380,6 +1416,7 @@ function stepLabel(step: string): string {
     "scan-rules": "扫描规则",
     "structure-rules": "导入规则",
     "install-hook": "Hook 注册",
+    "audit-orphan-hooks": "孤儿 .sh 审计",
     "install-plugins": "Plugin 安装",
     "compile-skills": "Skills",
     "link-codex-files": "Codex 软链接",

@@ -71,6 +71,18 @@ function defaultSessionStartEntry(): string {
 export function installUserHook(
   opts: InstallUserHookOptions = {},
 ): InstallUserHookResult {
+  // B+C scope (2026-05-09): SessionStart registration is now folded into
+  // `installHook()`'s user-level write path (`mergeUserLevelHooks`). This
+  // standalone command remains functional for backward compatibility but is
+  // deprecated — `teamagent init` already performs the same registration.
+  // Emitting on stderr so the message reaches CI logs even when callers
+  // capture stdout into JSON.
+  process.stderr.write(
+    "[deprecation] `teamagent install-user-hook` is deprecated. " +
+      "`teamagent init` now installs SessionStart at user level via mergeUserLevelHooks. " +
+      "This standalone command will be removed in the next major version.\n",
+  );
+
   const home = opts.homeDir ?? os.homedir();
   const settingsPath = path.join(home, ".claude", "settings.json");
   const hookEntry = opts.sessionStartEntry ?? defaultSessionStartEntry();

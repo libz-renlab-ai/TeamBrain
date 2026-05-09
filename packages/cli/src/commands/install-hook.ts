@@ -37,6 +37,14 @@ const POST_HOOK_TAG = "teamagent-post-tool-use";
 const USER_PROMPT_TAG = "teamagent-user-prompt-submit";
 const STOP_HOOK_TAG   = "teamagent-stop";
 const STATUS_LINE_TAG = "teamagent-statusline";
+// B+C scope (2026-05-09): four new channels folded into installHook.
+// SessionStart and DigitalTwinTap are user-level only (see channelOps and
+// `installHook` body for rationale); SessionEnd / PreCompact write to both
+// project and user-level settings like the existing four.
+const SESSION_START_TAG = "teamagent-session-start";
+const SESSION_END_TAG   = "teamagent-session-end";
+const PRE_COMPACT_TAG   = "teamagent-pre-compact";
+const DIGITAL_TWIN_TAG  = "teamagent-digital-twin-tap";
 
 export interface InstallHookOptions {
   cwd?: string;
@@ -50,6 +58,14 @@ export interface InstallHookOptions {
   stopEntry?: string;
   /** 显式指定 statusLine 脚本入口绝对路径 */
   statusLineEntry?: string;
+  /** 显式指定 SessionStart hook 入口绝对路径（user-level only） */
+  sessionStartEntry?: string;
+  /** 显式指定 SessionEnd hook 入口绝对路径 */
+  sessionEndEntry?: string;
+  /** 显式指定 PreCompact hook 入口绝对路径 */
+  preCompactEntry?: string;
+  /** 显式指定 digital-twin-tap Stop hook 入口绝对路径（user-level only） */
+  digitalTwinEntry?: string;
   /** 显式指定 user-level home（默认 os.homedir()）。测试用。 */
   homeDir?: string;
   /**
@@ -130,6 +146,27 @@ function defaultPostHookEntry(): string {
   return path.join(cliRoot(), "dist", "bin-post-tool-use.cjs");
 }
 
+// B+C scope: default entry paths for the four newly-wired channels. Each one
+// is best-effort — if the .cjs is missing on disk, the channel is silently
+// skipped at install time (existing pattern; see `hasPostBundle` etc.). This
+// preserves backward compatibility for builds that haven't run `pnpm build`
+// for the new bundles yet.
+function defaultSessionStartEntry(): string {
+  return path.join(cliRoot(), "dist", "bin-session-start.cjs");
+}
+
+function defaultSessionEndEntry(): string {
+  return path.join(cliRoot(), "dist", "bin-session-end.cjs");
+}
+
+function defaultPreCompactEntry(): string {
+  return path.join(cliRoot(), "dist", "bin-pre-compact.cjs");
+}
+
+function defaultDigitalTwinEntry(): string {
+  return path.join(cliRoot(), "dist", "bin-digital-twin-tap.cjs");
+}
+
 /**
  * 把 Windows 反斜杠路径转为正斜杠格式。
  * Git Bash 会吞掉路径里的反斜杠（视为转义），所以 hook command 必须用 /。
@@ -206,18 +243,33 @@ function stageBundleToUserTeamagent(srcDistPath: string, homeDir: string): strin
  * Used in `mergeUserLevelHooks` so re-installing on top of an upgraded user
  * who already has untagged-legacy TeamAgent entries doesn't double-fire.
  */
-function isTeamagentEntry(
-  entry: HookEntry,
-  channel: "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop",
-): boolean {
+type HookChannel =
+  | "PreToolUse"
+  | "PostToolUse"
+  | "UserPromptSubmit"
+  | "Stop"
+  | "SessionStart"
+  | "SessionEnd"
+  | "PreCompact";
+
+// Bundle filenames for each channel. Stop has TWO bundles (bin-stop +
+// bin-digital-twin-tap); the heuristic detects either as TeamAgent-owned so
+// re-install dedup catches both flavours. New bundles added 2026-05-09 (B+C).
+const CHANNEL_BUNDLE_FILENAMES: Record<HookChannel, readonly string[]> = {
+  PreToolUse: ["bin-pre-tool-use.cjs"],
+  PostToolUse: ["bin-post-tool-use.cjs"],
+  UserPromptSubmit: ["bin-user-prompt-submit.cjs"],
+  Stop: ["bin-stop.cjs", "bin-digital-twin-tap.cjs"],
+  SessionStart: ["bin-session-start.cjs"],
+  SessionEnd: ["bin-session-end.cjs"],
+  PreCompact: ["bin-pre-compact.cjs"],
+};
+
+function isTeamagentEntry(entry: HookEntry, channel: HookChannel): boolean {
   if (entry._teamagentTag) return true;
-  const filename =
-    channel === "PreToolUse" ? "bin-pre-tool-use.cjs"
-    : channel === "PostToolUse" ? "bin-post-tool-use.cjs"
-    : channel === "UserPromptSubmit" ? "bin-user-prompt-submit.cjs"
-    : "bin-stop.cjs";
+  const filenames = CHANNEL_BUNDLE_FILENAMES[channel];
   const cmds = entry.hooks?.map((c) => c.command ?? "") ?? [];
-  return cmds.some((c) => c.includes(filename));
+  return cmds.some((c) => filenames.some((f) => c.includes(f)));
 }
 
 function readSettings(file: string): ClaudeSettings {
@@ -515,6 +567,42 @@ export function installHook(opts: InstallHookOptions = {}): {
   }
   if (settings.hooks.Stop.length === 0) delete settings.hooks.Stop;
 
+  // B+C scope 2026-05-09: SessionEnd 注册（project-level）
+  // 触发于 /clear、logout、Ctrl+C at prompt、关闭窗口。bin-session-end.cjs
+  // 自身保证 detached + non-blocking；timeout 30s 是安全网。
+  const sessionEndEntry = opts.sessionEndEntry ?? defaultSessionEndEntry();
+  const hasSessionEndBundle = fs.existsSync(sessionEndEntry);
+  if (!settings.hooks.SessionEnd) settings.hooks.SessionEnd = [] as HookEntry[];
+  if (hasSessionEndBundle) {
+    const list = settings.hooks.SessionEnd as HookEntry[];
+    const existing = list.find((h) => h._teamagentTag === SESSION_END_TAG);
+    if (!existing) {
+      list.push({
+        _teamagentTag: SESSION_END_TAG,
+        hooks: [{ type: "command", command: `node ${shellQuote(toForwardSlash(sessionEndEntry))}`, timeout: 30 }],
+      });
+    }
+  }
+  if ((settings.hooks.SessionEnd as HookEntry[] | undefined)?.length === 0) delete settings.hooks.SessionEnd;
+
+  // B+C scope 2026-05-09: PreCompact 注册（project-level）
+  // 触发于 Claude Code 即将压缩 transcript 之前；做一次全量 rescan，
+  // 让被摘要吃掉的 turn 里的 learnings 已落库。
+  const preCompactEntry = opts.preCompactEntry ?? defaultPreCompactEntry();
+  const hasPreCompactBundle = fs.existsSync(preCompactEntry);
+  if (!settings.hooks.PreCompact) settings.hooks.PreCompact = [] as HookEntry[];
+  if (hasPreCompactBundle) {
+    const list = settings.hooks.PreCompact as HookEntry[];
+    const existing = list.find((h) => h._teamagentTag === PRE_COMPACT_TAG);
+    if (!existing) {
+      list.push({
+        _teamagentTag: PRE_COMPACT_TAG,
+        hooks: [{ type: "command", command: `node ${shellQuote(toForwardSlash(preCompactEntry))}`, timeout: 30 }],
+      });
+    }
+  }
+  if ((settings.hooks.PreCompact as HookEntry[] | undefined)?.length === 0) delete settings.hooks.PreCompact;
+
   // statusLine 注册。CC 只有一个 statusLine 槽位 — 若用户已有 statusLine（user
   // level `~/.claude/settings.json` 或 project level `.claude/settings.local.json`），
   // 把用户 cmd 与 TeamBrain cmd chain 起来：
@@ -600,6 +688,10 @@ export function installHook(opts: InstallHookOptions = {}): {
       postHookEntry,
       userPromptEntry,
       stopEntry,
+      sessionStartEntry: opts.sessionStartEntry ?? defaultSessionStartEntry(),
+      sessionEndEntry,
+      preCompactEntry,
+      digitalTwinEntry: opts.digitalTwinEntry ?? defaultDigitalTwinEntry(),
     });
   }
 
@@ -638,6 +730,12 @@ function mergeUserLevelHooks(
     postHookEntry: string;
     userPromptEntry: string;
     stopEntry: string;
+    // B+C scope (2026-05-09): four new bundles. Each one is best-effort —
+    // missing-on-disk → channel skipped (existing existsSync pattern).
+    sessionStartEntry: string;
+    sessionEndEntry: string;
+    preCompactEntry: string;
+    digitalTwinEntry: string;
   },
 ): void {
   const userSettingsPath = path.join(homeDir, ".claude", "settings.json");
@@ -652,7 +750,7 @@ function mergeUserLevelHooks(
     if (!settings.hooks) settings.hooks = {};
 
     const channelOps: Array<{
-      channel: "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop";
+      channel: HookChannel;
       tag: string;
       bundlePath: string;
       matcher?: string;
@@ -684,18 +782,70 @@ function mergeUserLevelHooks(
         bundlePath: entries.stopEntry,
         timeout: 60,
       },
+      // B+C scope (2026-05-09): SessionStart was previously installed by the
+      // separate `teamagent install-user-hook` command. Folded in here so
+      // `teamagent init` is a single entry point for all hook installation.
+      // The standalone `install-user-hook` command remains for backward
+      // compatibility but emits a deprecation warning. User-level only —
+      // SessionStart is whole-machine semantics; project-level mirroring
+      // would just produce a redundant per-project copy.
+      {
+        channel: "SessionStart",
+        tag: SESSION_START_TAG,
+        bundlePath: entries.sessionStartEntry,
+        timeout: 10,
+      },
+      // B+C scope (2026-05-09): SessionEnd written to user-level too so it
+      // fires on /clear, logout, Ctrl+C, window close from any cwd.
+      {
+        channel: "SessionEnd",
+        tag: SESSION_END_TAG,
+        bundlePath: entries.sessionEndEntry,
+        timeout: 30,
+      },
+      // B+C scope (2026-05-09): PreCompact also user-level so context
+      // compaction in any project flushes learnings before the summary.
+      {
+        channel: "PreCompact",
+        tag: PRE_COMPACT_TAG,
+        bundlePath: entries.preCompactEntry,
+        timeout: 30,
+      },
+      // B+C scope (2026-05-09): bin-digital-twin-tap.cjs as a SECOND Stop
+      // entry — runs alongside the existing bin-stop learning pipeline. We
+      // wire it user-level only because committed `.claude/settings.json` in
+      // the TeamBrain repo already routes a digital-twin-tap.sh wrapper
+      // (with SIGTERM forwarding); also writing the .cjs to project-level
+      // `settings.local.json` would double-tap when working IN TeamBrain
+      // itself. User-level only means: other projects get one tap (via the
+      // .cjs); TeamBrain gets one tap (via the .sh wrapper). Net 1 tap per
+      // session. `tapSession` is documented to dedup by (cwd, session_id)
+      // anyway, so the worst case is wasteful, not unsafe.
+      {
+        channel: "Stop",
+        tag: DIGITAL_TWIN_TAG,
+        bundlePath: entries.digitalTwinEntry,
+        timeout: 5,
+      },
     ];
 
     for (const op of channelOps) {
-      // Round-2 F4: dedup BEFORE the existsSync gate. Otherwise, when an
-      // upgrade drops a previously-installed bundle (e.g. `bin-foo.cjs`
-      // removed from a newer release), the existing TeamAgent-tagged entry
-      // pointing at the now-missing path stays in `~/.claude/settings.json`
-      // forever. By stripping all TeamAgent entries first, then skipping
-      // re-install when the new bundle is missing, we get clean upgrades.
+      // Round-2 F4 + B+C-scope refinement (2026-05-09):
+      // - Strip the entry that owns OUR tag (idempotent re-install)
+      // - Strip untagged-legacy entries that point at any teamagent bundle
+      //   filename for this channel (B-086 dedup; covers pre-tag installs)
+      // - PRESERVE entries with a DIFFERENT teamagent tag for the same
+      //   channel: this matters for Stop, which now hosts both `bin-stop.cjs`
+      //   and `bin-digital-twin-tap.cjs`. The previous "strip all
+      //   isTeamagentEntry" logic wiped the first op's write when the second
+      //   op ran on the same channel.
       if (settings.hooks[op.channel]) {
         const list = settings.hooks[op.channel] as HookEntry[];
-        settings.hooks[op.channel] = list.filter((h) => !isTeamagentEntry(h, op.channel));
+        settings.hooks[op.channel] = list.filter((h) => {
+          if (h._teamagentTag === op.tag) return false;
+          if (!h._teamagentTag && isTeamagentEntry(h, op.channel)) return false;
+          return true;
+        });
       }
 
       if (!fs.existsSync(op.bundlePath)) continue;
@@ -747,8 +897,17 @@ function mergeUserLevelHooks(
     }
 
     // Drop any channels that ended up empty (preserves prior structure when we
-    // never had to touch them).
-    for (const ch of ["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop"] as const) {
+    // never had to touch them). B+C scope (2026-05-09): list now includes the
+    // four newly-wired channels.
+    for (const ch of [
+      "PreToolUse",
+      "PostToolUse",
+      "UserPromptSubmit",
+      "Stop",
+      "SessionStart",
+      "SessionEnd",
+      "PreCompact",
+    ] as const) {
       const list = settings.hooks[ch] as HookEntry[] | undefined;
       if (Array.isArray(list) && list.length === 0) delete settings.hooks[ch];
     }
@@ -849,11 +1008,33 @@ export function uninstallHook(opts: { cwd?: string } = {}): {
 
   if (settings.hooks.Stop) {
     const before = settings.hooks.Stop.length;
+    // B+C scope (2026-05-09): Stop now hosts both bin-stop and the
+    // digital-twin-tap entry — drop both teamagent tags.
     settings.hooks.Stop = settings.hooks.Stop.filter(
-      (h) => h._teamagentTag !== STOP_HOOK_TAG,
+      (h) => h._teamagentTag !== STOP_HOOK_TAG && h._teamagentTag !== DIGITAL_TWIN_TAG,
     );
     if (settings.hooks.Stop.length !== before) removedAny = true;
     if (settings.hooks.Stop.length === 0) delete settings.hooks.Stop;
+  }
+
+  // B+C scope (2026-05-09): clean SessionStart/SessionEnd/PreCompact entries
+  // too. Project-level rarely has SessionStart (it's user-level only) but we
+  // sweep for safety in case a future test or migration writes one.
+  for (const [channel, tag] of [
+    ["SessionStart", SESSION_START_TAG],
+    ["SessionEnd", SESSION_END_TAG],
+    ["PreCompact", PRE_COMPACT_TAG],
+  ] as const) {
+    const list = settings.hooks[channel] as HookEntry[] | undefined;
+    if (!Array.isArray(list)) continue;
+    const before = list.length;
+    const next = list.filter((h) => h._teamagentTag !== tag);
+    if (next.length !== before) removedAny = true;
+    if (next.length === 0) {
+      delete settings.hooks[channel];
+    } else {
+      settings.hooks[channel] = next;
+    }
   }
 
   if (settings.hooks && Object.keys(settings.hooks).length === 0) {
@@ -892,4 +1073,72 @@ function shellQuote(p: string): string {
   // 双引号包装 + 反斜杠转义内部引号；适用于 Windows + bash + Claude Code
   if (/^[A-Za-z0-9_./:\\-]+$/.test(p)) return p;
   return `"${p.replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * B+C scope (2026-05-09): orphan shell-hook scanner.
+ *
+ * Scans `<cwd>/.claude/hooks/*.sh` and cross-references each filename against
+ * the `command` strings in:
+ *   - `<cwd>/.claude/settings.json`        (committed, repo-shipped)
+ *   - `<cwd>/.claude/settings.local.json`  (gitignored, per-host)
+ *
+ * A `.sh` is "orphan" when no command string in either file references its
+ * basename. Returns the list of orphan basenames sorted alphabetically.
+ *
+ * Non-throwing: missing dirs / unreadable files / malformed JSON degrade to
+ * "no orphans found"; the caller treats this as a soft warning, not an error.
+ *
+ * Detection is a substring check on the basename (e.g. `laziness-self-report.sh`)
+ * — same heuristic used by `isTeamagentEntry`. False-positive rate is low
+ * because shell scripts are generally referenced by full filename, but we
+ * deliberately do NOT register orphans automatically. The caller decides
+ * whether to warn, fail, or interactively prompt.
+ */
+export function auditOrphanShellHooks(cwd: string): string[] {
+  const hooksDir = path.join(cwd, ".claude", "hooks");
+  if (!fs.existsSync(hooksDir)) return [];
+
+  let candidates: string[];
+  try {
+    candidates = fs
+      .readdirSync(hooksDir)
+      .filter((f) => f.endsWith(".sh"));
+  } catch {
+    return [];
+  }
+  if (candidates.length === 0) return [];
+
+  // Aggregate every `command` string from both settings files.
+  const commandStrings: string[] = [];
+  for (const settingsFile of [
+    path.join(cwd, ".claude", "settings.json"),
+    path.join(cwd, ".claude", "settings.local.json"),
+  ]) {
+    if (!fs.existsSync(settingsFile)) continue;
+    try {
+      const raw = fs.readFileSync(settingsFile, "utf-8").trim();
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as ClaudeSettings;
+      if (!parsed.hooks) continue;
+      for (const ch of Object.keys(parsed.hooks)) {
+        const list = parsed.hooks[ch] as HookEntry[] | undefined;
+        if (!Array.isArray(list)) continue;
+        for (const entry of list) {
+          for (const hookCmd of entry.hooks ?? []) {
+            if (typeof hookCmd.command === "string") {
+              commandStrings.push(hookCmd.command);
+            }
+          }
+        }
+      }
+    } catch {
+      // malformed json; skip this file
+    }
+  }
+
+  const orphans = candidates.filter(
+    (basename) => !commandStrings.some((c) => c.includes(basename)),
+  );
+  return orphans.sort();
 }
