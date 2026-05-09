@@ -60,6 +60,9 @@ import { cleanupDbBackups } from "./db-backup-cleanup.js";
 import { runM5Session, renderM5SessionBanner } from "./m5-session-hook.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
 import { findTeamagentRoot } from "./lib/walk-up.js";
+import { tryDetachedSpawn } from "./daemon-first-embedder.js";
+import { defaultEmbedderStatePath } from "./embedder-state.js";
+import { postRegister } from "./embedder-client.js";
 
 /**
  * SessionStart accepts a Claude Code SessionStart payload (or empty stdin
@@ -108,6 +111,24 @@ async function main(): Promise<void> {
     parseInput,
     escape: { manualResources: true },
     handler: async (ctx) => {
+      // Issue #164: kick off the embedder daemon if it's not already running.
+      // Fire-and-forget detached spawn so SessionStart returns immediately;
+      // subsequent PreToolUse / Stop hooks will hit the daemon over HTTP
+      // (3-4s cold load happens once, off the critical path). Register
+      // this session asynchronously so the daemon's idle-exit logic knows
+      // it has live members.
+      try {
+        const statePath = defaultEmbedderStatePath();
+        tryDetachedSpawn(statePath);
+        const sessionId =
+          (ctx.input as { session_id?: unknown }).session_id;
+        if (typeof sessionId === "string" && sessionId.length > 0) {
+          // Fire-and-forget: postRegister polls up to 5s for daemon ready,
+          // then POSTs /register. Don't await — SessionStart must return fast.
+          void postRegister(sessionId, { statePath }).catch(() => { /* best-effort */ });
+        }
+      } catch { /* best-effort — daemon failure must not break SessionStart */ }
+
       // B-090: best-effort cleanup of orphan wiki-refresh-errors.log left
       // over by the removed wiki subsystem (commit 280e4e8). Silent + cheap.
       cleanupWikiResidue();

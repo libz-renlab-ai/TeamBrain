@@ -37,6 +37,7 @@ import {
   runFullRescanPipeline,
   type StopHookInput,
 } from "./bin-stop.js";
+import { postShutdown } from "./embedder-client.js";
 
 const SESSION_END_ENV_KEY = "TEAMAGENT_SESSION_END_PIPELINE";
 
@@ -76,6 +77,14 @@ async function main(): Promise<void> {
         await runFullRescanPipeline(ctx.input);
         return;
       }
+
+      // Issue #164: best-effort POST /shutdown to drop our refcount on the
+      // embedder daemon. Daemon decrements its members list; when count
+      // reaches 0 it begins exit (releases ~650MB RSS). Fire-and-forget so
+      // SessionEnd remains non-blocking.
+      try {
+        void postShutdown(ctx.input.session_id).catch(() => { /* best-effort */ });
+      } catch { /* best-effort */ }
 
       // Foreground path: write input to tmp file + spawn detached child of
       // self, then return immediately so Claude Code's session close is not

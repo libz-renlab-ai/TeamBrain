@@ -1,27 +1,33 @@
 ---
 Status: accepted
 Date: 2026-05-07
-Revised: 2026-05-07 (split into V1 vector-deps-absent default + opt-in install; npm 10 quirk discovered)
+Revised: 2026-05-09 (issue #164: vector deps now default; long-running embedder daemon shares loaded model across hooks)
 Implementation:
-  - packages/teamagent/package.json (@xenova/transformers + onnxruntime-node REMOVED from deps; install fits ~3s)
-  - release/install.sh (default = tarball only; TEAMAGENT_INCLUDE_OPTIONAL=1 = explicit multi-package install)
-  - packages/teamagent/postinstall.mjs (vectorOptionalsInstalled detection; Stage 2 detached when present, skipped when absent)
-  - packages/cli/src/commands/init.ts (same detection in spawnDetachedWarmup gate)
-  - packages/cli/src/warmup-state.ts (atomic state file; unchanged)
-  - packages/cli/src/bin-pre-tool-use.ts (legacy substring fallback when state !== "ready"; unchanged)
+  - packages/teamagent/package.json (@xenova/transformers + onnxruntime-node now in `dependencies`; CLI install still ~3s, model download ≤5min in background)
+  - release/install.sh (default = tarball only; the heavy npm download for vector deps now happens via npm's normal dependency resolution)
+  - packages/teamagent/postinstall.mjs (vectorOptionalsInstalled detection retained as defensive fallback for post-install removal; Stage 2 always detached now)
+  - packages/cli/src/bin-embedder.ts (NEW: long-running embedder daemon — issue #164 — loads model once, serves /embed via HTTP)
+  - packages/cli/src/daemon-first-embedder.ts (NEW: hook-side wrapper that prefers daemon, falls back to in-process)
+  - packages/cli/src/embedder-state.ts (NEW: state file at ~/.teamagent/.embedder-state.json — port + pid + members refcount)
+  - packages/cli/src/warmup-state.ts (atomic state file; unchanged — gates between "downloading" and "ready")
+  - packages/cli/src/bin-pre-tool-use.ts (legacy substring fallback when daemon down or state !== "ready"; unchanged behavior)
 Verifier: docs/plans/2026-05-07-fix-install/judge.md (MD playbook), scripts/verify-real-install-30s.sh + scripts/verify-postinstall-detached.sh (evidence collectors)
-Real install measured: 2.76s / 3.32s / 3.44s (3 runs, fresh cache, npm 10.9.4, --prefix=tmp + --cache=tmp)
+Real install measured: 2.76s / 3.32s / 3.44s (3 runs, fresh cache, npm 10.9.4, --prefix=tmp + --cache=tmp; vector-deps download is npm-side and happens within the same install transaction)
 ---
 
-# Two-stage install: legacy substring immediate, vector model opt-in upgrade
+# Two-stage install: CLI immediate, vector model background-loaded by long-running daemon
 
-We install TeamAgent in two stages so that `npm install -g …` returns in **≤5 seconds** with the legacy substring matcher and the universal avoidance pack already active and protecting the user. The ~120 MB Xenova vector model + its `onnxruntime-node` backend (~80 MB) are NOT pulled by the default install; users who want BM25+dense RRF semantic ranking opt in by setting `TEAMAGENT_INCLUDE_OPTIONAL=1` before running `install.sh`, which then runs an explicit `npm install -g <tarball> @xenova/transformers onnxruntime-node` that adds the heavy deps in a single command. This trades initial semantic-matching accuracy (substring matching is coarser and more prone to false negatives on paraphrased prompts) for a 20× faster time-to-first-interception, which is critical for the landing copy's 30-second-hook promise.
+We install TeamAgent in two stages so that `npm install -g …` returns in **≤30 seconds** for the CLI (Stage 1), then a detached background process downloads the ~120 MB Xenova vector model + warms it up (Stage 2, ≤5 min). During Stage 2 the legacy substring matcher and universal avoidance pack are already active and protecting the user.
 
-## Why opt-in instead of detached background download
+**As of issue #164 (2026-05-09)** the vector deps (`@xenova/transformers`, `onnxruntime-node`) ship in `dependencies` (no longer opt-in). To avoid the catastrophic per-hook cold-load tax (~3-4s and ~650MB RSS *every* PreToolUse), a long-running **embedder daemon** (`bin-embedder.cjs`) loads the model once and serves embeddings to short-lived hooks over HTTP on `127.0.0.1:<random-port>`. Hooks discover the daemon via `~/.teamagent/.embedder-state.json` and fall back gracefully to the legacy substring matcher when the daemon is unreachable.
 
-The original ADR §V1 proposed a `detached background download after install` so that the model would be ready ~10 minutes after a normal install. **We measured that approach and it does not work**: when `@xenova/transformers` and `onnxruntime-node` are listed under `optionalDependencies`, `npm install -g <tarball>` in npm 10.9.4 ignores `--omit=optional` / `--no-optional` and pulls them anyway (npm bug for tarball installs). The only reliable way to keep them out is to **omit them from `package.json` entirely** — at which point a "background download to upgrade" can no longer rely on npm to fetch them. Hence the opt-in flag.
+## Why opt-in instead of detached background download (historical)
 
-A future V2 may add a `teamagent install-vector` runtime command that uses npm or pnpm under the hood to install the optionals into the user's global prefix, then triggers warmup. That is intentionally out of scope for V1 (avoids a CLI-spawning-package-manager hairball).
+The original ADR §V1 proposed a `detached background download after install` so that the model would be ready ~10 minutes after a normal install. We initially measured that approach as broken when `@xenova/transformers` and `onnxruntime-node` were listed under `optionalDependencies` (npm 10 ignored `--omit=optional` for tarball installs). The 2026-05-07 revision moved the deps out of `package.json` entirely behind a `TEAMAGENT_INCLUDE_OPTIONAL=1` flag.
+
+**As of 2026-05-09 (issue #164) we reverted to the original §V1 design**: vector deps live in `dependencies` again, so npm itself fetches them in Stage 1 (the install step). The model file (~120MB ONNX from HuggingFace) is downloaded by the detached `bin warmup` process in Stage 2 (post-install), which is independent of npm and runs in the background while the user's terminal is already free.
+
+The reason the original revision rejected this: per-hook cold-load latency (3-4s × 650MB RSS × every PreToolUse) was unacceptable. The 2026-05-09 fix is **the long-running embedder daemon** (`bin-embedder.cjs`) — model loads once per machine, hooks talk to it over HTTP. Without the daemon, default-installing the deps would hang every Claude Code session.
 
 ## Considered Options
 
@@ -32,7 +38,9 @@ A future V2 may add a `teamagent install-vector` runtime command that uses npm o
 
 ## Consequences
 
-- Documentation must be transparent that semantic matching (BM25+dense RRF) is **not** active by default; users who want it must set `TEAMAGENT_INCLUDE_OPTIONAL=1` before running `install.sh`, or run `npm install -g @xenova/transformers onnxruntime-node` after the fact (alongside the same global prefix).
-- The universal avoidance pack (`seed/packs/universal.jsonl`) **must use substring-friendly patterns** — literal keyword anchors such as `moment`, `/Users/`, `.env`, `rm -rf`, `hardcode` — so that the legacy matcher can produce reliable hits from the first session. Rules using only semantic paraphrases or vague descriptions will be silent until the vector deps are added.
-- `postinstall.mjs` and `init.ts` both detect optional-deps presence via bounded `fs.existsSync` checks (sibling/local node_modules; no `createRequire` walk that could pick up an unrelated globally-installed @xenova). When absent, warmup is skipped entirely and the state file is not written, so `bin-pre-tool-use` never sees a stuck "downloading" placeholder.
-- A `teamagent install-vector` runtime opt-in command remains a clear V2 follow-up.
+- **Default behavior** (post #164): semantic matching is active out of the box for all users — no opt-in flag needed. Stage 1 install still fits in ≤30s because npm's tarball download is parallel and fast; the model warm-up (which dominates wall-clock) runs detached after Stage 1 returns.
+- The universal avoidance pack (`seed/packs/universal.jsonl`) still uses substring-friendly patterns, retained as the bulletproof fallback when (a) Stage 2 warmup is mid-download (status="downloading") or (b) the embedder daemon is unreachable. Two-tier defense.
+- `postinstall.mjs` retains `vectorOptionalsInstalled()` as a defensive gate for edge cases (manual `npm uninstall @xenova/transformers`, `--no-optional`, lockfile drift, mirror that strips deps). When deps unexpectedly absent, warmup is skipped cleanly.
+- The embedder daemon (`bin-embedder.cjs`) is spawned lazily on `SessionStart` (fire-and-forget). One daemon per machine; sessions register/deregister via `/register` and `/shutdown` HTTP endpoints; idle-exit at 30 min when no sessions remain.
+- HTTP socket binds to `127.0.0.1` only; no token auth in v1 (YAGNI for personal-machine scope; v2 may add token if needed for shared dev environments).
+- A `teamagent install-vector` runtime opt-in command is no longer needed — superseded by the default-install route.

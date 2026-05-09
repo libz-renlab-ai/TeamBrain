@@ -35,10 +35,10 @@ import {
   openDb,
   SqliteSemanticRetriever,
   SqliteToolRetriever,
-  XenovaRuleEmbedder,
   type DualLayerStore,
   type SqliteEventLog,
 } from "@teamagent/adapters";
+import { DaemonFirstEmbedder } from "./daemon-first-embedder.js";
 import { matchRulesAsync, semanticMatch } from "@teamagent/core";
 import { runHook } from "./hook-shell/index.js";
 import { buildToolActionSummary } from "./pre-tool-use-context.js";
@@ -50,9 +50,13 @@ import { mergeSemanticAndLegacyMatches } from "./pre-tool-use-merge.js";
 import { describeWarmupReadiness, defaultWarmupStatePath } from "./warmup-state.js";
 
 // ---- Lazy singleton for semantic path (per-process, reused if process is long-lived) ----
-let _embedder: XenovaRuleEmbedder | null = null;
-function getEmbedder(): XenovaRuleEmbedder {
-  if (!_embedder) _embedder = new XenovaRuleEmbedder();
+// Issue #164: DaemonFirstEmbedder tries the long-running embedder daemon over
+// HTTP first (per-call ~5ms); only falls back to in-process XenovaRuleEmbedder
+// (per-call ~3-4s cold load) when the daemon is unreachable. The fallback is
+// itself lazy — nothing loads into the hook process unless daemon path fails.
+let _embedder: DaemonFirstEmbedder | null = null;
+function getEmbedder(): DaemonFirstEmbedder {
+  if (!_embedder) _embedder = new DaemonFirstEmbedder();
   return _embedder;
 }
 

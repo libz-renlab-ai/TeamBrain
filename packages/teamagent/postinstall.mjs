@@ -7,13 +7,15 @@ import path from "node:path";
 import os from "node:os";
 
 /**
- * ADR 0001 §opt-in: detect whether the optional vector deps (@xenova/transformers
- * + onnxruntime-node) are installed alongside teamagent. They have been removed
- * from package.json entirely (npm 10 ignores --omit=optional for tarball installs,
- * so omission from package.json is the only reliable gate). Skip Stage 2 entirely
- * when missing — otherwise the detached child would fail and the placeholder state
- * file would stick at status="downloading" pid=0 forever (isPidAlive(0)=true),
- * confusing bin-pre-tool-use which would never see a terminal "ready"/"failed".
+ * Issue #164: as of v0.10.x the vector deps (@xenova/transformers +
+ * onnxruntime-node) are listed in `dependencies` (no longer optional / opt-in).
+ * Default install therefore *always* has them. This gate becomes a defensive
+ * fallback for edge cases:
+ *   - user manually `npm uninstall @xenova/transformers` after install
+ *   - corporate registry mirror that strips the deps
+ *   - --no-optional / lockfile drift
+ * In those cases we still skip Stage 2 cleanly to avoid leaving a stale
+ * `status=downloading pid=0` placeholder that confuses bin-pre-tool-use.
  *
  * Uses bounded fs.existsSync rather than createRequire walks: we must NOT find
  * a globally-installed @xenova in the user's nvm/node_modules; we want to know
@@ -348,24 +350,16 @@ async function main() {
     recordSetupStatus("warmup", "skipped", "env-skip-warmup");
     process.stderr.write(duckify("[2/2] warmup: 跳过 (TEAMAGENT_SKIP_WARMUP=1)\n"));
   } else if (!haveVectorOptionals) {
-    // @xenova/transformers and onnxruntime-node have been removed from
-    // package.json entirely (npm 10 ignores --omit=optional for tarball
-    // installs; omission is the only reliable gate). Skip warmup entirely;
-    // substring matcher is fully functional from first interception.
+    // Issue #164: defensive fallback. As of v0.10.x the vector deps ship by
+    // default in `dependencies`, so reaching this branch means something
+    // stripped them post-install (manual uninstall, --no-optional, mirror).
     warmupStatus = "vector-deps-absent";
-    // Issue #160: postinstall.log no longer goes silent on the skip path —
-    // it records `status=skipped reason=optional-not-installed` so doctor
-    // and bug-report tooling can distinguish "skipped on purpose" from
-    // "warmup never reached" (which previously looked identical). Log
-    // BEFORE the multi-line banner so a SIGINT / EPIPE between the two
-    // cannot leave the log line missing.
-    recordSetupStatus("warmup", "skipped", "optional-not-installed");
+    recordSetupStatus("warmup", "skipped", "vector-deps-missing-after-install");
     process.stderr.write(
       duckify(
-        "[2/2] warmup: 跳过 (vector deps 未安装; 默认装的是 substring matcher 版本)\n" +
-          "     需要 BM25+dense RRF 语义匹配请重装（@xenova + onnxruntime 不在 package.json 里，必须显式列出）：\n" +
-          "       TEAMAGENT_INCLUDE_OPTIONAL=1 sh -c \"$(curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh)\"\n" +
-          "     或者直接：npm install -g teamagent @xenova/transformers@^2.17.0 onnxruntime-node@1.14.0\n",
+        "[2/2] warmup: 跳过 (vector deps 缺失; substring matcher 仍可用)\n" +
+          "     这通常意味着 @xenova/transformers 或 onnxruntime-node 在装后被移除了。\n" +
+          "     恢复语义匹配：npm install -g @xenova/transformers@^2.17.0 onnxruntime-node@1.14.0\n",
       ),
     );
   } else if (process.env.TEAMAGENT_FOREGROUND_WARMUP === "1") {
@@ -459,7 +453,7 @@ async function main() {
           : warmupStatus === "foreground-failed"
             ? "向量模型预热失败 (foreground 模式), 首次 embed 会按需下载 (~5–10s)"
             : warmupStatus === "vector-deps-absent"
-              ? "语义匹配: 未安装 (substring matcher 已就绪; 重装时设 TEAMAGENT_INCLUDE_OPTIONAL=1 启用 vector)"
+              ? "向量模型: vector deps 缺失 (substring matcher 兜底; 跑 npm install -g @xenova/transformers onnxruntime-node 恢复)"
               : "向量模型: 跳过预热 (TEAMAGENT_SKIP_WARMUP=1)";
 
   // B-152: previously the banner always said "✨ TeamAgent 安装成功" even when

@@ -1,0 +1,339 @@
+#!/usr/bin/env node
+/**
+ * Embedder daemon (issue #164).
+ *
+ * Long-running process that owns one `XenovaRuleEmbedder` and serves
+ * embedding requests over HTTP on `127.0.0.1:<random-port>`. Hooks
+ * (PreToolUse, Stop) discover the port via `~/.teamagent/.embedder-state.json`
+ * and POST /embed instead of loading the 115MB ONNX model fresh per call.
+ *
+ * Solves the "卡爆" problem identified in issue #164:
+ *   - Without daemon: every PreToolUse hook = 3-4s cold load + 650MB RSS
+ *   - 5 concurrent hooks = 3.3GB RAM peak (8GB Mac OOM)
+ *   - With daemon: model loads once, hooks stay <50MB and respond in ms
+ *
+ * Lifecycle:
+ *   1. Acquire PID lock (refuse to start if another daemon is alive)
+ *   2. Load embedder (3-4s; state file: status=starting, port=0)
+ *   3. Listen on 127.0.0.1:0 (kernel-assigned port)
+ *   4. Update state file: status=running, port=<assigned>
+ *   5. Serve /embed and /shutdown until refcount reaches 0 OR idle timeout
+ *
+ * State transitions:
+ *   starting → running → exiting (refcount=0 || idle) → process.exit(0)
+ *   starting → failed (load error) → process.exit(1)
+ *
+ * Cross-platform: pure HTTP + filesystem, no Unix-socket / named-pipe code.
+ */
+import http from "node:http";
+import process from "node:process";
+import {
+  XenovaRuleEmbedder,
+} from "@teamagent/adapters";
+import {
+  defaultEmbedderStatePath,
+  isDaemonPidAlive,
+  readEmbedderState,
+  writeEmbedderState,
+  type EmbedderState,
+} from "./embedder-state.js";
+
+const DEFAULT_IDLE_EXIT_MS = 30 * 60 * 1000; // 30 min — well past typical session
+
+interface DaemonOpts {
+  statePath: string;
+  idleExitMs: number;
+  /** When set, daemon binds to this fixed port instead of 0 (tests). */
+  fixedPort?: number;
+  /** Override for tests. */
+  model?: string;
+}
+
+export function parseArgv(argv: string[]): Partial<DaemonOpts> {
+  const out: Partial<DaemonOpts> = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--state-path" && i + 1 < argv.length) out.statePath = argv[++i];
+    else if (a === "--idle-exit-ms" && i + 1 < argv.length) {
+      const n = parseInt(argv[++i] ?? "", 10);
+      if (Number.isFinite(n) && n > 0) out.idleExitMs = n;
+    } else if (a === "--port" && i + 1 < argv.length) {
+      const n = parseInt(argv[++i] ?? "", 10);
+      if (Number.isFinite(n) && n >= 0) out.fixedPort = n;
+    } else if (a === "--model" && i + 1 < argv.length) out.model = argv[++i];
+  }
+  return out;
+}
+
+/**
+ * Acquire the singleton lock by checking the existing state file's pid.
+ * Returns true if this process should run as the daemon, false if another
+ * is already alive (caller should exit gracefully).
+ *
+ * Race: between read and write, two simultaneous spawns can both pass this
+ * check. The TCP `listen()` step then becomes the tiebreaker — the loser
+ * gets EADDRINUSE if --port is fixed; with port 0 both succeed but one of
+ * the two state-file writes wins. The cost is one extra ephemeral daemon
+ * for ~3s; idle-exit reaps it. Acceptable tradeoff vs OS-level file locks.
+ */
+export function tryAcquireLock(statePath: string): boolean {
+  const existing = readEmbedderState(statePath);
+  if (!existing) return true;
+  if (existing.status === "exiting") return true;
+  if (!isDaemonPidAlive(existing.pid)) return true;
+  return false;
+}
+
+async function runDaemon(opts: DaemonOpts): Promise<number> {
+  if (!tryAcquireLock(opts.statePath)) {
+    process.stderr.write("[embedder] another daemon is alive; exiting\n");
+    return 0;
+  }
+
+  const model = opts.model ?? "Xenova/multilingual-e5-small";
+  const startedAt = new Date().toISOString();
+
+  // Step 1: write `starting` placeholder so hooks see *something* during the
+  // 3-4s cold load. describeDaemonReadiness returns reason="starting" → caller
+  // falls back to legacy.
+  writeEmbedderState(opts.statePath, {
+    status: "starting",
+    pid: process.pid,
+    port: 0,
+    started_at: startedAt,
+    model,
+    members: [],
+  });
+
+  // Step 2: load embedder (the expensive part).
+  let embedder: XenovaRuleEmbedder;
+  try {
+    embedder = new XenovaRuleEmbedder({ modelId: model });
+    // Force load by doing one warm-up embed; surfaces failures immediately.
+    await embedder.embed(["warmup"]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    writeEmbedderState(opts.statePath, {
+      status: "failed",
+      pid: process.pid,
+      port: 0,
+      started_at: startedAt,
+      model,
+      members: [],
+      error: msg.slice(0, 500),
+    });
+    process.stderr.write(`[embedder] load failed: ${msg}\n`);
+    return 1;
+  }
+
+  // Step 3: idle / refcount tracking. Keep timestamps in-process; re-read
+  // members from state file before deciding to exit so SessionEnd hooks'
+  // file-based mutations are visible.
+  let lastActivityMs = Date.now();
+  let exiting = false;
+
+  const server = http.createServer((req, res) => {
+    if (exiting) {
+      res.statusCode = 503;
+      res.end("daemon exiting\n");
+      return;
+    }
+    lastActivityMs = Date.now();
+
+    if (req.method === "POST" && req.url === "/embed") {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", async () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+          const texts = Array.isArray(body?.texts) ? (body.texts as unknown[]) : null;
+          if (!texts || !texts.every((t) => typeof t === "string")) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: "texts must be string[]" }));
+            return;
+          }
+          const vectors = await embedder.embed(texts as string[]);
+          res.statusCode = 200;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ vectors }));
+        } catch (err) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+      req.on("error", () => {
+        res.statusCode = 400;
+        res.end();
+      });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/register") {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        let body: { session_id?: unknown } = {};
+        try { body = JSON.parse(Buffer.concat(chunks).toString("utf-8")); } catch { /* ignore */ }
+        if (typeof body.session_id !== "string") {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: "session_id required" }));
+          return;
+        }
+        const s = readEmbedderState(opts.statePath);
+        if (!s) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: "state file gone" }));
+          return;
+        }
+        if (!s.members.some((m) => m.session_id === body.session_id)) {
+          s.members.push({ session_id: body.session_id as string, joined_at: new Date().toISOString() });
+          writeEmbedderState(opts.statePath, s);
+        }
+        res.statusCode = 204;
+        res.end();
+      });
+      req.on("error", () => { res.statusCode = 400; res.end(); });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/shutdown") {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        // Best-effort: read latest state, pop session_id, write back, then
+        // check refcount. The SessionEnd hook may also have already done the
+        // mutation; we just re-read and act on what we see.
+        const s = readEmbedderState(opts.statePath);
+        if (s) {
+          let body: { session_id?: unknown } = {};
+          try { body = JSON.parse(Buffer.concat(chunks).toString("utf-8")); } catch { /* ignore */ }
+          if (typeof body.session_id === "string") {
+            s.members = s.members.filter((m) => m.session_id !== body.session_id);
+            writeEmbedderState(opts.statePath, s);
+          }
+          if (s.members.length === 0) {
+            beginExit(s);
+          }
+        }
+        res.statusCode = 204;
+        res.end();
+      });
+      req.on("error", () => {
+        res.statusCode = 400;
+        res.end();
+      });
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/health") {
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      const s = readEmbedderState(opts.statePath);
+      res.end(JSON.stringify({
+        status: s?.status ?? "unknown",
+        members: s?.members.length ?? 0,
+        model,
+      }));
+      return;
+    }
+
+    res.statusCode = 404;
+    res.end();
+  });
+
+  function beginExit(state: EmbedderState | null): void {
+    if (exiting) return;
+    exiting = true;
+    const s = state ?? readEmbedderState(opts.statePath);
+    if (s) {
+      s.status = "exiting";
+      writeEmbedderState(opts.statePath, s);
+    }
+    server.close(() => {
+      // Best-effort cleanup of state file. Leaving it would let hooks see
+      // a stale-pid (handled by isDaemonPidAlive check) but cleaner to remove.
+      try {
+        const final = readEmbedderState(opts.statePath);
+        if (final && final.pid === process.pid) {
+          // Mark exited; readers see status=exiting → fall back.
+          writeEmbedderState(opts.statePath, { ...final, status: "exiting" });
+        }
+      } catch { /* best-effort */ }
+      process.exit(0);
+    });
+  }
+
+  // Step 4: bind. listen(0) → kernel picks free port. listen(fixedPort) for tests.
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(opts.fixedPort ?? 0, "127.0.0.1", () => {
+      server.removeListener("error", reject);
+      resolve();
+    });
+  });
+  const addr = server.address();
+  const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+  if (port <= 0) {
+    process.stderr.write("[embedder] failed to obtain port from listen()\n");
+    return 1;
+  }
+
+  writeEmbedderState(opts.statePath, {
+    status: "running",
+    pid: process.pid,
+    port,
+    started_at: startedAt,
+    model,
+    members: [],
+  });
+  process.stderr.write(`[embedder] ready pid=${process.pid} port=${port}\n`);
+
+  // Step 5: idle-exit watcher. Re-checks every 30s. If wall-clock since last
+  // activity > idleExitMs AND members list empty, begin exit.
+  const idleTimer = setInterval(() => {
+    if (exiting) return;
+    if (Date.now() - lastActivityMs < opts.idleExitMs) return;
+    const s = readEmbedderState(opts.statePath);
+    if (s && s.members.length > 0) return;
+    process.stderr.write("[embedder] idle exit\n");
+    beginExit(s);
+  }, Math.min(30_000, Math.max(1_000, Math.floor(opts.idleExitMs / 4))));
+  idleTimer.unref();
+
+  // SIGTERM / SIGINT: clean exit.
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.on(sig, () => {
+      process.stderr.write(`[embedder] ${sig} received\n`);
+      beginExit(null);
+    });
+  }
+
+  // Keep the process alive until beginExit() calls process.exit.
+  return new Promise<number>(() => { /* never resolves; exit via beginExit */ });
+}
+
+async function main(): Promise<void> {
+  const argv = parseArgv(process.argv.slice(2));
+  const opts: DaemonOpts = {
+    statePath: argv.statePath ?? defaultEmbedderStatePath(),
+    idleExitMs: argv.idleExitMs ?? DEFAULT_IDLE_EXIT_MS,
+    fixedPort: argv.fixedPort,
+    model: argv.model,
+  };
+  const code = await runDaemon(opts);
+  process.exit(code);
+}
+
+// Guard: only run main() when this file is invoked directly, not when
+// imported by tests. tsup bundles to CJS where require.main === module is
+// the canonical entry-point check; under vitest+tsx the source is loaded
+// as a module (require.main !== module), so main() doesn't fire on import.
+// `TEAMAGENT_EMBEDDER_NO_AUTOSTART=1` provides an explicit override for
+// tests that want to import even when require shim treats it as entry.
+const _isEntry =
+  typeof require !== "undefined" &&
+  typeof (require as { main?: unknown }).main !== "undefined" &&
+  (require as { main?: unknown }).main === module;
+if (_isEntry && process.env["TEAMAGENT_EMBEDDER_NO_AUTOSTART"] !== "1") {
+  void main();
+}

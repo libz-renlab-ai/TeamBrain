@@ -50,10 +50,10 @@ import {
   SqliteEventLog,
   openDb,
   syncRuleVectors,
-  XenovaRuleEmbedder,
   SqliteSemanticRetriever,
 } from "@teamagent/adapters";
-import type { LLMClient } from "@teamagent/ports";
+import type { LLMClient, RuleEmbedder } from "@teamagent/ports";
+import { DaemonFirstEmbedder } from "./daemon-first-embedder.js";
 import type { AttributionEvent } from "@teamagent/types";
 import { parseSessionFile, semanticMatch, buildSemanticDescriptions } from "@teamagent/core";
 import { executeAnalyze, type AnalyzeMeta } from "./commands/analyze.js";
@@ -123,16 +123,18 @@ export async function raceWithTimeout<T>(
 function nowIso(): string { return new Date().toISOString(); }
 
 // ---- Lazy singleton for semantic embedder (shared across Stop calls in same process) ----
-let _stopEmbedder: XenovaRuleEmbedder | null = null;
-function getStopEmbedder(): XenovaRuleEmbedder {
-  if (!_stopEmbedder) _stopEmbedder = new XenovaRuleEmbedder();
+// Issue #164: prefer the long-running embedder daemon (HTTP). Falls back to
+// in-process Xenova load only when the daemon is unreachable.
+let _stopEmbedder: RuleEmbedder | null = null;
+function getStopEmbedder(): RuleEmbedder {
+  if (!_stopEmbedder) _stopEmbedder = new DaemonFirstEmbedder();
   return _stopEmbedder;
 }
 
 /** 每次 Stop 补全最多 BATCH 条缺向量的规则（fire-and-forget，不阻塞主流程）。 */
 async function catchUpVectorization(
   projectDbPath: string,
-  embedder: XenovaRuleEmbedder,
+  embedder: RuleEmbedder,
   emit: EmitFn | undefined,
   batch = 15,
 ): Promise<void> {

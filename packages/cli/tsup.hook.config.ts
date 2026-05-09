@@ -21,6 +21,7 @@ export default defineConfig({
     "bin-pre-compact":        "src/bin-pre-compact.ts",
     "bin-updater":            "src/bin-updater.ts",
     "bin-digital-twin-tap":   "src/bin-digital-twin-tap.ts",
+    "bin-embedder":           "src/bin-embedder.ts",
   },
   format: ["cjs"],
   platform: "node",
