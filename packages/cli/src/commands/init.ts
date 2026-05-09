@@ -243,6 +243,9 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
   }
 
   steps.push(await doCompileSkills(paths, dryRun));
+  if (targetIncludesClaude(target)) {
+    steps.push(doMirrorClaimToMergeSkill(paths, dryRun));
+  }
   if (targetIncludesCodex(target)) {
     steps.push(doLinkCodexFiles(paths, dryRun));
   }
@@ -1079,6 +1082,51 @@ async function doCompileSkills(
   }
 }
 
+function doMirrorClaimToMergeSkill(
+  paths: ReturnType<typeof resolvePaths>,
+  dryRun: boolean,
+): InitStepResult {
+  const sourcePath = path.join(
+    paths.cwd,
+    ".claude",
+    "skills",
+    "claim-to-merge",
+    "SKILL.md",
+  );
+  const targetPath = path.join(
+    paths.skillsDir,
+    "claim-to-merge",
+    "SKILL.md",
+  );
+
+  if (!fs.existsSync(sourcePath)) {
+    return {
+      step: "mirror-claim-to-merge-skill",
+      status: "skipped",
+      detail:
+        "源 .claude/skills/claim-to-merge/SKILL.md 不存在（仅 TeamBrain 仓库需要）",
+    };
+  }
+
+  if (dryRun) {
+    return okStep(
+      "mirror-claim-to-merge-skill",
+      `(dry-run) 会复制 ${sourcePath} → ${targetPath}`,
+    );
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+    return okStep(
+      "mirror-claim-to-merge-skill",
+      `已复制到 ${targetPath}（用户级 FIXEDFLOW 入口）`,
+    );
+  } catch (err) {
+    return failStep("mirror-claim-to-merge-skill", String(err).slice(0, 200));
+  }
+}
+
 function doLinkCodexFiles(
   paths: ReturnType<typeof resolvePaths>,
   dryRun: boolean,
@@ -1307,7 +1355,7 @@ export function renderInitResult(result: InitResult): string {
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
     { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook"] },
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
-    { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills"] },
+    { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills", "mirror-claim-to-merge-skill"] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
     { icon: "📦", label: "Stack packs", stepKeys: ["load-pack", "pack-prompt"] },
   ];
@@ -1333,6 +1381,29 @@ export function renderInitResult(result: InitResult): string {
   lines.push("━".repeat(36));
   if (result.ok) {
     lines.push("✅ TeamAgent 安装成功！\n");
+
+    // FIXEDFLOW 引导 banner（issue #218）— 本仓库 issue → merged code 唯一路径
+    lines.push("━".repeat(36));
+    lines.push("🌊 FIXEDFLOW — 本仓库 issue → merged code 的唯一路径");
+    lines.push("━".repeat(36));
+    lines.push("");
+    lines.push("  产品特性");
+    lines.push("    你写 ≤50 字 issue + 贴 grill 评论 + 加 grill-ready label，本地");
+    lines.push("    mainpi 自动: worktree → 实现 → /review fix-loop（无限至 PASS）→");
+    lines.push("    普通 PR → squash-merge → 清理。Step 3-5 全程无人介入。");
+    lines.push("    /review 出 issue 时强制走 PR-PLAN（禁开 follow-up issue）；");
+    lines.push("    POSTPR 仅 squash-merge（禁 --merge / --rebase）。");
+    lines.push("");
+    lines.push("  快速验证（复制运行）");
+    lines.push(
+      '    claudefast -p "explain TeamBrain FIXEDFLOW: 5 steps, what\'s manual vs auto"',
+    );
+    lines.push("");
+    lines.push("  详情");
+    lines.push("    .claude/skills/claim-to-merge/SKILL.md (TL;DR routing)");
+    lines.push("    docs/FIXEDFLOW.md / docs/PR-PLAN.md / docs/POSTPR.md (canonical)");
+    lines.push("");
+
     lines.push("下一步:");
     const hasAnyCompileTarget = result.steps.some(
       (s) => s.step === "compile-skills" || s.step === "link-codex-files",
@@ -1382,6 +1453,7 @@ function stepLabel(step: string): string {
     "install-hook": "Hook 注册",
     "install-plugins": "Plugin 安装",
     "compile-skills": "Skills",
+    "mirror-claim-to-merge-skill": "FIXEDFLOW Skill",
     "link-codex-files": "Codex 软链接",
     "load-pack": "Pack 安装",
     "pack-prompt": "Pack 提示",
