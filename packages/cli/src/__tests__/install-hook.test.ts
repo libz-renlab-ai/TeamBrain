@@ -623,7 +623,7 @@ describe("installHook — PR #181 fix-cycle", () => {
   let fakeHome: string;
   /**
    * Plant a *real-named* hook bundle at a stable path so
-   * `mergeUserLevelHooks` stages it as the right basename
+   * `applyUserLevelChannelOps` stages it as the right basename
    * (e.g. `bin-pre-tool-use.cjs`) under `<homeDir>/.teamagent/hooks/`.
    * `FAKE_HOOK_ENTRY` (the test file path) would stage as
    * `install-hook.test.ts` and fail the basename assertion below.
@@ -790,7 +790,7 @@ describe("installHook — PR #181 fix-cycle", () => {
   it("(4) B-086 dedup: untagged legacy PreToolUse entry is replaced cleanly (1 entry remains)", () => {
     // Pre-seed user settings.json with an UNTAGGED entry whose command
     // contains the bundle filename — exactly the "legacy install" case
-    // described in B-086. The new mergeUserLevelHooks must filter both
+    // described in B-086. The new applyChannelOps must filter both
     // tagged AND untagged TeamAgent entries before pushing the new one.
     const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
     fs.mkdirSync(path.dirname(userSettingsPath), { recursive: true });

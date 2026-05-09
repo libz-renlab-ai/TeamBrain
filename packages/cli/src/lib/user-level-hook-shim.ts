@@ -1,7 +1,7 @@
 /**
  * Issue #209: graceful shim for user-level Claude Code hook commands.
  *
- * `install-hook`'s `mergeUserLevelHooks` and `install-user-hook`'s SessionStart
+ * `install-hook`'s `applyUserLevelChannelOps` and `install-user-hook`'s SessionStart
  * registration both stage hook bundles to `~/.teamagent/hooks/<basename>` and
  * point `~/.claude/settings.json` at that staged path. If the staged file is
  * later removed (manual cleanup, `~/.teamagent/hooks/` rm -rf, partial install,

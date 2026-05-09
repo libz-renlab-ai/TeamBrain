@@ -240,7 +240,7 @@ function stageBundleToUserTeamagent(srcDistPath: string, homeDir: string): strin
  *   filename (e.g. `bin-pre-tool-use.cjs`). These filenames are TeamAgent-
  *   specific and unlikely to collide with foreign hooks.
  *
- * Used in `mergeUserLevelHooks` so re-installing on top of an upgraded user
+ * Used in `applyChannelOps` so re-installing on top of an upgraded user
  * who already has untagged-legacy TeamAgent entries doesn't double-fire.
  */
 type HookChannel =
@@ -270,6 +270,237 @@ function isTeamagentEntry(entry: HookEntry, channel: HookChannel): boolean {
   const filenames = CHANNEL_BUNDLE_FILENAMES[channel];
   const cmds = entry.hooks?.map((c) => c.command ?? "") ?? [];
   return cmds.some((c) => filenames.some((f) => c.includes(f)));
+}
+
+/**
+ * v0.11.0 channelOps unification — declarative source for every TeamAgent
+ * hook channel write. Both project-level (`installHook`'s body) and user-level
+ * (`applyUserLevelChannelOps`) consume this list via `applyChannelOps` so the
+ * registration logic lives in exactly one place.
+ *
+ * `scopes` is the controlled distinction:
+ * - "project" only — none today; project-level skips SessionStart and
+ *   digital-twin-tap because both are whole-machine concerns.
+ * - "user" only — `SessionStart` (whole-machine SessionStart auto-init)
+ *   and the second `Stop` op (`bin-digital-twin-tap.cjs`).
+ * - "both" — the four shared channels (PreToolUse / PostToolUse /
+ *   UserPromptSubmit / Stop@bin-stop) plus SessionEnd / PreCompact.
+ *
+ * `Stop` appears twice intentionally — `bin-stop.cjs` (learning pipeline)
+ * and `bin-digital-twin-tap.cjs` (digital-twin tap). The `CHANNEL_BUNDLE_FILENAMES`
+ * map already accounts for the dual-bundle channel.
+ */
+type ChannelDef = {
+  readonly channel: HookChannel;
+  readonly tag: string;
+  readonly bundleFilename: string;
+  readonly matcher?: string;
+  readonly timeout: number;
+  readonly scopes: ReadonlyArray<"project" | "user">;
+};
+
+const ALL_CHANNELS: ReadonlyArray<ChannelDef> = [
+  { channel: "PreToolUse",       tag: HOOK_TAG,           bundleFilename: "bin-pre-tool-use.cjs",       matcher: "Bash|Write|Edit|WebFetch", timeout: 30, scopes: ["project", "user"] },
+  { channel: "PostToolUse",      tag: POST_HOOK_TAG,      bundleFilename: "bin-post-tool-use.cjs",      matcher: "Bash|Write|Edit|WebFetch", timeout: 30, scopes: ["project", "user"] },
+  { channel: "UserPromptSubmit", tag: USER_PROMPT_TAG,    bundleFilename: "bin-user-prompt-submit.cjs",                                       timeout: 10, scopes: ["project", "user"] },
+  { channel: "Stop",             tag: STOP_HOOK_TAG,      bundleFilename: "bin-stop.cjs",                                                     timeout: 60, scopes: ["project", "user"] },
+  { channel: "SessionEnd",       tag: SESSION_END_TAG,    bundleFilename: "bin-session-end.cjs",                                              timeout: 30, scopes: ["project", "user"] },
+  { channel: "PreCompact",       tag: PRE_COMPACT_TAG,    bundleFilename: "bin-pre-compact.cjs",                                              timeout: 30, scopes: ["project", "user"] },
+  // user-level only — see CHANNEL_BUNDLE_FILENAMES + the rationale at line 815-823
+  // of the pre-v0.11 file. SessionStart is whole-machine; digital-twin-tap stays
+  // user-level so v0.11's removal of digital-twin-tap.sh from committed
+  // .claude/settings.json doesn't reintroduce a project-level double-tap.
+  { channel: "SessionStart",     tag: SESSION_START_TAG,  bundleFilename: "bin-session-start.cjs",                                            timeout: 10, scopes: ["user"] },
+  { channel: "Stop",             tag: DIGITAL_TWIN_TAG,   bundleFilename: "bin-digital-twin-tap.cjs",                                         timeout: 5,  scopes: ["user"] },
+];
+
+const ALL_HOOK_CHANNELS: ReadonlyArray<HookChannel> = [
+  "PreToolUse",
+  "PostToolUse",
+  "UserPromptSubmit",
+  "Stop",
+  "SessionStart",
+  "SessionEnd",
+  "PreCompact",
+];
+
+/**
+ * v0.11.0 channelOps unification — single loop body shared by project-level
+ * and user-level hook installation.
+ *
+ * Behaviour for each `ChannelDef` whose `scopes` include the requested `scope`
+ * and whose `channel` is in `channelFilter` (if provided):
+ *
+ * 1. Strip from `settings.hooks[channel]`:
+ *    - any entry whose `_teamagentTag === def.tag` (idempotent re-install of OUR op)
+ *    - any UNTAGGED entry that `isTeamagentEntry()` flags for this channel —
+ *      B-086 dedup, mirrors the pre-v0.11 user-level behaviour. Project-level
+ *      gains this for free; previously project-level only stripped tag-matches.
+ *    - PRESERVE entries with a DIFFERENT teamagent tag for the same channel
+ *      (Stop hosts both bin-stop and digital-twin-tap; they must coexist).
+ *
+ * 2. Resolve the bundle path via `resolveBundle(def.bundleFilename)`. An empty
+ *    string or a non-existent path means "skip this op" (silent — matches the
+ *    pre-v0.11 best-effort pattern).
+ *
+ * 3. Build the on-disk command:
+ *    - scope=project → `node <forwardSlashPath>` (direct dist path; no staging)
+ *    - scope=user    → `buildUserLevelHookCommand(stagedPath)` where the bundle
+ *                       has been atomically copied to `<homeDir>/.teamagent/hooks/`
+ *                       via `stageBundleToUserTeamagent` (with EBUSY fallback to
+ *                       the original path).
+ *
+ * 4. Push the new entry; matchers are added when `def.matcher` is set.
+ *
+ * 5. After processing all matching ops, drop any channel array that ended up
+ *    empty so the resulting JSON shape matches the pre-v0.11 output.
+ *
+ * The caller is responsible for read+write of the settings file and (for user
+ * scope) lock acquisition. This helper is pure mutation of an in-memory
+ * `ClaudeSettings`.
+ */
+function applyChannelOps(opts: {
+  scope: "project" | "user";
+  settings: ClaudeSettings;
+  resolveBundle: (filename: string) => string;
+  homeDir: string;
+  channelFilter?: ReadonlySet<HookChannel> | undefined;
+}): void {
+  const { scope, settings, resolveBundle, homeDir, channelFilter } = opts;
+  if (!settings.hooks) settings.hooks = {};
+
+  for (const def of ALL_CHANNELS) {
+    if (!def.scopes.includes(scope)) continue;
+    if (channelFilter && !channelFilter.has(def.channel)) continue;
+
+    // Strip our-tag entries + untagged-legacy entries. Preserve foreign hooks
+    // and entries with a different teamagent tag for the same channel.
+    if (settings.hooks[def.channel]) {
+      const list = settings.hooks[def.channel] as HookEntry[];
+      settings.hooks[def.channel] = list.filter((h) => {
+        if (h._teamagentTag === def.tag) return false;
+        if (!h._teamagentTag && isTeamagentEntry(h, def.channel)) return false;
+        return true;
+      });
+    }
+
+    const bundlePath = resolveBundle(def.bundleFilename);
+    if (!bundlePath || !fs.existsSync(bundlePath)) continue;
+
+    let command: string;
+    if (scope === "user") {
+      // Stage to ~/.teamagent/hooks/<filename>; on EBUSY fall back to the
+      // in-place dist path so install never breaks the hook entirely.
+      let pathForCommand: string;
+      try {
+        pathForCommand = stageBundleToUserTeamagent(bundlePath, homeDir);
+      } catch (err: any) {
+        process.stderr.write(
+          `teamagent install-hook: failed to stage ${path.basename(bundlePath)} ` +
+            `(${err?.code ?? err?.message ?? err}) — falling back to in-place dist path\n`,
+        );
+        pathForCommand = bundlePath;
+      }
+      command = buildUserLevelHookCommand(pathForCommand);
+    } else {
+      command = `node ${shellQuote(toForwardSlash(bundlePath))}`;
+    }
+
+    if (!settings.hooks[def.channel]) settings.hooks[def.channel] = [];
+    const newEntry: HookEntry = {
+      _teamagentTag: def.tag,
+      hooks: [{ type: "command", command, timeout: def.timeout }],
+    };
+    if (def.matcher) newEntry.matcher = def.matcher;
+    (settings.hooks[def.channel] as HookEntry[]).push(newEntry);
+  }
+
+  // Drop any channels left empty (preserves prior structure when we never
+  // had to touch them).
+  for (const ch of ALL_HOOK_CHANNELS) {
+    const list = settings.hooks[ch] as HookEntry[] | undefined;
+    if (Array.isArray(list) && list.length === 0) delete settings.hooks[ch];
+  }
+  if (settings.hooks && Object.keys(settings.hooks).length === 0) {
+    delete settings.hooks;
+  }
+}
+
+/**
+ * Inspect `settings` for a TeamAgent-owned entry on `channel` matching `tag`,
+ * including untagged-legacy entries that point at the channel's bundle
+ * filename. Used to derive `alreadyInstalled` BEFORE `applyChannelOps`
+ * strips and re-pushes the entry.
+ */
+function hasTeamagentChannelEntry(
+  settings: ClaudeSettings,
+  channel: HookChannel,
+  tag: string,
+): boolean {
+  const list = settings.hooks?.[channel] as HookEntry[] | undefined;
+  if (!Array.isArray(list)) return false;
+  return list.some((h) => {
+    if (h._teamagentTag === tag) return true;
+    if (!h._teamagentTag && isTeamagentEntry(h, channel)) return true;
+    return false;
+  });
+}
+
+/**
+ * v0.11.0 — high-level user-level install entry point. Acquires the
+ * settings.json lock, reads + applyChannelOps + writes the user-level
+ * settings file. Used by both `installHook(userLevel:true)` (the main
+ * path) and the soft-retired `installUserHook` shim
+ * (with `channelFilter: ["SessionStart"]`).
+ *
+ * `entries` is a partial map: missing keys cause those channels to be
+ * silently skipped (matches the pre-v0.11 best-effort behaviour).
+ */
+export function applyUserLevelChannelOps(
+  homeDir: string,
+  entries: Partial<{
+    hookEntry: string;
+    postHookEntry: string;
+    userPromptEntry: string;
+    stopEntry: string;
+    sessionStartEntry: string;
+    sessionEndEntry: string;
+    preCompactEntry: string;
+    digitalTwinEntry: string;
+  }>,
+  opts: { channelFilter?: ReadonlyArray<HookChannel> } = {},
+): void {
+  const userSettingsPath = path.join(homeDir, ".claude", "settings.json");
+
+  const filenameToPath: Record<string, string | undefined> = {
+    "bin-pre-tool-use.cjs":      entries.hookEntry,
+    "bin-post-tool-use.cjs":     entries.postHookEntry,
+    "bin-user-prompt-submit.cjs": entries.userPromptEntry,
+    "bin-stop.cjs":              entries.stopEntry,
+    "bin-session-start.cjs":     entries.sessionStartEntry,
+    "bin-session-end.cjs":       entries.sessionEndEntry,
+    "bin-pre-compact.cjs":       entries.preCompactEntry,
+    "bin-digital-twin-tap.cjs":  entries.digitalTwinEntry,
+  };
+
+  const channelFilter = opts.channelFilter
+    ? new Set<HookChannel>(opts.channelFilter)
+    : undefined;
+
+  const { fd, lockPath } = acquireSettingsLock(homeDir);
+  try {
+    const settings = readSettings(userSettingsPath);
+    applyChannelOps({
+      scope: "user",
+      settings,
+      resolveBundle: (filename) => filenameToPath[filename] ?? "",
+      homeDir,
+      channelFilter,
+    });
+    writeSettings(userSettingsPath, settings);
+  } finally {
+    releaseSettingsLock(fd, lockPath);
+  }
 }
 
 function readSettings(file: string): ClaudeSettings {
@@ -471,8 +702,20 @@ export function installHook(opts: InstallHookOptions = {}): {
 } {
   const cwd = opts.cwd ?? process.cwd();
   const settingsPath = path.join(cwd, ".claude", "settings.local.json");
-  const hookEntry = opts.hookEntry ?? defaultHookEntry();
-  const postHookEntry = opts.postHookEntry ?? defaultPostHookEntry();
+  const homeDir = opts.homeDir ?? os.homedir();
+
+  // Resolve every bundle path up front so project + user scopes share the
+  // same map. Each resolver is best-effort except for the primary PreToolUse
+  // bundle, which is the hard install gate (preserved from pre-v0.11).
+  const hookEntry          = opts.hookEntry          ?? defaultHookEntry();
+  const postHookEntry      = opts.postHookEntry      ?? defaultPostHookEntry();
+  const userPromptEntry    = opts.userPromptEntry    ?? path.join(cliRoot(), "dist", "bin-user-prompt-submit.cjs");
+  const stopEntry          = opts.stopEntry          ?? path.join(cliRoot(), "dist", "bin-stop.cjs");
+  const sessionStartEntry  = opts.sessionStartEntry  ?? defaultSessionStartEntry();
+  const sessionEndEntry    = opts.sessionEndEntry    ?? defaultSessionEndEntry();
+  const preCompactEntry    = opts.preCompactEntry    ?? defaultPreCompactEntry();
+  const digitalTwinEntry   = opts.digitalTwinEntry   ?? defaultDigitalTwinEntry();
+  const statusLineEntry    = opts.statusLineEntry    ?? path.join(cliRoot(), "dist", "teamagent-statusline.cjs");
 
   // 确认 PreToolUse bundled .cjs 存在
   if (!fs.existsSync(hookEntry)) {
@@ -481,127 +724,35 @@ export function installHook(opts: InstallHookOptions = {}): {
         `请先运行: pnpm --filter @teamagent/cli build:hook`,
     );
   }
-  // PostToolUse bundle 是软依赖——不存在时给警告但不阻断（兼容老安装）
-  const hasPostBundle = fs.existsSync(postHookEntry);
 
   const settings = readSettings(settingsPath);
-  if (!settings.hooks) settings.hooks = {};
-  if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
-  if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
 
-  // PreToolUse 注册
-  const preExisting = settings.hooks.PreToolUse.find(
-    (h) => h._teamagentTag === HOOK_TAG,
-  );
-  let alreadyInstalled = false;
-  if (preExisting) {
-    alreadyInstalled = true;
-  } else {
-    const forwardPath = toForwardSlash(hookEntry);
-    settings.hooks.PreToolUse.push({
-      matcher: "Bash|Write|Edit|WebFetch",
-      _teamagentTag: HOOK_TAG,
-      hooks: [
-        { type: "command", command: `node ${shellQuote(forwardPath)}`, timeout: 30 },
-      ],
-    });
-  }
+  // Capture pre-strip state for the test-contract `alreadyInstalled` /
+  // `postAlreadyInstalled` flags. After v0.11.0 channelOps unification,
+  // applyChannelOps strips and re-pushes idempotently — flag detection MUST
+  // happen before the call.
+  const alreadyInstalled     = hasTeamagentChannelEntry(settings, "PreToolUse",  HOOK_TAG);
+  const postAlreadyInstalled = hasTeamagentChannelEntry(settings, "PostToolUse", POST_HOOK_TAG);
 
-  // PostToolUse 注册（仅 bundle 存在时）
-  let postAlreadyInstalled = false;
-  if (hasPostBundle) {
-    const postExisting = settings.hooks.PostToolUse.find(
-      (h) => h._teamagentTag === POST_HOOK_TAG,
-    );
-    if (postExisting) {
-      postAlreadyInstalled = true;
-    } else {
-      const forwardPath = toForwardSlash(postHookEntry);
-      settings.hooks.PostToolUse.push({
-        matcher: "Bash|Write|Edit|WebFetch",
-        _teamagentTag: POST_HOOK_TAG,
-        hooks: [
-          { type: "command", command: `node ${shellQuote(forwardPath)}`, timeout: 30 },
-        ],
-      });
-    }
-  }
-
-  // 清理空数组
-  if (settings.hooks.PostToolUse?.length === 0) delete settings.hooks.PostToolUse;
-  if (settings.hooks.PreToolUse?.length === 0) delete settings.hooks.PreToolUse;
-
-  // UserPromptSubmit 注册
-  const userPromptEntry = opts.userPromptEntry
-    ?? path.join(cliRoot(), "dist", "bin-user-prompt-submit.cjs");
-  const hasUserPromptBundle = fs.existsSync(userPromptEntry);
-  if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
-  if (hasUserPromptBundle) {
-    const upExisting = settings.hooks.UserPromptSubmit.find(
-      (h) => h._teamagentTag === USER_PROMPT_TAG,
-    );
-    if (!upExisting) {
-      settings.hooks.UserPromptSubmit.push({
-        _teamagentTag: USER_PROMPT_TAG,
-        hooks: [{ type: "command", command: `node ${shellQuote(toForwardSlash(userPromptEntry))}`, timeout: 10 }],
-      });
-    }
-  }
-  if (settings.hooks.UserPromptSubmit.length === 0) delete settings.hooks.UserPromptSubmit;
-
-  // Stop 注册
-  const stopEntry = opts.stopEntry
-    ?? path.join(cliRoot(), "dist", "bin-stop.cjs");
-  const hasStopBundle = fs.existsSync(stopEntry);
-  if (!settings.hooks.Stop) settings.hooks.Stop = [];
-  if (hasStopBundle) {
-    const stopExisting = settings.hooks.Stop.find(
-      (h) => h._teamagentTag === STOP_HOOK_TAG,
-    );
-    if (!stopExisting) {
-      settings.hooks.Stop.push({
-        _teamagentTag: STOP_HOOK_TAG,
-        hooks: [{ type: "command", command: `node ${shellQuote(toForwardSlash(stopEntry))}`, timeout: 60 }],
-      });
-    }
-  }
-  if (settings.hooks.Stop.length === 0) delete settings.hooks.Stop;
-
-  // B+C scope 2026-05-09: SessionEnd 注册（project-level）
-  // 触发于 /clear、logout、Ctrl+C at prompt、关闭窗口。bin-session-end.cjs
-  // 自身保证 detached + non-blocking；timeout 30s 是安全网。
-  const sessionEndEntry = opts.sessionEndEntry ?? defaultSessionEndEntry();
-  const hasSessionEndBundle = fs.existsSync(sessionEndEntry);
-  if (!settings.hooks.SessionEnd) settings.hooks.SessionEnd = [] as HookEntry[];
-  if (hasSessionEndBundle) {
-    const list = settings.hooks.SessionEnd as HookEntry[];
-    const existing = list.find((h) => h._teamagentTag === SESSION_END_TAG);
-    if (!existing) {
-      list.push({
-        _teamagentTag: SESSION_END_TAG,
-        hooks: [{ type: "command", command: `node ${shellQuote(toForwardSlash(sessionEndEntry))}`, timeout: 30 }],
-      });
-    }
-  }
-  if ((settings.hooks.SessionEnd as HookEntry[] | undefined)?.length === 0) delete settings.hooks.SessionEnd;
-
-  // B+C scope 2026-05-09: PreCompact 注册（project-level）
-  // 触发于 Claude Code 即将压缩 transcript 之前；做一次全量 rescan，
-  // 让被摘要吃掉的 turn 里的 learnings 已落库。
-  const preCompactEntry = opts.preCompactEntry ?? defaultPreCompactEntry();
-  const hasPreCompactBundle = fs.existsSync(preCompactEntry);
-  if (!settings.hooks.PreCompact) settings.hooks.PreCompact = [] as HookEntry[];
-  if (hasPreCompactBundle) {
-    const list = settings.hooks.PreCompact as HookEntry[];
-    const existing = list.find((h) => h._teamagentTag === PRE_COMPACT_TAG);
-    if (!existing) {
-      list.push({
-        _teamagentTag: PRE_COMPACT_TAG,
-        hooks: [{ type: "command", command: `node ${shellQuote(toForwardSlash(preCompactEntry))}`, timeout: 30 }],
-      });
-    }
-  }
-  if ((settings.hooks.PreCompact as HookEntry[] | undefined)?.length === 0) delete settings.hooks.PreCompact;
+  // Single declarative loop replaces the six pre-v0.11 inline blocks
+  // (PreToolUse / PostToolUse / UserPromptSubmit / Stop / SessionEnd / PreCompact).
+  // Project scope skips SessionStart and digital-twin-tap by ChannelDef.scopes.
+  const projectBundleMap: Record<string, string> = {
+    "bin-pre-tool-use.cjs":      hookEntry,
+    "bin-post-tool-use.cjs":     postHookEntry,
+    "bin-user-prompt-submit.cjs": userPromptEntry,
+    "bin-stop.cjs":              stopEntry,
+    "bin-session-end.cjs":       sessionEndEntry,
+    "bin-pre-compact.cjs":       preCompactEntry,
+    // SessionStart + digital-twin-tap are not project-level; map entries
+    // are harmless because ChannelDef.scopes filters them out anyway.
+  };
+  applyChannelOps({
+    scope: "project",
+    settings,
+    resolveBundle: (filename) => projectBundleMap[filename] ?? "",
+    homeDir,
+  });
 
   // statusLine 注册。CC 只有一个 statusLine 槽位 — 若用户已有 statusLine（user
   // level `~/.claude/settings.json` 或 project level `.claude/settings.local.json`），
@@ -609,14 +760,11 @@ export function installHook(opts: InstallHookOptions = {}): {
   //   bash -c '<user_cmd>; echo; <teamagent_cmd>'
   // 中间 echo 让两段输出换行（issue #104）。用户原 cmd 字面值备份到
   // _teamagentOriginalCommand / Type / Scope，便于 uninstall 还原。
-  const statusLineEntry = opts.statusLineEntry
-    ?? path.join(cliRoot(), "dist", "teamagent-statusline.cjs");
+  // statusLine is NOT a hook channel — it stays outside applyChannelOps.
   const hasStatusLineBundle = fs.existsSync(statusLineEntry);
-  // statusLineSkipped 保留字段为兼容；新语义：仅在 bundle 缺失时为 true
   let statusLineSkipped = false;
   let statusLineMergedScope: "user" | "project" | null = null;
   if (hasStatusLineBundle) {
-    const homeDir = opts.homeDir ?? os.homedir();
     const teamCmd = `node ${shellQuote(toForwardSlash(statusLineEntry))}`;
     const existing = settings.statusLine;
     const existingIsTagged = existing?._teamagentTag === STATUS_LINE_TAG;
@@ -682,16 +830,15 @@ export function installHook(opts: InstallHookOptions = {}): {
   // foreign entries are preserved untouched.
   const userLevel = opts.userLevel ?? true;
   if (userLevel) {
-    const homeDir = opts.homeDir ?? os.homedir();
-    mergeUserLevelHooks(homeDir, {
+    applyUserLevelChannelOps(homeDir, {
       hookEntry,
       postHookEntry,
       userPromptEntry,
       stopEntry,
-      sessionStartEntry: opts.sessionStartEntry ?? defaultSessionStartEntry(),
+      sessionStartEntry,
       sessionEndEntry,
       preCompactEntry,
-      digitalTwinEntry: opts.digitalTwinEntry ?? defaultDigitalTwinEntry(),
+      digitalTwinEntry,
     });
   }
 
@@ -704,221 +851,6 @@ export function installHook(opts: InstallHookOptions = {}): {
     statusLineSkipped,
     statusLineMergedScope,
   };
-}
-
-/**
- * Issue #161 — write TeamAgent hook entries to `<homeDir>/.claude/settings.json`.
- *
- * Idempotent + additive:
- * - For each hook channel (PreToolUse / PostToolUse / UserPromptSubmit / Stop),
- *   we look up the existing TeamAgent-tagged entry and *replace it in place*.
- *   Foreign (non-TeamAgent-tagged) entries are preserved untouched.
- * - If the bundle for a given channel does not exist on disk we skip writing
- *   that channel (matches project-level behaviour).
- * - If `<homeDir>/.claude/settings.json` does not exist, the file is created
- *   with the minimal `{ "hooks": { ... } }` shape.
- *
- * NB: we deliberately do NOT touch `statusLine` here — that's the project's
- * project-level concern (#104) and the user-level statusLine is consulted as
- * a *read* by `readUserLevelStatusLine` above; rewriting it user-level would
- * conflict with that read path.
- */
-function mergeUserLevelHooks(
-  homeDir: string,
-  entries: {
-    hookEntry: string;
-    postHookEntry: string;
-    userPromptEntry: string;
-    stopEntry: string;
-    // B+C scope (2026-05-09): four new bundles. Each one is best-effort —
-    // missing-on-disk → channel skipped (existing existsSync pattern).
-    sessionStartEntry: string;
-    sessionEndEntry: string;
-    preCompactEntry: string;
-    digitalTwinEntry: string;
-  },
-): void {
-  const userSettingsPath = path.join(homeDir, ".claude", "settings.json");
-
-  // B-fix #7: serialize the user-level read-modify-write window so concurrent
-  // `teamagent init` runs (different projects, different cc sessions) don't
-  // race and lose each other's writes. Project-level
-  // `<cwd>/.claude/settings.local.json` is cwd-scoped and doesn't need this.
-  const { fd, lockPath } = acquireSettingsLock(homeDir);
-  try {
-    const settings = readSettings(userSettingsPath);
-    if (!settings.hooks) settings.hooks = {};
-
-    const channelOps: Array<{
-      channel: HookChannel;
-      tag: string;
-      bundlePath: string;
-      matcher?: string;
-      timeout: number;
-    }> = [
-      {
-        channel: "PreToolUse",
-        tag: HOOK_TAG,
-        bundlePath: entries.hookEntry,
-        matcher: "Bash|Write|Edit|WebFetch",
-        timeout: 30,
-      },
-      {
-        channel: "PostToolUse",
-        tag: POST_HOOK_TAG,
-        bundlePath: entries.postHookEntry,
-        matcher: "Bash|Write|Edit|WebFetch",
-        timeout: 30,
-      },
-      {
-        channel: "UserPromptSubmit",
-        tag: USER_PROMPT_TAG,
-        bundlePath: entries.userPromptEntry,
-        timeout: 10,
-      },
-      {
-        channel: "Stop",
-        tag: STOP_HOOK_TAG,
-        bundlePath: entries.stopEntry,
-        timeout: 60,
-      },
-      // B+C scope (2026-05-09): SessionStart was previously installed by the
-      // separate `teamagent install-user-hook` command. Folded in here so
-      // `teamagent init` is a single entry point for all hook installation.
-      // The standalone `install-user-hook` command remains for backward
-      // compatibility but emits a deprecation warning. User-level only —
-      // SessionStart is whole-machine semantics; project-level mirroring
-      // would just produce a redundant per-project copy.
-      {
-        channel: "SessionStart",
-        tag: SESSION_START_TAG,
-        bundlePath: entries.sessionStartEntry,
-        timeout: 10,
-      },
-      // B+C scope (2026-05-09): SessionEnd written to user-level too so it
-      // fires on /clear, logout, Ctrl+C, window close from any cwd.
-      {
-        channel: "SessionEnd",
-        tag: SESSION_END_TAG,
-        bundlePath: entries.sessionEndEntry,
-        timeout: 30,
-      },
-      // B+C scope (2026-05-09): PreCompact also user-level so context
-      // compaction in any project flushes learnings before the summary.
-      {
-        channel: "PreCompact",
-        tag: PRE_COMPACT_TAG,
-        bundlePath: entries.preCompactEntry,
-        timeout: 30,
-      },
-      // B+C scope (2026-05-09): bin-digital-twin-tap.cjs as a SECOND Stop
-      // entry — runs alongside the existing bin-stop learning pipeline. We
-      // wire it user-level only because committed `.claude/settings.json` in
-      // the TeamBrain repo already routes a digital-twin-tap.sh wrapper
-      // (with SIGTERM forwarding); also writing the .cjs to project-level
-      // `settings.local.json` would double-tap when working IN TeamBrain
-      // itself. User-level only means: other projects get one tap (via the
-      // .cjs); TeamBrain gets one tap (via the .sh wrapper). Net 1 tap per
-      // session. `tapSession` is documented to dedup by (cwd, session_id)
-      // anyway, so the worst case is wasteful, not unsafe.
-      {
-        channel: "Stop",
-        tag: DIGITAL_TWIN_TAG,
-        bundlePath: entries.digitalTwinEntry,
-        timeout: 5,
-      },
-    ];
-
-    for (const op of channelOps) {
-      // Round-2 F4 + B+C-scope refinement (2026-05-09):
-      // - Strip the entry that owns OUR tag (idempotent re-install)
-      // - Strip untagged-legacy entries that point at any teamagent bundle
-      //   filename for this channel (B-086 dedup; covers pre-tag installs)
-      // - PRESERVE entries with a DIFFERENT teamagent tag for the same
-      //   channel: this matters for Stop, which now hosts both `bin-stop.cjs`
-      //   and `bin-digital-twin-tap.cjs`. The previous "strip all
-      //   isTeamagentEntry" logic wiped the first op's write when the second
-      //   op ran on the same channel.
-      if (settings.hooks[op.channel]) {
-        const list = settings.hooks[op.channel] as HookEntry[];
-        settings.hooks[op.channel] = list.filter((h) => {
-          if (h._teamagentTag === op.tag) return false;
-          if (!h._teamagentTag && isTeamagentEntry(h, op.channel)) return false;
-          return true;
-        });
-      }
-
-      if (!fs.existsSync(op.bundlePath)) continue;
-
-      // B-091: stage the bundle to a stable user-owned location and reference
-      // *that* in settings.json — not the dist path inside whichever
-      // node_modules / worktree / tmp clone produced this install. Otherwise
-      // nvm version switches, npm reinstalls, or `/private/tmp/<repo>`
-      // cleanups silently break TeamAgent hooks across every project on the
-      // machine. Mirrors install-user-hook.ts pattern.
-      // Round-2 F3: if staging fails (e.g. EBUSY on Windows when another cc
-      // session has the bundle loaded), we keep the install working by
-      // falling back to the original dist path. The user just loses the
-      // staged-path stability guarantee for that channel — better than no
-      // hook at all.
-      let pathForCommand: string;
-      try {
-        pathForCommand = stageBundleToUserTeamagent(op.bundlePath, homeDir);
-      } catch (err: any) {
-        process.stderr.write(
-          `teamagent install-hook: failed to stage ${path.basename(op.bundlePath)} ` +
-            `(${err?.code ?? err?.message ?? err}) — falling back to in-place dist path\n`,
-        );
-        pathForCommand = op.bundlePath;
-      }
-
-      if (!settings.hooks[op.channel]) settings.hooks[op.channel] = [];
-
-      // Issue #209: wrap user-level hook commands in a graceful shim so a
-      // missing or moved staged bundle exits 0 silently instead of spamming a
-      // Node MODULE_NOT_FOUND trace into every Claude Code session. Mirrors
-      // the project-level B-103 pattern; see lib/user-level-hook-shim.ts.
-      const command = buildUserLevelHookCommand(pathForCommand);
-      const newEntry: HookEntry = {
-        _teamagentTag: op.tag,
-        hooks: [{ type: "command", command, timeout: op.timeout }],
-      };
-      if (op.matcher) newEntry.matcher = op.matcher;
-
-      // B-086: filter ALL TeamAgent entries for this channel, not just
-      // tag-matching ones. Untagged-legacy entries from older TeamAgent
-      // installs (pre-_teamagentTag, or different install path) point at
-      // the channel's bundle filename and would otherwise accumulate
-      // alongside the new tagged entry → double-fire per tool use. Mirror
-      // install-user-hook.ts B-086 dedup pattern.
-      // Round-2 F4: dedup already happened above the existsSync check, so
-      // here we just push the freshly-built entry.
-      (settings.hooks[op.channel] as HookEntry[]).push(newEntry);
-    }
-
-    // Drop any channels that ended up empty (preserves prior structure when we
-    // never had to touch them). B+C scope (2026-05-09): list now includes the
-    // four newly-wired channels.
-    for (const ch of [
-      "PreToolUse",
-      "PostToolUse",
-      "UserPromptSubmit",
-      "Stop",
-      "SessionStart",
-      "SessionEnd",
-      "PreCompact",
-    ] as const) {
-      const list = settings.hooks[ch] as HookEntry[] | undefined;
-      if (Array.isArray(list) && list.length === 0) delete settings.hooks[ch];
-    }
-    if (settings.hooks && Object.keys(settings.hooks).length === 0) {
-      delete settings.hooks;
-    }
-
-    writeSettings(userSettingsPath, settings);
-  } finally {
-    releaseSettingsLock(fd, lockPath);
-  }
 }
 
 /**
