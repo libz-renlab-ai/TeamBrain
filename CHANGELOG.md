@@ -15,6 +15,24 @@ artifacts the user sees) do NOT need an entry.
 
 ### Fixed
 
+- **Issue #158**: `npm i -g github:libz-renlab-ai/TeamBrain#release` no longer
+  fails on Windows + destroys the user's prior teamagent install. The 3
+  tree-sitter native deps (`web-tree-sitter`, `tree-sitter-typescript`,
+  `tree-sitter-python`) have been removed from `packages/teamagent/package.json`
+  entirely — their install scripts spawn `cmd.exe` during npm reify and abort
+  with `ENOENT`, which left users with no teamagent at all because npm reify
+  removes the prior package before downstream install scripts run.
+  `packages/core/src/matcher/legacy/ast-context.ts:initAstMatcher` already had
+  a try/catch fallback returning false → "conservative mode" (matcher does NOT
+  filter comment/string false-positives), so removing the deps degrades match
+  precision but does not break functionality. `postinstall.log` gains a new
+  positive `stage=ast-matcher status=skipped reason=tree-sitter-deps-absent`
+  line — symmetric to #160 `vector-deps-absent` — so doctor and bug-report
+  tooling can distinguish "skipped on purpose" from "ast-matcher never
+  reached." Users wanting AST-precise filtering can opt back in:
+  `npm install -g teamagent web-tree-sitter@^0.26 tree-sitter-typescript@^0.23 tree-sitter-python@^0.23`.
+  Defense-in-depth install-time backup + rollback in `release/install.sh`
+  guards against future analogous failures (any cause). (#158)
 - **Issue #160**: `teamagent warmup` now exits 0 with a friendly skip message
   when the optional vector deps (`@xenova/transformers` + `onnxruntime-node`)
   are not installed, instead of exit 1 with a misleading "warmup failed"
