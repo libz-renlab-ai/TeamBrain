@@ -123,4 +123,16 @@ describe("parseWhatsNewArgs", () => {
   it("throws when --since lacks value", () => {
     expect(() => parseWhatsNewArgs(["--since"])).toThrow();
   });
+
+  // Issue #225 iter-1 — guard NaN / non-positive --limit values.
+  it("throws when --limit value is non-numeric", () => {
+    expect(() => parseWhatsNewArgs(["--limit", "foo"])).toThrow(/正整数/);
+    expect(() => parseWhatsNewArgs(["--limit=foo"])).toThrow(/正整数/);
+  });
+
+  it("throws when --limit value is zero or negative", () => {
+    expect(() => parseWhatsNewArgs(["--limit", "0"])).toThrow(/正整数/);
+    expect(() => parseWhatsNewArgs(["--limit", "-3"])).toThrow(/正整数/);
+    expect(() => parseWhatsNewArgs(["--limit=-1"])).toThrow(/正整数/);
+  });
 });

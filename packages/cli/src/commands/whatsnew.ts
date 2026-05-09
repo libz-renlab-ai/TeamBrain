@@ -117,12 +117,28 @@ export function parseWhatsNewArgs(argv: string[]): WhatsNewOptions {
     } else if (a === "--limit") {
       const value = argv[++i];
       if (!value) throw new Error("--limit 需要 <N> 值");
-      opts.limit = Number.parseInt(value, 10);
+      opts.limit = parsePositiveInt(value, "--limit");
     } else if (a.startsWith("--limit=")) {
-      opts.limit = Number.parseInt(a.slice("--limit=".length), 10);
+      opts.limit = parsePositiveInt(a.slice("--limit=".length), "--limit");
     }
   }
   return opts;
+}
+
+/**
+ * Issue #225 iter-1 — validate --limit value is a finite positive integer.
+ * Without this, `Number.parseInt("foo", 10)` returns NaN, which slips past
+ * `parseChangelog`'s `max <= 0` guard (NaN <= 0 is false in JS) and the
+ * `out.length >= max` break condition (NaN >= N is also false), so the
+ * effective limit becomes "no limit." User sees all bullets instead of an
+ * error. Same for negative numbers — the parser would silently honor them.
+ */
+function parsePositiveInt(raw: string, flag: string): number {
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`${flag} 需要正整数 (got "${raw}")`);
+  }
+  return n;
 }
 
 function renderHelp(): string {
