@@ -60,10 +60,11 @@ section_install() {
 }
 
 # Cached once for sections 2 + 3 (single git log call to stay <500ms).
+# -E for ERE alternation (less ambiguous than BRE backslash-pipe).
 RECENT_COMMITS=$(
   cd "$REPO_ROOT" 2>/dev/null && \
     git --no-optional-locks log --since="7 days ago" \
-      --pretty="%h %s" --grep='^feat\|^fix' -3 2>/dev/null
+      -E --pretty="%h %s" --grep='^(feat|fix)' -3 2>/dev/null
 ) || RECENT_COMMITS=""
 
 # Section 3: Just shipped
@@ -101,7 +102,8 @@ section_random() {
     return
   fi
   local lines
-  lines=$(awk '/^[0-9]+\.[[:space:]]/ { print }' "$catalog" 2>/dev/null) || true
+  # sub(/\r$/,"") strips CRLF from Windows checkouts (core.autocrlf=true).
+  lines=$(awk '/^[0-9]+\.[[:space:]]/ { sub(/\r$/, ""); print }' "$catalog" 2>/dev/null) || true
   if [[ -z "$lines" ]]; then
     emit "      feature catalog empty"
     return
