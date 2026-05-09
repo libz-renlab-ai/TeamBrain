@@ -115,18 +115,48 @@ function resolveEmbedderBin(): string | null {
   const override = process.env["TEAMAGENT_EMBEDDER_BIN"];
   if (override && fs.existsSync(override)) return override;
 
-  const candidates = [
-    // npm -g installed alongside teamagent CLI
+  const candidates: string[] = [
+    // POSIX npm -g installed alongside teamagent CLI
     path.join(os.homedir(), ".local", "lib", "teamagent", "dist", "bin-embedder.cjs"),
     // monorepo dev: cli/dist
     path.resolve(process.cwd(), "packages", "cli", "dist", "bin-embedder.cjs"),
     // hooks staged in ~/.teamagent/hooks/
     path.join(os.homedir(), ".teamagent", "hooks", "bin-embedder.cjs"),
   ];
+
+  // Windows global npm install: %APPDATA%\npm\node_modules\teamagent\dist\
+  const appData = process.env["APPDATA"];
+  if (appData) {
+    candidates.push(
+      path.join(appData, "npm", "node_modules", "teamagent", "dist", "bin-embedder.cjs"),
+    );
+  }
+  // Some Windows setups land deps under %LOCALAPPDATA%\npm too.
+  const localAppData = process.env["LOCALAPPDATA"];
+  if (localAppData) {
+    candidates.push(
+      path.join(localAppData, "npm", "node_modules", "teamagent", "dist", "bin-embedder.cjs"),
+    );
+  }
+
   for (const c of candidates) {
     try {
       if (fs.existsSync(c)) return c;
     } catch { /* ignore */ }
   }
+
+  // Last resort: ask Node's resolver to find the teamagent package, then
+  // walk to dist/bin-embedder.cjs. Works for nvm / pnpm / Yarn layouts the
+  // hardcoded candidates above miss.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const req = (typeof require !== "undefined" ? require : null) as NodeRequire | null;
+    if (req) {
+      const pkgJson = req.resolve("teamagent/package.json");
+      const candidate = path.join(path.dirname(pkgJson), "dist", "bin-embedder.cjs");
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  } catch { /* not installed via node resolver */ }
+
   return null;
 }

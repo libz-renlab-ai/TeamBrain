@@ -101,7 +101,11 @@ export async function postRegister(
   opts: EmbedderClientOptions & { pollMs?: number; pollIntervalMs?: number } = {},
 ): Promise<boolean> {
   const statePath = opts.statePath ?? defaultEmbedderStatePath();
-  const pollDeadline = Date.now() + (opts.pollMs ?? 5_000);
+  // 10s default — multilingual-e5-small ONNX cold-load measured 3-4s on a
+  // fast SSD, but slow disk / first-time download / Windows AV scanning the
+  // tarball can push past 5s. Generous polling avoids silent miss where
+  // SessionStart's session never registers.
+  const pollDeadline = Date.now() + (opts.pollMs ?? 10_000);
   const interval = opts.pollIntervalMs ?? 200;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   while (Date.now() < pollDeadline) {

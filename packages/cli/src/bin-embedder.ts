@@ -75,8 +75,16 @@ export function parseArgv(argv: string[]): Partial<DaemonOpts> {
  * gets EADDRINUSE if --port is fixed; with port 0 both succeed but one of
  * the two state-file writes wins. The cost is one extra ephemeral daemon
  * for ~3s; idle-exit reaps it. Acceptable tradeoff vs OS-level file locks.
+ *
+ * Windows pid-recycling defense: process.kill(pid, 0) returns true for ANY
+ * existing pid on Windows. If the recorded pid was recycled into an
+ * unrelated process (svchost.exe etc.) after a reboot, we'd refuse to
+ * spawn forever. Caller can set TEAMAGENT_EMBEDDER_FORCE_SPAWN=1 to
+ * bypass; better long-term, the runtime path also performs an HTTP
+ * /health probe (added in startup) to catch this case automatically.
  */
 export function tryAcquireLock(statePath: string): boolean {
+  if (process.env["TEAMAGENT_EMBEDDER_FORCE_SPAWN"] === "1") return true;
   const existing = readEmbedderState(statePath);
   if (!existing) return true;
   if (existing.status === "exiting") return true;
@@ -84,10 +92,49 @@ export function tryAcquireLock(statePath: string): boolean {
   return false;
 }
 
+/**
+ * Best-effort HTTP /health probe to confirm a process really is the daemon
+ * (not just a recycled pid pointing at our state). Synchronous-style return
+ * via Promise; caller awaits before deciding to claim/skip.
+ *
+ * Returns:
+ *   - true  → daemon at this port responded healthy (real, leave it alone)
+ *   - false → port unreachable / non-200 / timeout (treat state as stale)
+ */
+async function probeDaemonHealth(port: number, timeoutMs = 200): Promise<boolean> {
+  if (!Number.isInteger(port) || port <= 0) return false;
+  return new Promise<boolean>((resolve) => {
+    const req = http.request(
+      { host: "127.0.0.1", port, path: "/health", method: "GET" },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode === 200);
+      },
+    );
+    req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
+    req.on("error", () => resolve(false));
+    req.end();
+  });
+}
+
 async function runDaemon(opts: DaemonOpts): Promise<number> {
   if (!tryAcquireLock(opts.statePath)) {
-    process.stderr.write("[embedder] another daemon is alive; exiting\n");
-    return 0;
+    // Defense against Windows pid recycling: even if pid looks alive, probe
+    // the recorded port. If /health doesn't respond, the state is stale —
+    // claim it. Skipped when state has no port (daemon never reached running).
+    const existing = readEmbedderState(opts.statePath);
+    const port = existing?.port ?? 0;
+    if (port > 0) {
+      const alive = await probeDaemonHealth(port);
+      if (alive) {
+        process.stderr.write("[embedder] another daemon is alive; exiting\n");
+        return 0;
+      }
+      process.stderr.write("[embedder] state file says alive but /health unreachable; treating as stale\n");
+    } else {
+      process.stderr.write("[embedder] another daemon is alive; exiting\n");
+      return 0;
+    }
   }
 
   const model = opts.model ?? "Xenova/multilingual-e5-small";
@@ -131,6 +178,11 @@ async function runDaemon(opts: DaemonOpts): Promise<number> {
   // file-based mutations are visible.
   let lastActivityMs = Date.now();
   let exiting = false;
+  // Track in-flight requests so beginExit can drain rather than drop, and
+  // idle-exit doesn't fire while a long embed is mid-flight (review finding:
+  // bumping lastActivityMs only at request *start* meant a 30-min embed
+  // could trigger idle-exit while embedder.embed was still running).
+  let inFlight = 0;
 
   const server = http.createServer((req, res) => {
     if (exiting) {
@@ -139,6 +191,13 @@ async function runDaemon(opts: DaemonOpts): Promise<number> {
       return;
     }
     lastActivityMs = Date.now();
+    inFlight++;
+    const onDone = (): void => {
+      inFlight = Math.max(0, inFlight - 1);
+      lastActivityMs = Date.now();
+    };
+    res.once("finish", onDone);
+    res.once("close", onDone);
 
     if (req.method === "POST" && req.url === "/embed") {
       const chunks: Buffer[] = [];
@@ -249,18 +308,32 @@ async function runDaemon(opts: DaemonOpts): Promise<number> {
       s.status = "exiting";
       writeEmbedderState(opts.statePath, s);
     }
+    // Stop accepting new connections (server.close), then wait for in-flight
+    // requests to finish (poll inFlight==0 with hard cap so we don't hang
+    // indefinitely on a stuck embed). Newer Node also has closeIdleConnections
+    // for keep-alive sockets that aren't actively serving.
     server.close(() => {
-      // Best-effort cleanup of state file. Leaving it would let hooks see
-      // a stale-pid (handled by isDaemonPidAlive check) but cleaner to remove.
       try {
         const final = readEmbedderState(opts.statePath);
         if (final && final.pid === process.pid) {
-          // Mark exited; readers see status=exiting → fall back.
           writeEmbedderState(opts.statePath, { ...final, status: "exiting" });
         }
       } catch { /* best-effort */ }
       process.exit(0);
     });
+    // Best-effort: free idle keep-alive sockets so server.close fires promptly.
+    // closeIdleConnections is Node ≥18.2; guard for older runtimes just in case.
+    const closeIdle = (server as unknown as { closeIdleConnections?: () => void }).closeIdleConnections;
+    if (typeof closeIdle === "function") {
+      try { closeIdle.call(server); } catch { /* ignore */ }
+    }
+    // Hard timeout: force-exit if drain takes too long (stuck embed, malicious
+    // keep-alive client). 5 seconds is plenty for legitimate in-flight requests.
+    const hardTimer = setTimeout(() => {
+      process.stderr.write(`[embedder] forced exit after 5s drain timeout (inFlight=${inFlight})\n`);
+      process.exit(0);
+    }, 5_000);
+    hardTimer.unref();
   }
 
   // Step 4: bind. listen(0) → kernel picks free port. listen(fixedPort) for tests.
@@ -289,9 +362,12 @@ async function runDaemon(opts: DaemonOpts): Promise<number> {
   process.stderr.write(`[embedder] ready pid=${process.pid} port=${port}\n`);
 
   // Step 5: idle-exit watcher. Re-checks every 30s. If wall-clock since last
-  // activity > idleExitMs AND members list empty, begin exit.
+  // activity > idleExitMs AND no in-flight requests AND members list empty,
+  // begin exit. The inFlight guard prevents idle-exit from firing mid-embed
+  // (review finding: a 30-min embed could trip the timer otherwise).
   const idleTimer = setInterval(() => {
     if (exiting) return;
+    if (inFlight > 0) return;
     if (Date.now() - lastActivityMs < opts.idleExitMs) return;
     const s = readEmbedderState(opts.statePath);
     if (s && s.members.length > 0) return;
