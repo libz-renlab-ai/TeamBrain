@@ -131,6 +131,34 @@ export interface InitResult {
   packPrompt?: string;
 }
 
+/**
+ * Single source of truth for the claim-to-merge skill identity (issue #218).
+ * Renaming the skill should require touching ONLY this constant — derived
+ * downstream are MIRROR_CLAIM_STEP, the helper call site, and the banner
+ * routing-doc path. Bash side (scripts/verify-gstack-skill-mirrors.sh)
+ * mirrors this in NON_GSTACK_MIRRORED_SKILLS — keep them in sync.
+ */
+const CLAIM_TO_MERGE_SKILL_ID = "claim-to-merge" as const;
+
+/**
+ * Step key for the user-level mirror of project-level skills (issue #218).
+ * Centralized so a typo can't silently de-register the step from any of:
+ * the function body, stepGroups (renderInitResult), or stepLabel mapping.
+ */
+const MIRROR_CLAIM_STEP = `mirror-${CLAIM_TO_MERGE_SKILL_ID}-skill` as const;
+
+/**
+ * Repo-relative paths the FIXEDFLOW banner mentions. Exported so the unit
+ * test can iterate and assert each one resolves on disk — protects against
+ * silent doc renames making the banner lie.
+ */
+export const FIXEDFLOW_BANNER_DOC_PATHS = [
+  `.claude/skills/${CLAIM_TO_MERGE_SKILL_ID}/SKILL.md`,
+  "docs/FIXEDFLOW.md",
+  "docs/PR-PLAN.md",
+  "docs/POSTPR.md",
+] as const;
+
 function resolvePaths(opts: InitOptions) {
   const home = opts.homeDir ?? os.homedir();
   const cwd = opts.cwd ?? process.cwd();
@@ -1123,35 +1151,57 @@ async function doCompileSkills(
   }
 }
 
-function doMirrorClaimToMergeSkill(
+/**
+ * Allowed shape of a project-level skill directory name. Matches the
+ * convention used by `.claude/skills/<id>/SKILL.md` (lowercase, digits,
+ * hyphens; max 64 chars). Used to refuse `..`, slashes, or any
+ * input-driven skillId from a future caller.
+ */
+const SKILL_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/**
+ * Mirror a project-level skill at `.claude/skills/<skillId>/SKILL.md` to the
+ * user-level skills dir. Designed so future per-skill mirrors (e.g. another
+ * routing skill) can call this directly without copy-pasting fs logic.
+ *
+ * Failure is intentionally non-fatal — see C2 (issue #218) for why.
+ *
+ * skillId MUST match SKILL_ID_PATTERN — defends against path traversal if
+ * a future caller derives skillId from config/seed/CLI input instead of a
+ * hard-coded literal.
+ */
+export function mirrorProjectSkillToUserLevel(
+  skillId: string,
+  stepKey: string,
   paths: ReturnType<typeof resolvePaths>,
   dryRun: boolean,
 ): InitStepResult {
+  if (!SKILL_ID_PATTERN.test(skillId)) {
+    return failStep(
+      stepKey,
+      `invalid skillId "${skillId.slice(0, 32)}" — must match ${SKILL_ID_PATTERN}`,
+    );
+  }
   const sourcePath = path.join(
     paths.cwd,
     ".claude",
     "skills",
-    "claim-to-merge",
+    skillId,
     "SKILL.md",
   );
-  const targetPath = path.join(
-    paths.skillsDir,
-    "claim-to-merge",
-    "SKILL.md",
-  );
+  const targetPath = path.join(paths.skillsDir, skillId, "SKILL.md");
 
   if (!fs.existsSync(sourcePath)) {
     return {
-      step: "mirror-claim-to-merge-skill",
+      step: stepKey,
       status: "skipped",
-      detail:
-        "源 .claude/skills/claim-to-merge/SKILL.md 不存在（仅 TeamBrain 仓库需要）",
+      detail: `源 .claude/skills/${skillId}/SKILL.md 不存在（仅 TeamBrain 仓库需要）`,
     };
   }
 
   if (dryRun) {
     return okStep(
-      "mirror-claim-to-merge-skill",
+      stepKey,
       `(dry-run) 会复制 ${sourcePath} → ${targetPath}`,
     );
   }
@@ -1159,13 +1209,63 @@ function doMirrorClaimToMergeSkill(
   try {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.copyFileSync(sourcePath, targetPath);
-    return okStep(
-      "mirror-claim-to-merge-skill",
-      `已复制到 ${targetPath}（用户级 FIXEDFLOW 入口）`,
-    );
+    return okStep(stepKey, `已复制到 ${targetPath}（用户级 FIXEDFLOW 入口）`);
   } catch (err) {
-    return failStep("mirror-claim-to-merge-skill", String(err).slice(0, 200));
+    // Cosmetic mirror failure (e.g. $HOME read-only, disk full) must NOT
+    // flip result.ok=false (line 517 aggregates `!steps.some(failed)`).
+    // If it did, the success message AND the FIXEDFLOW banner this step
+    // is meant to advertise would both get suppressed — exactly the
+    // outcome the grill spec guarded against with "失败不 fatal". Use
+    // okStep with a warning prefix so the failure is reported but
+    // non-fatal.
+    return okStep(
+      stepKey,
+      `⚠️ 镜像失败但 init 继续（cosmetic）: ${String(err).slice(0, 160)}`,
+    );
   }
+}
+
+function doMirrorClaimToMergeSkill(
+  paths: ReturnType<typeof resolvePaths>,
+  dryRun: boolean,
+): InitStepResult {
+  return mirrorProjectSkillToUserLevel(
+    CLAIM_TO_MERGE_SKILL_ID,
+    MIRROR_CLAIM_STEP,
+    paths,
+    dryRun,
+  );
+}
+
+/**
+ * Append the FIXEDFLOW guidance banner (issue #218) to the given line buffer.
+ * Doc paths come from FIXEDFLOW_BANNER_DOC_PATHS so the path-exists unit test
+ * stays in sync with the banner content.
+ */
+function appendFixedflowBanner(lines: string[]): void {
+  lines.push("━".repeat(36));
+  lines.push("🌊 FIXEDFLOW — 本仓库 issue → merged code 的唯一路径");
+  lines.push("━".repeat(36));
+  lines.push("");
+  lines.push("  产品特性");
+  lines.push("    你写 ≤50 字 issue + 贴 grill 评论 + 加 grill-ready label。");
+  lines.push("    maintainer 在 Claude Code 里手动跑 /fixed-flow-driver skill:");
+  lines.push("    worktree → 实现 → /review fix-loop（循环至 PASS）→ 普通 PR →");
+  lines.push("    squash-merge → 清理。无 watcher / 无后台轮询 / 无自动 dispatch。");
+  lines.push("    /review 出 issue 时强制走 PR-PLAN（禁开 follow-up issue）；");
+  lines.push("    POSTPR 仅 squash-merge（禁 --merge / --rebase）。");
+  lines.push("");
+  lines.push("  快速验证（复制运行）");
+  lines.push(
+    '    claudefast -p "explain TeamBrain FIXEDFLOW: 5 steps, who triggers step 3"',
+  );
+  lines.push("");
+  lines.push("  详情");
+  lines.push(`    ${FIXEDFLOW_BANNER_DOC_PATHS[0]} (TL;DR routing)`);
+  lines.push(
+    `    ${FIXEDFLOW_BANNER_DOC_PATHS[1]} / ${FIXEDFLOW_BANNER_DOC_PATHS[2]} / ${FIXEDFLOW_BANNER_DOC_PATHS[3]} (canonical)`,
+  );
+  lines.push("");
 }
 
 function doLinkCodexFiles(
@@ -1396,7 +1496,7 @@ export function renderInitResult(result: InitResult): string {
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
     { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook", "audit-orphan-hooks"] },
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
-    { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills", "mirror-claim-to-merge-skill"] },
+    { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills", MIRROR_CLAIM_STEP] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
     { icon: "📦", label: "Stack packs", stepKeys: ["load-pack", "pack-prompt"] },
   ];
@@ -1422,30 +1522,7 @@ export function renderInitResult(result: InitResult): string {
   lines.push("━".repeat(36));
   if (result.ok) {
     lines.push("✅ TeamAgent 安装成功！\n");
-
-    // FIXEDFLOW 引导 banner（issue #218）— 本仓库 issue → merged code 唯一路径
-    lines.push("━".repeat(36));
-    lines.push("🌊 FIXEDFLOW — 本仓库 issue → merged code 的唯一路径");
-    lines.push("━".repeat(36));
-    lines.push("");
-    lines.push("  产品特性");
-    lines.push("    你写 ≤50 字 issue + 贴 grill 评论 + 加 grill-ready label。");
-    lines.push("    maintainer 在 Claude Code 里手动跑 /fixed-flow-driver skill:");
-    lines.push("    worktree → 实现 → /review fix-loop（循环至 PASS）→ 普通 PR →");
-    lines.push("    squash-merge → 清理。无 watcher / 无后台轮询 / 无自动 dispatch。");
-    lines.push("    /review 出 issue 时强制走 PR-PLAN（禁开 follow-up issue）；");
-    lines.push("    POSTPR 仅 squash-merge（禁 --merge / --rebase）。");
-    lines.push("");
-    lines.push("  快速验证（复制运行）");
-    lines.push(
-      '    claudefast -p "explain TeamBrain FIXEDFLOW: 5 steps, who triggers step 3"',
-    );
-    lines.push("");
-    lines.push("  详情");
-    lines.push("    .claude/skills/claim-to-merge/SKILL.md (TL;DR routing)");
-    lines.push("    docs/FIXEDFLOW.md / docs/PR-PLAN.md / docs/POSTPR.md (canonical)");
-    lines.push("");
-
+    appendFixedflowBanner(lines);
     lines.push("下一步:");
     const hasAnyCompileTarget = result.steps.some(
       (s) => s.step === "compile-skills" || s.step === "link-codex-files",
@@ -1542,7 +1619,7 @@ function stepLabel(step: string): string {
     "audit-orphan-hooks": "孤儿 .sh 审计",
     "install-plugins": "Plugin 安装",
     "compile-skills": "Skills",
-    "mirror-claim-to-merge-skill": "FIXEDFLOW Skill",
+    [MIRROR_CLAIM_STEP]: "FIXEDFLOW Skill",
     "link-codex-files": "Codex 软链接",
     "load-pack": "Pack 安装",
     "pack-prompt": "Pack 提示",
