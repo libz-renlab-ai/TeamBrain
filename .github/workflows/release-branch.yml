@@ -63,6 +63,9 @@ jobs:
           # https://raw.githubusercontent.com/<owner>/<repo>/release/install.sh
           cp release/install.sh /tmp/release-stage/install.sh
           chmod 0755 /tmp/release-stage/install.sh
+          # Stage README.md at branch root so users landing on the release branch
+          # see the same install/getting-started doc as on main (issue #174 #1).
+          cp README.md /tmp/release-stage/README.md
           # Template the staged install.sh so its TEAMAGENT_VERSION default tracks
           # the actual release tag (was v0.9.4 hardcoded; now matches package.json).
           sed -i.bak "s|TEAMAGENT_VERSION:-v[0-9.]*|TEAMAGENT_VERSION:-${{ steps.version.outputs.tag }}|" \
