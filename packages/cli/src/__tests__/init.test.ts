@@ -814,4 +814,69 @@ describe("renderInitResult — new UX", () => {
     expect(out).toContain("预览模式");
     expect(out).toContain("--dry-run");
   });
+
+  // Issue #218 — FIXEDFLOW banner: 紧贴 ✅ 之后告诉新初始化的 agent / 人
+  // 本仓库 issue → merged code 唯一路径，并附复制即用的 verify prompt。
+  it("ok=true → FIXEDFLOW banner with verify prompt + canonical doc pointers", () => {
+    const out = renderInitResult({
+      ok: true,
+      dryRun: false,
+      steps: [
+        { step: "pre-check", status: "ok" as const, detail: "ok" },
+        { step: "compile-skills", status: "ok" as const, detail: "导出 3 条" },
+      ],
+      summary: {
+        stack: "lang=typescript",
+        presetAdded: 4,
+        seedAdded: 0,
+        importedRules: 0,
+        totalActiveEntries: 4,
+      },
+    });
+    expect(out).toContain("FIXEDFLOW");
+    expect(out).toContain('claudefast -p "explain TeamBrain FIXEDFLOW');
+    expect(out).toContain("docs/FIXEDFLOW.md");
+    expect(out).toContain(".claude/skills/claim-to-merge/SKILL.md");
+    expect(out).toContain("squash-merge");
+  });
+
+  it("ok=false → FIXEDFLOW banner is suppressed (no noise on failure)", () => {
+    const out = renderInitResult({
+      ok: false,
+      dryRun: false,
+      steps: [
+        { step: "pre-check", status: "failed" as const, detail: "bad permissions" },
+      ],
+      summary: {
+        stack: "",
+        presetAdded: 0,
+        seedAdded: 0,
+        importedRules: 0,
+        totalActiveEntries: 0,
+      },
+    });
+    expect(out).not.toContain("FIXEDFLOW");
+    expect(out).not.toContain("claudefast -p");
+    expect(out).toContain("❌ 安装未完成");
+  });
+
+  it("ok=true && dryRun=true → preview banner + FIXEDFLOW banner co-exist", () => {
+    const out = renderInitResult({
+      ok: true,
+      dryRun: true,
+      steps: [
+        { step: "pre-check", status: "ok" as const, detail: "ok" },
+      ],
+      summary: {
+        stack: "lang=typescript",
+        presetAdded: 4,
+        seedAdded: 0,
+        importedRules: 0,
+        totalActiveEntries: 4,
+      },
+    });
+    expect(out).toContain("预览模式");
+    expect(out).toContain("FIXEDFLOW");
+    expect(out).toContain("docs/FIXEDFLOW.md");
+  });
 });
