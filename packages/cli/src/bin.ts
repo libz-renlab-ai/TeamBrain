@@ -160,6 +160,16 @@ import {
   renderPackList,
   renderPackRemove,
 } from "./commands/pack.js";
+import {
+  executeDigitalTwin,
+  parseDigitalTwinArgs,
+  DigitalTwinArgError,
+} from "./commands/digital-twin.js";
+import {
+  executeRecord,
+  parseRecordArgs,
+  RecordArgError,
+} from "./commands/record.js";
 
 function findPackageVersion(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
@@ -737,6 +747,63 @@ async function main(): Promise<void> {
       }
       return;
     }
+    case "digital-twin": {
+      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage:\n" +
+            "  teamagent digital-twin login <token>     Save the bearer token to ~/.teamagent/digital-twin.json\n" +
+            "  teamagent digital-twin logout            Clear uploader.token\n" +
+            "  teamagent digital-twin status            Show config + queue + daemon status\n" +
+            "  teamagent digital-twin pause             Disable uploader (uploader.enabled=false)\n" +
+            "  teamagent digital-twin resume            Enable uploader (uploader.enabled=true)\n" +
+            "  teamagent digital-twin inject-mock       Write a synthetic transcript and tap it (end-to-end smoke test)\n" +
+            "         [--cwd <path>] [--session-id <id>]\n" +
+            "\n" +
+            "Manages the TeamBrain Digital Twin sidecar configuration in ~/.teamagent/.\n",
+        );
+        return;
+      }
+      let parsed;
+      try {
+        parsed = parseDigitalTwinArgs(rest);
+      } catch (err) {
+        if (err instanceof DigitalTwinArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
+      const result = await executeDigitalTwin(parsed);
+      if (result.exitCode !== 0) process.exit(result.exitCode);
+      return;
+    }
+    case "record": {
+      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage:\n" +
+            "  teamagent record start [--id <id>] [--label <l>]   Spawn ffmpeg detached, write pid sidecar to queue/recording_temp/\n" +
+            "  teamagent record stop  [--id <id>]                 SIGTERM ffmpeg, finalize ogg + metadata to queue/pending/\n" +
+            "  teamagent record import <file> [--label <l>]       Transcode to Opus/OGG and drop into queue/pending/\n" +
+            "\n" +
+            "Records local work audio to ~/.teamagent/digital-twin/queue/ via ffmpeg.\n" +
+            "Requires ffmpeg on PATH; install hint printed on failure.\n",
+        );
+        return;
+      }
+      let parsed;
+      try {
+        parsed = parseRecordArgs(rest);
+      } catch (err) {
+        if (err instanceof RecordArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
+      const result = await executeRecord(parsed);
+      if (result.exitCode !== 0) process.exit(result.exitCode);
+      return;
+    }
     case "compile": {
       let opts;
       try {
@@ -1193,6 +1260,10 @@ async function main(): Promise<void> {
           "                                   列出已安装 / 可用的 stack packs（ADR 0002 — agent 决定装哪些）",
           "  teamagent pack add <names>       例 pack add frontend-js,ops-safety；从 seed/packs/<name>.{jsonl,meta.json} 读取并注入用户全局 store",
           "  teamagent pack remove <names>    按 tag pack:<name> 过滤删除全局 store 中对应规则",
+          "  teamagent digital-twin <login|logout|status|pause|resume|inject-mock>",
+          "                                   管理 TeamBrain Digital Twin sidecar 配置（~/.teamagent/digital-twin.json）；inject-mock 走端到端 smoke",
+          "  teamagent record <start|stop|import>",
+          "                                   本地工作录音子命令（ffmpeg → Opus/OGG → queue/pending/）",
           "  teamagent ingest --from-insights <path> | --from-audit | --from-pr <n>",
           "                   | --from-git [--since=30d] | --from-ci [--since=30d] | --from-candidates <path>",
           "                                   多源摄入：Claude /insights / npm audit / PR review / git hotspot / CI failure",
