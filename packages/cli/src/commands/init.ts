@@ -133,6 +133,18 @@ export interface InitResult {
  */
 const MIRROR_CLAIM_STEP = "mirror-claim-to-merge-skill" as const;
 
+/**
+ * Repo-relative paths the FIXEDFLOW banner mentions. Exported so the unit
+ * test can iterate and assert each one resolves on disk — protects against
+ * silent doc renames making the banner lie.
+ */
+export const FIXEDFLOW_BANNER_DOC_PATHS = [
+  ".claude/skills/claim-to-merge/SKILL.md",
+  "docs/FIXEDFLOW.md",
+  "docs/PR-PLAN.md",
+  "docs/POSTPR.md",
+] as const;
+
 function resolvePaths(opts: InitOptions) {
   const home = opts.homeDir ?? os.homedir();
   const cwd = opts.cwd ?? process.cwd();
@@ -1157,6 +1169,36 @@ function doMirrorClaimToMergeSkill(
   );
 }
 
+/**
+ * Append the FIXEDFLOW guidance banner (issue #218) to the given line buffer.
+ * Doc paths come from FIXEDFLOW_BANNER_DOC_PATHS so the path-exists unit test
+ * stays in sync with the banner content.
+ */
+function appendFixedflowBanner(lines: string[]): void {
+  lines.push("━".repeat(36));
+  lines.push("🌊 FIXEDFLOW — 本仓库 issue → merged code 的唯一路径");
+  lines.push("━".repeat(36));
+  lines.push("");
+  lines.push("  产品特性");
+  lines.push("    你写 ≤50 字 issue + 贴 grill 评论 + 加 grill-ready label，本地");
+  lines.push("    mainpi 自动: worktree → 实现 → /review fix-loop（无限至 PASS）→");
+  lines.push("    普通 PR → squash-merge → 清理。Step 3-5 全程无人介入。");
+  lines.push("    /review 出 issue 时强制走 PR-PLAN（禁开 follow-up issue）；");
+  lines.push("    POSTPR 仅 squash-merge（禁 --merge / --rebase）。");
+  lines.push("");
+  lines.push("  快速验证（复制运行）");
+  lines.push(
+    '    claudefast -p "explain TeamBrain FIXEDFLOW: 5 steps, what\'s manual vs auto"',
+  );
+  lines.push("");
+  lines.push("  详情");
+  lines.push(`    ${FIXEDFLOW_BANNER_DOC_PATHS[0]} (TL;DR routing)`);
+  lines.push(
+    `    ${FIXEDFLOW_BANNER_DOC_PATHS[1]} / ${FIXEDFLOW_BANNER_DOC_PATHS[2]} / ${FIXEDFLOW_BANNER_DOC_PATHS[3]} (canonical)`,
+  );
+  lines.push("");
+}
+
 function doLinkCodexFiles(
   paths: ReturnType<typeof resolvePaths>,
   dryRun: boolean,
@@ -1411,29 +1453,7 @@ export function renderInitResult(result: InitResult): string {
   lines.push("━".repeat(36));
   if (result.ok) {
     lines.push("✅ TeamAgent 安装成功！\n");
-
-    // FIXEDFLOW 引导 banner（issue #218）— 本仓库 issue → merged code 唯一路径
-    lines.push("━".repeat(36));
-    lines.push("🌊 FIXEDFLOW — 本仓库 issue → merged code 的唯一路径");
-    lines.push("━".repeat(36));
-    lines.push("");
-    lines.push("  产品特性");
-    lines.push("    你写 ≤50 字 issue + 贴 grill 评论 + 加 grill-ready label，本地");
-    lines.push("    mainpi 自动: worktree → 实现 → /review fix-loop（无限至 PASS）→");
-    lines.push("    普通 PR → squash-merge → 清理。Step 3-5 全程无人介入。");
-    lines.push("    /review 出 issue 时强制走 PR-PLAN（禁开 follow-up issue）；");
-    lines.push("    POSTPR 仅 squash-merge（禁 --merge / --rebase）。");
-    lines.push("");
-    lines.push("  快速验证（复制运行）");
-    lines.push(
-      '    claudefast -p "explain TeamBrain FIXEDFLOW: 5 steps, what\'s manual vs auto"',
-    );
-    lines.push("");
-    lines.push("  详情");
-    lines.push("    .claude/skills/claim-to-merge/SKILL.md (TL;DR routing)");
-    lines.push("    docs/FIXEDFLOW.md / docs/PR-PLAN.md / docs/POSTPR.md (canonical)");
-    lines.push("");
-
+    appendFixedflowBanner(lines);
     lines.push("下一步:");
     const hasAnyCompileTarget = result.steps.some(
       (s) => s.step === "compile-skills" || s.step === "link-codex-files",
