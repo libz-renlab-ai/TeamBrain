@@ -76,9 +76,10 @@ describe("harvest-writer", () => {
   });
 
   it("walk-up (#161): appendHarvest writes to parent harvest file when cwd is a subfolder", () => {
-    // Create knowledge.db at root so walk-up resolves to root
+    // Create knowledge.db AND project marker at root so hardened walk-up matches
     fs.mkdirSync(path.join(cwd, ".teamagent"), { recursive: true });
     fs.writeFileSync(path.join(cwd, ".teamagent", "knowledge.db"), "");
+    fs.writeFileSync(path.join(cwd, "package.json"), "{}");
     const sub = path.join(cwd, "sub");
     fs.mkdirSync(sub, { recursive: true });
     appendHarvest(sub, {

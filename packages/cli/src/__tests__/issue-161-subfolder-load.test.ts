@@ -33,11 +33,13 @@ describe("issue #161 subfolder walk-up regression", () => {
   it("resolves db path to parent .teamagent when cwd is a subfolder", () => {
     const tmpRoot = makeTmpDir();
 
-    // Set up: dir/.teamagent/knowledge.db exists
+    // Set up: dir/.teamagent/knowledge.db exists AND dir has a project marker
+    // (hardened walk-up requires both)
     const dir = path.join(tmpRoot, "dir");
     const teamagentDir = path.join(dir, ".teamagent");
     fs.mkdirSync(teamagentDir, { recursive: true });
-    fs.writeFileSync(path.join(teamagentDir, "knowledge.db"), ""); // empty file — existsSync is all we need
+    fs.writeFileSync(path.join(teamagentDir, "knowledge.db"), ""); // empty file
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
 
     // Set up: dir/sub/ is the user's actual cwd (subfolder of the project root)
     const sub = path.join(dir, "sub");

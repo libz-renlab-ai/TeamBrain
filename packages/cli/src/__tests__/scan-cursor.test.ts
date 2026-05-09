@@ -111,8 +111,9 @@ describe("walk-up (#161): scan-cursor resolves from subfolder", () => {
     // Call from a subfolder
     const sub = path.join(root, "sub");
     fs.mkdirSync(sub, { recursive: true });
-    // Create knowledge.db at root so walk-up finds it
+    // Create knowledge.db AND project marker at root so hardened walk-up matches
     fs.writeFileSync(path.join(root, ".teamagent", "knowledge.db"), "");
+    fs.writeFileSync(path.join(root, "package.json"), "{}");
     expect(readCursor(sub, "sess-161")).toBe(42);
   });
 });

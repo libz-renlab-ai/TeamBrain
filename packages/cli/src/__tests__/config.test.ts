@@ -61,11 +61,12 @@ describe("readTeamAgentConfig walk-up (#161)", () => {
   afterEach(() => { tmp.cleanup(); });
 
   it("reads config from parent when cwd is a subfolder", () => {
-    // Write config + knowledge.db at parent
+    // Write config + knowledge.db + project marker at parent (hardened walk-up requires marker)
     const dir = tmp.cwd;
     fs.mkdirSync(path.join(dir, ".teamagent"), { recursive: true });
     fs.writeFileSync(path.join(dir, ".teamagent", "knowledge.db"), "");
     fs.writeFileSync(path.join(dir, ".teamagent", "config.json"), JSON.stringify({ stop_mode: "sync" }));
+    fs.writeFileSync(path.join(dir, "package.json"), "{}");
     // Read from subfolder
     const sub = path.join(dir, "sub");
     fs.mkdirSync(sub, { recursive: true });

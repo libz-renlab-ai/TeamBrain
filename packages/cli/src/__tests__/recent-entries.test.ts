@@ -111,6 +111,8 @@ describe("getRecentEntries", () => {
     `);
     closeDb(db);
 
+    // Project marker so hardened walk-up accepts the parent
+    fs.writeFileSync(path.join(tmpDir, "package.json"), "{}");
     const subdir = path.join(tmpDir, "packages", "cli");
     fs.mkdirSync(subdir, { recursive: true });
 

@@ -38,12 +38,18 @@ export function isGitProject(projectRoot: string): boolean {
   return fs.existsSync(path.join(projectRoot, ".git"));
 }
 
-/** 当前项目是否已被 infect。 */
+/** 当前项目是否已被 infect。
+ *
+ * Pure predicate over the directory passed in — does NOT walk up. The walk-up
+ * for issue #161 happens at `runM5Session` entry so that the entire pipeline
+ * (`isInfected` + `runM5Infect`/`runM5Bootstrap`/`runM5Sync`/`runM5Publish`)
+ * sees the same resolved project root. Walking up inside this predicate alone
+ * would make `isInfected(sub)` return true while the downstream commands still
+ * operate on `sub`, leaving them to no-op against a non-existent
+ * `sub/.teamagent/`.
+ */
 export function isInfected(projectRoot: string): boolean {
-  // Walk up to find the nearest ancestor with .teamagent/knowledge.db so that
-  // calling from a subdirectory still finds the project's manifest.json.
-  const root = findTeamagentRoot(projectRoot);
-  return fs.existsSync(path.join(root, ".teamagent", "manifest.json"));
+  return fs.existsSync(path.join(projectRoot, ".teamagent", "manifest.json"));
 }
 
 /**
@@ -66,16 +72,25 @@ export async function runM5Session(input: {
     errors: [],
   };
 
-  if (!isGitProject(input.projectRoot)) {
+  // Issue #161: SessionStart can fire from a sub-directory of an already-
+  // infected project. Walk up ONCE here and use the resolved project root for
+  // every downstream command — keeps `isInfected` honest as a pure predicate
+  // and ensures `runM5Infect`/`Bootstrap`/`Sync`/`Publish` all operate on the
+  // same root the predicate answered for. `findTeamagentRoot` falls back to
+  // the input on miss, preserving the original cwd-only behaviour for fresh
+  // projects with no ancestor `.teamagent/`.
+  const projectRoot = findTeamagentRoot(input.projectRoot);
+
+  if (!isGitProject(projectRoot)) {
     return r; // 非 git 项目不动
   }
 
   // 1) 传染：如果当前用户是 "传染源" 且项目未被传染，自动 infect
   const shouldInfect =
     input.shouldInfect ?? userHasTeamAgent(input.homeDir);
-  if (shouldInfect && !isInfected(input.projectRoot)) {
+  if (shouldInfect && !isInfected(projectRoot)) {
     try {
-      const inf = await runM5Infect({ projectRoot: input.projectRoot });
+      const inf = await runM5Infect({ projectRoot });
       r.infected = !inf.skipped;
     } catch (e) {
       r.errors.push(`infect: ${(e as Error).message}`);
@@ -83,10 +98,10 @@ export async function runM5Session(input: {
   }
 
   // 2) bootstrap apply：项目已被 infect 时检查并补齐本机
-  if (isInfected(input.projectRoot)) {
+  if (isInfected(projectRoot)) {
     try {
       const bs = await runM5Bootstrap({
-        projectRoot: input.projectRoot,
+        projectRoot,
         checkOnly: false,
       });
       r.bootstrapped = !!(bs.applied && bs.diff?.needs_bootstrap);
@@ -96,10 +111,10 @@ export async function runM5Session(input: {
   }
 
   // 3) sync apply：把团队规则拉进本地 KB
-  if (isInfected(input.projectRoot)) {
+  if (isInfected(projectRoot)) {
     try {
       const sync = await runM5Sync({
-        projectRoot: input.projectRoot,
+        projectRoot,
         apply: true,
       });
       r.synced =
@@ -112,10 +127,10 @@ export async function runM5Session(input: {
 
   // 4) publish：auto-commit pending L2 changes 并 push（spec §7 激进模式默认 push）
   // push 失败时降级为 push_error，不抛——commit 已留在本地，下次 SessionStart 再推
-  if (isInfected(input.projectRoot)) {
+  if (isInfected(projectRoot)) {
     try {
       const pub = await runM5Publish({
-        projectRoot: input.projectRoot,
+        projectRoot,
         push: input.autoPush ?? true,
       });
       r.published_changes = pub.changes_count;

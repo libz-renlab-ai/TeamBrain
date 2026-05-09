@@ -1,31 +1,22 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { findTeamagentRoot as findHardenedRoot } from "./walk-up.js";
 
 /**
  * Walk up from `cwd` to find the nearest ancestor directory containing
- * `.teamagent/knowledge.db`. Returns that ancestor, or `cwd` if none found.
+ * `.teamagent/knowledge.db` (issue #161). Mirrors `git`'s ancestor-walk for `.git/`.
  *
- * Mirrors `git`'s ancestor-walk semantics for `.git/`, so subfolder calls
- * resolve to the project's `.teamagent/` (issue #161).
+ * Thin wrapper around the hardened `walk-up.ts` helper that:
+ *   - requires a project marker in the matched directory,
+ *   - caps the walk at `~`,
+ *   - rejects symlinks via `lstatSync`.
  *
- * Cross-platform: uses `path.parse(dir).root` to detect the filesystem root
- * on both Windows (`C:\`) and POSIX (`/`), preventing infinite loops.
+ * Returns the matched ancestor, or `cwd` when no ancestor matches (so callers
+ * that need a string keep working without explicit `?? cwd` plumbing).
  *
- * NOTE: this is a copy of the helper in @teamagent/cli/find-teamagent-root.
- * The cli package depends on @teamagent/adapters, so adapters cannot import
- * from cli. The two copies are kept in sync; consolidation is a future
- * refactor (move the canonical helper to a shared/util package).
+ * NOTE: this is the adapters-side wrapper. The CLI side has the same
+ * delegation pattern; the duplication exists because `@teamagent/adapters`
+ * cannot import from `@teamagent/cli`. Consolidate to a shared util package
+ * as future refactor.
  */
 export function findTeamagentRoot(cwd: string): string {
-  let dir = path.resolve(cwd);
-  const fsRoot = path.parse(dir).root;
-  while (true) {
-    if (fs.existsSync(path.join(dir, ".teamagent", "knowledge.db"))) {
-      return dir;
-    }
-    if (dir === fsRoot) return cwd;
-    const parent = path.dirname(dir);
-    if (parent === dir) return cwd;
-    dir = parent;
-  }
+  return findHardenedRoot(cwd) ?? cwd;
 }
