@@ -161,7 +161,10 @@ If a decision genuinely deserves human input — destructive, irreversible, or s
 `claude login` opens an OAuth browser flow. The browser opens on the **colleague's** Mac (because that's where the user agent is logged into Anthropic's auth provider), not on the operator's. The skill bridges the gap with a tmux session.
 
 ```bash
-# 1. Start claude login in a detached tmux session on the remote
+# 1. Kill any stale `cclogin` session from a prior failed run, then start fresh.
+#    Without this, a stuck session breaks the "re-run /onboard recovers cleanly"
+#    invariant — `tmux new` would silently fail because the name is already taken.
+ssh "$SSH_TARGET" 'tmux kill-session -t cclogin 2>/dev/null || true'
 ssh "$SSH_TARGET" 'tmux new -d -s cclogin "claude login"'
 
 # 2. Poll the tmux pane for the OAuth URL (typically appears within a few seconds)
