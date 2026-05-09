@@ -126,6 +126,25 @@ $refs"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/gstack-skill-mirrors.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
+# Issue #218 — non-gstack project skills with a byte-identical mirror
+# contract. Each skill listed here MUST exist at both .claude/skills/<id>/
+# and .codex/skills/<id>/ AND the SKILL.md content must be byte-identical.
+# This check runs BEFORE the broader skill-set diff so it stays effective
+# even while the full repo-wide mirror gap (out of scope for #218) is
+# pending a separate cleanup.
+NON_GSTACK_MIRRORED_SKILLS=(claim-to-merge)
+for skill in "${NON_GSTACK_MIRRORED_SKILLS[@]}"; do
+  claude_path=".claude/skills/$skill/SKILL.md"
+  codex_path=".codex/skills/$skill/SKILL.md"
+  [ -f "$claude_path" ] \
+    || fail "non-gstack mirrored skill missing Claude side: $claude_path"
+  [ -f "$codex_path" ] \
+    || fail "non-gstack mirrored skill missing Codex side: $codex_path"
+  cmp -s "$claude_path" "$codex_path" \
+    || fail "non-gstack mirrored skill content drift: $skill
+  $claude_path vs $codex_path differ byte-wise; resync the mirror"
+done
+
 find .claude/skills -mindepth 2 -maxdepth 2 -name SKILL.md \
   | sed 's#^\.claude/skills/##; s#/SKILL.md$##' \
   | sort > "$tmp/claude-skills.txt"
