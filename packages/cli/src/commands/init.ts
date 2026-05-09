@@ -132,11 +132,20 @@ export interface InitResult {
 }
 
 /**
+ * Single source of truth for the claim-to-merge skill identity (issue #218).
+ * Renaming the skill should require touching ONLY this constant — derived
+ * downstream are MIRROR_CLAIM_STEP, the helper call site, and the banner
+ * routing-doc path. Bash side (scripts/verify-gstack-skill-mirrors.sh)
+ * mirrors this in NON_GSTACK_MIRRORED_SKILLS — keep them in sync.
+ */
+const CLAIM_TO_MERGE_SKILL_ID = "claim-to-merge" as const;
+
+/**
  * Step key for the user-level mirror of project-level skills (issue #218).
  * Centralized so a typo can't silently de-register the step from any of:
  * the function body, stepGroups (renderInitResult), or stepLabel mapping.
  */
-const MIRROR_CLAIM_STEP = "mirror-claim-to-merge-skill" as const;
+const MIRROR_CLAIM_STEP = `mirror-${CLAIM_TO_MERGE_SKILL_ID}-skill` as const;
 
 /**
  * Repo-relative paths the FIXEDFLOW banner mentions. Exported so the unit
@@ -144,7 +153,7 @@ const MIRROR_CLAIM_STEP = "mirror-claim-to-merge-skill" as const;
  * silent doc renames making the banner lie.
  */
 export const FIXEDFLOW_BANNER_DOC_PATHS = [
-  ".claude/skills/claim-to-merge/SKILL.md",
+  `.claude/skills/${CLAIM_TO_MERGE_SKILL_ID}/SKILL.md`,
   "docs/FIXEDFLOW.md",
   "docs/PR-PLAN.md",
   "docs/POSTPR.md",
@@ -1203,7 +1212,7 @@ function doMirrorClaimToMergeSkill(
   dryRun: boolean,
 ): InitStepResult {
   return mirrorProjectSkillToUserLevel(
-    "claim-to-merge",
+    CLAIM_TO_MERGE_SKILL_ID,
     MIRROR_CLAIM_STEP,
     paths,
     dryRun,
