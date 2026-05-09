@@ -28,6 +28,22 @@ backstop).
 - **Per-feature long-running verification across sessions** → start at [RUN-VERIFY-LOOP.md](RUN-VERIFY-LOOP.md)
 - **CLAUDE.md `Verify loop canned answer` trigger** → user types "how to run verify loop?" → main agent returns the canned answer that points here
 
+## Backlog ingestion from bottom-level layer (per ADR-0010)
+
+The bottom-level fixture corpus (`tests/fixtures/scenarios/`) emits records to
+`docs/verify/backlog.jsonl` whenever its tier (c) LLM-judge returns
+`verdict: fail` or `verdict: needs-human-review`, or when a
+`judge-overrides.jsonl` entry is appended in any fixture. Each backlog record
+references the fixture slug, the audit hash of the (c) run, and the PR (if
+applicable). The per-feature long-running loop (`RUN-VERIFY-LOOP.md`) treats
+these entries as priority work items: pick the oldest unresolved backlog
+record, compose `GOAL.md` around the disputed semantic claim, run JUDGE /
+META-JUDGE iterations, and close the backlog record by either updating the
+fixture's `expected_decisions.json` (recapture) or appending the human verdict
+to `judge-overrides.jsonl`. Tier 3 thus consumes the irreducible-uncertainty
+output of tier 1 — the deterministic gates already passed; only semantic
+ambiguity remains.
+
 ## Real iteration records
 
 - `docs/features/real-time-intercept/{GOAL,iterations.jsonl,last-verified.md}` — first dogfood (2026-05-08)

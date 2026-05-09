@@ -9,6 +9,23 @@ format; 2. use interactive `claudefast` with tmux and finally submit
 `/export <path>`. Add the `/export` files to PR contents to convince readers.
 Keep updating code/docs until both paths agree.
 
+## Related — bottom-level fixture corpus (preferred when fixture exists, per ADR-0010)
+
+When a feature has a corresponding **scenario fixture** under
+`tests/fixtures/scenarios/<feature-slug>--<scenario-name>/`, prefer running
+the bottom-layer replay over re-capturing a fresh `claudefast` snapshot:
+
+```bash
+pnpm teamagent fixture replay --tier=all --slug <feature-slug>--<scenario-name>
+```
+
+The bottom layer (per ADR-0010) supersedes the claudefast-snapshot + tmux-export
+capture portion of this doc with deterministic byte/sequence diff plus an
+α-strict LLM-judge gate. The PR-record narrative requirements below remain in
+force (commit and PR messages must explain how to reproduce verification). When
+no fixture exists yet, fall back to the original flow in this doc and consider
+whether `pnpm teamagent fixture record` should produce one.
+
 ## Related — autonomous verification loop (per-feature, long-running)
 
 This doc is the **PR-time gate** (claudefast + tmux interactive once per

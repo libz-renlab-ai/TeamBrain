@@ -120,6 +120,16 @@ _Avoid_: handler（无修饰）, hook function（与 React hooks 联想冲突）
 单条 `AttributionEvent` 的「audience + blocking」复合标签，三档枚举：`log | context | block`，加在 `AttributionEventBase` 上 optional 默认 `"log"`。`log` 仅给用户看；`context` 暗示 Claude 应消费此事件作 context（用于 future PostToolUse / UserPromptSubmit exit 2 退码反馈）；`block` 暗示这是阻断性归因（用于 future PreToolUse exit 2 + block 副作用）。**当前是 metadata only**——`HookShell.runHook` / `runAdvancedHook` 始终 exit 0（per ADR-0008 的 "never block harness" 保证），delivery 字段不映射到退码，仅供 Renderer 未来按 delivery 做装饰渲染（如 context 事件加 `[→Claude]` 前缀）+ grep 检索点 + future ADR 在已有字段上扩展退码聚合。详见 ADR-0009。
 _Avoid_: severity（描述事件响度 info/highlight/warning，与 delivery 正交，不要混用）
 _Avoid_: audience（仅描述谁看不描述阻止；delivery 同时承载两个维度，单字段收窄到 3 种实际有意义组合）
+### Bottom-level testing（per ADR-0010；scenario-fixture corpus with α-strict gate）
+
+**Scenario fixture**:
+一次 `claudefast -p` 会话的完整录像档案，住 `tests/fixtures/scenarios/<feature-slug>--<scenario-name>/`；含 immutable raw（`transcript.jsonl` + `hooks.raw.log`）+ 派生产物（`events.jsonl` + `expected_decisions.json` + `events/`）+ `db-seed.json` + `audit/`（capture 时 LLM I/O 全程留底）+ `judge.md`。Slug 即 ID 即 grep target；count-type 派生由 ephemeral LLM-generated 脚本一次性产出，仅落 `audit/`，永不进 `packages/*/src/`。
+_Avoid_: snapshot, recording, capture, sample（前三者与早期 ad-hoc 录像术语重叠；canonical 词是 scenario fixture）
+
+**Three replay tiers**:
+(a) byte-level event diff（毫秒、每 commit、`pnpm test` 也跑）；(b) sequence + DB-state-after diff（秒级、每 PR）；(c) LLM-judge expected-decisions 对照（分钟级、temperature=0、dual-consensus、PR-blocking）。三层走 α-strict gate：任一 FAIL 即阻 PR；唯一逃生口是 `<fixture>/judge-overrides.jsonl` append-only 人审记录。详 ADR-0010。
+_Avoid_: layer / level / stage（与 L1/L2/L3 storage layer 撞名；tier 是 canonical 词）
+
 ### Review & PR workflow（开 PR 到 merge 之间的 review 链；ADR-0007 设定 `/review` skill 为权威 gate）
 
 **POSTPR loop**:
