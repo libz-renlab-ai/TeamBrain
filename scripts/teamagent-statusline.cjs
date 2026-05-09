@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 "use strict";
 
+// Suppress Node 22's `(node:NNN) ExperimentalWarning: SQLite is an experimental
+// feature ...` line. CC concatenates statusline stdout+stderr onto the same
+// status row, so the warning corrupts the rendered line and tricks new users
+// into thinking the install is broken (issue #168). statusline is a short-lived
+// read-only sub-process, so silencing all process warnings here is scoped.
+process.removeAllListeners("warning");
+process.on("warning", () => {});
+
 const path = require("path");
 const os = require("os");
 
@@ -8,7 +16,7 @@ let DatabaseSync;
 try {
   ({ DatabaseSync } = require("node:sqlite"));
 } catch {
-  process.stdout.write("TeamAgent正在运行 · (sqlite不可用)");
+  process.stdout.write("TeamAgent正在运行 | (sqlite不可用)");
   process.exit(0);
 }
 
@@ -112,23 +120,31 @@ function getLastLearnedDate(db) {
   }
 }
 
+// issue #168: HELPED 与 RISK 事件来源必须不重叠，否则 helped+risk 加不平、
+// 新用户算账算不通。HELPED = 工具的"正向贡献"（静默命中、AI 听了提醒、KB 增长）；
+// RISK = 工具拦下/标记的风险事件（warned / blocked / bypass / bad pattern）。
+// 同一条事件只能落在一组里。
 const HELPED_EVENT_KINDS = [
   "hook-pre.passive_matched", // 静默命中（passive 规则）—— PreToolUse 实际发出的"matched"事件
-  "hook-pre.warned",
-  "hook-pre.blocked",
   "hook-post.result",
   "ai.narrative.injected",
   "ai.narrative.complied",
+  "ai.override.complied",
   "pitfall.added",
   "compiler.updated",
   "extractor.extracted",
   "calibrator.adjusted",
   "init.completed",
+  "scenario.run",
+  "error.candidate.approved",
+  "error.candidate.rejected",
 ];
 
 const RISK_EVENT_KINDS = [
   "hook-pre.warned",
   "hook-pre.blocked",
+  "ai.override.ignored",
+  "ai.override.blocked_circumvented",
   "ai.output.bad_pattern",
   "ai.narrative.recurred",
   "ai.user_input.flagged",
@@ -202,7 +218,7 @@ function main() {
   // 未 init 且像项目 → 显眼提醒 (此路径在 --dangerously-skip-permissions 下也触发,
   // 因为 statusline 不经过 hook 系统)
   if (!hasProjectDb() && isProjectDir(process.cwd())) {
-    process.stdout.write("⚠️  TeamAgent 未初始化本项目 · 运行 `teamagent init` 启用");
+    process.stdout.write("⚠️  TeamAgent 未初始化本项目 | 运行 `teamagent init` 启用");
     return;
   }
 
@@ -211,7 +227,7 @@ function main() {
   const eventsDb = tryOpenDb(EVENTS_DB);
 
   if (!projectDb && !globalDb && !eventsDb) {
-    process.stdout.write("TeamAgent 未安装 · 运行 `npm install -g teamagent-X.Y.Z.tgz`");
+    process.stdout.write("TeamAgent 未安装 | 运行 `npm install -g teamagent-X.Y.Z.tgz`");
     return;
   }
 
@@ -239,12 +255,27 @@ function main() {
   const helpedToday = countEventsSince(eventsDb, HELPED_EVENT_KINDS, sinceIso(0));
   const helpedWeek = countEventsSince(eventsDb, HELPED_EVENT_KINDS, sinceIso(7));
   const riskToday = countEventsSince(eventsDb, RISK_EVENT_KINDS, sinceIso(0));
-  const hint = getLatestContributionHint(eventsDb) ?? "护航中";
+  const latestHint = getLatestContributionHint(eventsDb);
 
   if (eventsDb) eventsDb.close();
 
+  // issue #168 B-lite: 当 helped + risk 全为 0 / null 且 events 库里也找不到
+  // 任何最近事件时，hint 给出"待命引导"文案而不是干瘪的"护航中"。这避免了
+  // 全新装、状态栏永远显示 0/0 + 护航中的死气沉沉。命中过任意一条事件后，
+  // getLatestContributionHint 会查到最新 row → 自动回到具体文案。
+  const allCountsZeroOrNull =
+    (helpedToday === null || helpedToday === 0) &&
+    (helpedWeek === null || helpedWeek === 0) &&
+    (riskToday === null || riskToday === 0);
+  const idleHint = allCountsZeroOrNull && !latestHint
+    ? "待命中（让我学几条规则吧）"
+    : "护航中";
+  const hint = latestHint ?? idleHint;
+
+  // issue #168: 字段加中文标签 + 时间窗后缀（今/周），分隔符 " | "。
+  // 老格式 `helped:T/W · risk:T` 让新用户三秒内连环三问；新格式让数字自带语义。
   process.stdout.write(
-    `TeamAgent · rules:${formatMetric(count)} · helped:${formatMetric(helpedToday)}/${formatMetric(helpedWeek)} · risk:${formatMetric(riskToday)} · ${hint}`,
+    `TeamAgent | 规则:${formatMetric(count)} | 帮过:${formatMetric(helpedToday)}今/${formatMetric(helpedWeek)}周 | 拦过:${formatMetric(riskToday)}今 | ${hint}`,
   );
 }
 
