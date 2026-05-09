@@ -27,7 +27,7 @@ description: TeamBrain claim-an-issue → merged-code routing。给「我要 cla
 |------|------|--------|------|
 | 1 | 你 | 用 fixed-flow template 提交 ≤50 字 issue | [docs/FIXEDFLOW.md](../../../docs/FIXEDFLOW.md) §「issue body 必须满足」 |
 | 2 | 你 | 跑 `/grill-me` 或 `/grill-with-docs`，整段贴评论（末尾 `--- end grill ---`），加 `grill-ready` label | [docs/FIXEDFLOW.md](../../../docs/FIXEDFLOW.md) §「grill 评论必须满足」 |
-| 3 | driver | `.codex/worktrees/issue-<N>/` 起 `feat/issue-<N>`，按 grill 评论实现 | [.codex/skills/fixed-flow-driver/SKILL.md](../fixed-flow-driver/SKILL.md) |
+| 3 | driver | `.codex/worktrees/issue-<N>/` 起 `feat/issue-<N>`，按 grill 评论实现 | [fixed-flow-driver SKILL](../fixed-flow-driver/SKILL.md) |
 | 4 | driver | `/review` 无限 fix-loop 至 PASS；每轮 finding 走 PR-PLAN 写新 fix-plan 文件 | [docs/PR-PLAN.md](../../../docs/PR-PLAN.md) |
 | 5 | driver | 普通 PR（**禁 `--draft`**）→ `gh pr merge <N> --squash`（**仅 squash**）→ 清理 worktree → ff pull main | [docs/POSTPR.md](../../../docs/POSTPR.md) |
 
@@ -42,7 +42,7 @@ description: TeamBrain claim-an-issue → merged-code routing。给「我要 cla
 |---------------|------|
 | [docs/FIXEDFLOW.md](../../../docs/FIXEDFLOW.md) | 唯一 issue→PR→merge 工作流；5 步铁律、issue/grill 必满足、refusal layer、bypass 逃生 |
 | [docs/HOWTO-PLAN-PR.md](../../../docs/HOWTO-PLAN-PR.md) | PR 描述 4 段（plan / expected outputs / how-to-verify / claudefast probes） |
-| [.codex/skills/fixed-flow-driver/SKILL.md](../fixed-flow-driver/SKILL.md) | step 3-5 driver 实现细则；sanity gates、worktree、impl、/review loop、PR、merge |
+| [fixed-flow-driver SKILL](../fixed-flow-driver/SKILL.md) | step 3-5 driver 实现细则；sanity gates、worktree、impl、/review loop、PR、merge |
 | [docs/PR-PLAN.md](../../../docs/PR-PLAN.md) | `/review` 出 finding 时的 fix protocol：禁开 follow-up issue，写 fix-plan，TEAMWORK 修，同 PR branch |
 | [docs/POSTPR.md](../../../docs/POSTPR.md) | `/review` PASS 后的收尾：squash-only merge → ExitWorktree → ff pull |
 | [docs/TEAMWORK.md](../../../docs/TEAMWORK.md) | N+1+(2N) 并行 worker 模式（main + lead + 2N teammate） |

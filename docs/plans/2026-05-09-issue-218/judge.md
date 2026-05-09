@@ -21,7 +21,7 @@
 | typecheck | `pnpm typecheck` | 无 TS 错误 |
 | init dry-run | `pnpm teamagent init --dry-run --target both` 在 `.judge/<run_id>/sandbox/` tmpdir | exit 0；stdout 含 FIXEDFLOW banner |
 | canonical probe | `claudefast -p "explain TeamBrain FIXEDFLOW: 5 steps, what's manual vs auto"` | 命中 5 步 + manual/auto 切分 |
-| mirror 一致性 | `bash scripts/verify-gstack-skill-mirrors.sh` | 双镜像差异为 0（utility，非 judge 本身） |
+| mirror 一致性 | `diff -q .claude/skills/claim-to-merge/SKILL.md .codex/skills/claim-to-merge/SKILL.md` | 两份文件 byte-identical（exit 0）。仓库整体 mirror 一致性见 `scripts/verify-gstack-skill-mirrors.sh`，但该脚本含 pre-existing 不一致（11 个 .claude skill 未镜像到 .codex），不在本 PR judge 范围内 |
 
 ## V2 DUMP — 固定 JSON
 
