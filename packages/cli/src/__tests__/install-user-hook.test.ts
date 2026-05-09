@@ -32,6 +32,23 @@ describe("installUserHook", () => {
     expect(settings.hooks.SessionStart[0].hooks[0].command).toContain("bin-session-start.cjs");
   });
 
+  // Issue #209: SessionStart command must be wrapped in the graceful shim so a
+  // missing ~/.teamagent/hooks/bin-session-start.cjs (manual rm -rf, partial
+  // install) exits 0 silently instead of dumping MODULE_NOT_FOUND on every
+  // Claude Code launch.
+  it("SessionStart command is wrapped in `bash -c '[ -f X ] || exit 0; exec node X'` shim", () => {
+    const r = installUserHook({ homeDir: home, sessionStartEntry });
+    const settings = JSON.parse(fs.readFileSync(r.settingsPath, "utf-8"));
+    const cmd: string = settings.hooks.SessionStart[0].hooks[0].command;
+
+    expect(cmd.startsWith("bash -c '")).toBe(true);
+    expect(cmd).toContain("[ -f ");
+    expect(cmd).toContain("|| exit 0");
+    expect(cmd).toContain("exec node ");
+    // Stale plain-`node <path>` form must not survive.
+    expect(cmd.match(/^node /)).toBeNull();
+  });
+
   it("已有其他 SessionStart hook: 不覆盖, 追加", () => {
     const settingsPath = path.join(home, ".claude", "settings.json");
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });

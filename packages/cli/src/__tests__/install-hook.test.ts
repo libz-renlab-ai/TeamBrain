@@ -1055,6 +1055,43 @@ describe("installHook — PR #181 fix-cycle", () => {
     }
   });
 
+  it("(7) issue #209: user-level hook commands wrap staged path in graceful `bash -c '[ -f X ] || exit 0; exec node X'` shim", () => {
+    // Regression lock: the user-level entries written into
+    // ~/.claude/settings.json must be wrapped so a missing
+    // ~/.teamagent/hooks/<bin>.cjs (manual rm -rf, partial install, disk-full
+    // mid-stage) does NOT spam Node MODULE_NOT_FOUND traces in every Stop /
+    // PreToolUse / PostToolUse / UserPromptSubmit.
+    const stage = path.join(tmp.cwd, "src-stage");
+    const hookEntry = plantBundle(stage, "bin-pre-tool-use.cjs");
+    const postHookEntry = plantBundle(stage, "bin-post-tool-use.cjs");
+    const userPromptEntry = plantBundle(stage, "bin-user-prompt-submit.cjs");
+    const stopEntry = plantBundle(stage, "bin-stop.cjs");
+
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry,
+      postHookEntry,
+      userPromptEntry,
+      stopEntry,
+      homeDir: fakeHome,
+      userLevel: true,
+    });
+
+    const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
+    const content = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
+
+    for (const channel of ["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop"] as const) {
+      const cmd: string = content.hooks[channel][0].hooks[0].command;
+      expect(cmd.startsWith("bash -c '")).toBe(true);
+      expect(cmd).toContain("[ -f ");
+      expect(cmd).toContain("|| exit 0");
+      expect(cmd).toContain("exec node ");
+      // Stale plain-`node <path>` form must NOT survive — the absence of any
+      // graceful guard is exactly what issue #209 is about.
+      expect(cmd.match(/^node /)).toBeNull();
+    }
+  });
+
   it("(6) userLevel: false leaves ~/.claude/settings.json untouched (regression lock for staging refactor)", () => {
     // Sanity re-check after PR #181 staging refactor — the userLevel:false
     // path must NOT touch the user-level settings file at all.

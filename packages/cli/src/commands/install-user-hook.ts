@@ -3,6 +3,8 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
+import { buildUserLevelHookCommand } from "../lib/user-level-hook-shim.js";
+
 /**
  * 注册一个**用户级** SessionStart hook 到 `~/.claude/settings.json`。
  *
@@ -49,15 +51,6 @@ export interface InstallUserHookResult {
   backupPath: string | null;
   hookEntry: string;
   alreadyInstalled: boolean;
-}
-
-function toForwardSlash(p: string): string {
-  return p.replace(/\\/g, "/");
-}
-
-function shellQuote(p: string): string {
-  if (/^[A-Za-z0-9_./:\\-]+$/.test(p)) return p;
-  return `"${p.replace(/"/g, '\\"')}"`;
 }
 
 function defaultSessionStartEntry(): string {
@@ -137,7 +130,11 @@ export function installUserHook(
     hooks: [
       {
         type: "command",
-        command: `node ${shellQuote(toForwardSlash(stagedPath))}`,
+        // Issue #209: wrap in graceful shim so a missing
+        // ~/.teamagent/hooks/bin-session-start.cjs exits 0 silently rather
+        // than printing MODULE_NOT_FOUND on every Claude Code launch. See
+        // lib/user-level-hook-shim.ts for the full rationale.
+        command: buildUserLevelHookCommand(stagedPath),
         timeout: 10,
       },
     ],

@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { buildUserLevelHookCommand } from "../lib/user-level-hook-shim.js";
+
 /**
  * Round-2 F2: CPU-friendly sync sleep. The previous busy-wait
  * `while (Date.now() < until)` loop pegged a core at 100% during contention.
@@ -722,7 +724,11 @@ function mergeUserLevelHooks(
 
       if (!settings.hooks[op.channel]) settings.hooks[op.channel] = [];
 
-      const command = `node ${shellQuote(toForwardSlash(pathForCommand))}`;
+      // Issue #209: wrap user-level hook commands in a graceful shim so a
+      // missing or moved staged bundle exits 0 silently instead of spamming a
+      // Node MODULE_NOT_FOUND trace into every Claude Code session. Mirrors
+      // the project-level B-103 pattern; see lib/user-level-hook-shim.ts.
+      const command = buildUserLevelHookCommand(pathForCommand);
       const newEntry: HookEntry = {
         _teamagentTag: op.tag,
         hooks: [{ type: "command", command, timeout: op.timeout }],
