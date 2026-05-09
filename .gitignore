@@ -18,6 +18,8 @@ packages/benchmark/bench-*.json
 packages/benchmark/bench-*.md
 .claude/scheduled_tasks.lock
 .claude/laziness/
+# skill-creator workspaces (eval JSON, run_loop logs, snapshots — regenerated per run).
+.claude/skills/*-workspace/
 # pnpm pack build artifacts
 packages/*/*.tgz
 # reclassify command outputs (timestamped, regenerated per run)
