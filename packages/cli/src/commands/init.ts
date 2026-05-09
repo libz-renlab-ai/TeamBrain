@@ -131,6 +131,13 @@ export interface InitResult {
   packPrompt?: string;
 }
 
+/**
+ * Step key for the user-level mirror of project-level skills (issue #218).
+ * Centralized so a typo can't silently de-register the step from any of:
+ * the function body, stepGroups (renderInitResult), or stepLabel mapping.
+ */
+const MIRROR_CLAIM_STEP = "mirror-claim-to-merge-skill" as const;
+
 function resolvePaths(opts: InitOptions) {
   const home = opts.homeDir ?? os.homedir();
   const cwd = opts.cwd ?? process.cwd();
@@ -1142,7 +1149,7 @@ function doMirrorClaimToMergeSkill(
 
   if (!fs.existsSync(sourcePath)) {
     return {
-      step: "mirror-claim-to-merge-skill",
+      step: MIRROR_CLAIM_STEP,
       status: "skipped",
       detail:
         "源 .claude/skills/claim-to-merge/SKILL.md 不存在（仅 TeamBrain 仓库需要）",
@@ -1151,7 +1158,7 @@ function doMirrorClaimToMergeSkill(
 
   if (dryRun) {
     return okStep(
-      "mirror-claim-to-merge-skill",
+      MIRROR_CLAIM_STEP,
       `(dry-run) 会复制 ${sourcePath} → ${targetPath}`,
     );
   }
@@ -1160,11 +1167,11 @@ function doMirrorClaimToMergeSkill(
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.copyFileSync(sourcePath, targetPath);
     return okStep(
-      "mirror-claim-to-merge-skill",
+      MIRROR_CLAIM_STEP,
       `已复制到 ${targetPath}（用户级 FIXEDFLOW 入口）`,
     );
   } catch (err) {
-    return failStep("mirror-claim-to-merge-skill", String(err).slice(0, 200));
+    return failStep(MIRROR_CLAIM_STEP, String(err).slice(0, 200));
   }
 }
 
@@ -1396,7 +1403,7 @@ export function renderInitResult(result: InitResult): string {
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
     { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook", "audit-orphan-hooks"] },
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
-    { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills", "mirror-claim-to-merge-skill"] },
+    { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills", MIRROR_CLAIM_STEP] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
     { icon: "📦", label: "Stack packs", stepKeys: ["load-pack", "pack-prompt"] },
   ];
@@ -1542,7 +1549,7 @@ function stepLabel(step: string): string {
     "audit-orphan-hooks": "孤儿 .sh 审计",
     "install-plugins": "Plugin 安装",
     "compile-skills": "Skills",
-    "mirror-claim-to-merge-skill": "FIXEDFLOW Skill",
+    [MIRROR_CLAIM_STEP]: "FIXEDFLOW Skill",
     "link-codex-files": "Codex 软链接",
     "load-pack": "Pack 安装",
     "pack-prompt": "Pack 提示",
