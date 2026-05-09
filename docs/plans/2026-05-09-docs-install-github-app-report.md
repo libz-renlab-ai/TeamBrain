@@ -118,3 +118,39 @@ POSTPR-time §V6 ADR-0007 probe (must remain PASS post-merge — no canned
 answer / hook anchor was introduced, so the probe should still resolve
 organically). The cloud `claude-code-review.yml` will fire automatically
 when the PR opens and posts a supplementary signal.
+
+## Post-PR observation — fix-cycle 1 (added 2026-05-09)
+
+PR #191 opened. The cloud `claude-review` GH Action fired and **failed**:
+
+```text
+App token exchange failed: 401 Unauthorized — Claude Code is not
+installed on this repository. Please install the Claude Code GitHub
+App at https://github.com/apps/claude
+```
+
+This was a useful real-world signal even though the cloud action never
+got far enough to post a code review comment: the failure exposed a doc
+gap. The original `claude-code-action.md` named the
+`CLAUDE_CODE_OAUTH_TOKEN` secret but did not name the second half of the
+install — the **GitHub App authorization** at
+`https://github.com/apps/claude`. The OAuth token alone fails OIDC →
+app-token exchange.
+
+Per `docs/PR-PLAN.md` (no follow-up issues for in-flight PRs), a
+fix-cycle ran inside this PR:
+
+- `docs/plans/2026-05-09-pr-191-fix-plan.md` — minimal PR-PLAN.
+- `docs/features/claude-code-action.md` — gained a "Prerequisites — both
+  halves of the install" section near the top and a "Troubleshooting"
+  section with the verbatim 401 error string + remediation.
+- `docs/plans/2026-05-09-pr-191-fix-report.md` — companion fix-report.
+
+The cloud action will continue to fail until a human completes the App
+authorization at `https://github.com/apps/claude`. That is **not**
+blocking for this docs-only PR per ADR-0007 — the **local** `/review`
+skill remains the authoritative gate and does not depend on the GitHub
+App. The chatgpt-codex-connector[bot] also commented on this PR with
+"You have reached your Codex usage limits for code reviews" — the old
+Codex bot is still wired up at the org level (separate cleanup) but is
+rate-limited and unable to add review pressure here either.
