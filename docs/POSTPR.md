@@ -106,9 +106,10 @@ The merge button is locked until all three hold. There is no exit door that says
 ## Caveats
 
 - **CI vs `/review` are independent**: CI green doesn't mean `/review` PASS and vice-versa. Both must pass.
+- **Cloud `claude-code-review.yml` GH Action is supplementary, not the gate**: PR #190 added an automated `anthropics/claude-code-action@v1` review that fires on every `pull_request` open / synchronize / reopen and posts a review comment. Per ADR-0007 the **local** `/review` skill is still the authoritative POSTPR gate; the cloud comment is a secondary signal. If the cloud is silent or 👍 but local `/review` flags P1/P2, the local finding wins — do not merge. If the cloud flags an issue local missed, treat it as a normal review comment and triage by the same severity table above. Mechanics (triggers, secret, plugin, ADR reconciliation): `docs/features/claude-code-action.md`.
 - **Auto-merge race**: `gh pr merge --auto --squash` queues the merge. If `/review` finds a P1 *after* CI passes, auto-merge can win the race and your fix has to land as a follow-up PR (not a follow-up issue) — that's the only legitimate use of follow-up artefacts. Treat it as "already merged" in step 2 and apply the same PR-PLAN + TEAMWORK rule to the follow-up PR. To minimise auto-merge races, prefer holding `gh pr merge --auto` until at least one `/review` pass has completed on the open PR.
 - **Conflict race**: base can move after `/review` passes. If GitHub reports a merge conflict, resolve it on the PR branch, rerun verification, and restart the POSTPR loop.
-- **Re-trigger `/review`**: after a fix push, invoke `/review` again on the new diff.
+- **Re-trigger `/review`**: after a fix push, invoke `/review` again on the new diff. The cloud `claude-code-review.yml` job re-fires automatically on `synchronize`; the **local** `/review` skill must be re-invoked manually (Claude Code agent or human types `/review`).
 
 ## Verification
 

@@ -235,6 +235,13 @@ nice-to-have may be deferred to a follow-up issue only with explicit
 human reviewer approval. The only legitimate follow-up artefact is a
 follow-up *PR* in the rare auto-merge-raced-`/review` case.
 
+After PR #190, every PR also gets an automated cloud review from the
+`claude-code-review.yml` GH Action posting as a normal review comment.
+Per ADR-0007 the **local** `/review` skill stays the authoritative gate;
+the cloud signal is supplementary. Don't merge with an outstanding local
+finding even when the cloud comment is silent or 👍. Mechanics:
+`docs/features/claude-code-action.md`.
+
 ```
 PR opened → CI + /review → issues found?
    → block the merge
