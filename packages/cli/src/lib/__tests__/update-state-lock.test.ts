@@ -138,4 +138,75 @@ describe("withUpdateStateLock", () => {
     expect(observed).not.toBeNull();
     expect(observed!).toEqual(defaultUpdateState());
   });
+
+  it("timeout fallback: write still lands when the lock is held by a live pid", () => {
+    // Plant a lock file with the current process's pid — process.kill(pid, 0)
+    // returns truthy on a live pid, so the helper's stale-pid steal can never
+    // succeed. After 5 retries (~750ms) the helper falls back to a non-locked
+    // write so the caller still makes progress. Without this fallback a
+    // genuinely-held lock would silently prevent the foreground command's
+    // update from ever persisting.
+    const lockPath = path.join(tempHome, "update-state.lock");
+    fs.mkdirSync(tempHome, { recursive: true });
+    fs.writeFileSync(lockPath, String(process.pid), "utf-8");
+
+    const result = withUpdateStateLock(tempHome, (s) => ({
+      ...s,
+      snooze_level: 4,
+    }));
+    expect(result.snooze_level).toBe(4);
+
+    const persisted = parseUpdateState(
+      fs.readFileSync(path.join(tempHome, "update-state.json"), "utf-8")
+    );
+    expect(persisted.snooze_level).toBe(4);
+
+    // We did NOT acquire the lock, so we also did NOT delete the planted lock
+    // file. Verify it's still there — the test's afterEach cleans up tempHome.
+    expect(fs.existsSync(lockPath)).toBe(true);
+  });
+
+  it("field-ownership merge: bin-updater pattern preserves foreground-owned fields", () => {
+    // bin-updater holds a stale `state` (read at the top of runUpdater, before
+    // a multi-second HTTP fetch). Meanwhile a foreground `teamagent update
+    // --snooze` lands a new snooze_level. When bin-updater later persists, its
+    // writeState dep uses withUpdateStateLock with a mutator that overlays only
+    // updater-owned fields on top of the fresh `live` state. This test models
+    // that pattern and asserts foreground's snooze survives bin-updater's
+    // etag/sha update.
+    //
+    // Step 1: bin-updater reads stale state (snooze_level=0).
+    const stale = withUpdateStateLock(tempHome, (s) => s);
+    expect(stale.snooze_level).toBe(0);
+
+    // Step 2: foreground snooze lands while bin-updater is fetching.
+    withUpdateStateLock(tempHome, (s) => ({
+      ...s,
+      snooze_level: 3,
+      snooze_until_ts: 999_000,
+    }));
+
+    // Step 3: bin-updater persists, with a stale-state-scoped overlay that
+    // only touches updater-owned fields.
+    const updaterIntent = {
+      ...stale,
+      last_branch_etag: "etag-xyz",
+      last_branch_sha: "sha-abcdef",
+    };
+    withUpdateStateLock(tempHome, (live) => ({
+      ...live, // live state on disk includes foreground's snooze
+      last_branch_etag: updaterIntent.last_branch_etag,
+      last_branch_sha: updaterIntent.last_branch_sha,
+    }));
+
+    // Step 4: assert both writes survived — foreground's snooze AND
+    // bin-updater's etag/sha.
+    const persisted = parseUpdateState(
+      fs.readFileSync(path.join(tempHome, "update-state.json"), "utf-8")
+    );
+    expect(persisted.snooze_level).toBe(3);
+    expect(persisted.snooze_until_ts).toBe(999_000);
+    expect(persisted.last_branch_etag).toBe("etag-xyz");
+    expect(persisted.last_branch_sha).toBe("sha-abcdef");
+  });
 });
