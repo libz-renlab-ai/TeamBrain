@@ -40,6 +40,15 @@
 
 「手动」只到 step 2 为止；step 3-5 全程不需要人介入。
 
+## Claim an issue — what happens (2-outcome contract)
+
+「Claim an issue」= driver / agent 拿到一个 issue 编号、决定要不要进入 step 3-5 自动流。结局**只有两种**：
+
+1. **Pause and stop if no `grill-ready` label / 无有效 grill 评论** — driver 先校验 issue 是否齐备 grill comment + `grill-ready` label。缺失或评论无法解析 → driver 不动代码、不开 worktree、不写 PR；回评 `needs-grill-comment`（或交给 conformance Action 在 24h 后 auto-close）后立刻返回 idle。
+2. **Do everything from issue → merged PR with `/review` fix-loop** — 条件满足时 driver 全自动跑：建 `.codex/worktrees/issue-<N>/` → 按 grill comment 实现 → 跑 `/review` skill 进 **无限循环 fix**（每轮写 `docs/plans/<date>-pr-<N>-fix-plan.md` 三段计划）至 PASS → 开**普通** PR（`--draft` 严禁）→ `gh pr merge <N> --squash --auto`（仅 squash）→ 清理 worktree、写 `report.md`。全程无人介入。
+
+简记：**no grill-ready ⇒ pause；have grill-ready ⇒ issue → impl → /review loop → PR → squash-merge，全自动。**
+
 ## Manual vs auto 分界
 
 | 步骤 | 谁负责 | 进入条件 | 退出条件 |
