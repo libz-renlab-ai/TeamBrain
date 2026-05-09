@@ -50,4 +50,14 @@
 
 ## 偏差记录
 
-无偏差。本次实现严格按 [grill 评论](https://github.com/libz-renlab-ai/TeamBrain/issues/218#issuecomment-4412373351) 全 4 段计划执行；后续如出现 `/review` finding，按 [docs/PR-PLAN.md](../../PR-PLAN.md) 写 fix-plan，禁开 follow-up issue。
+实现严格按 [grill 评论](https://github.com/libz-renlab-ai/TeamBrain/issues/218#issuecomment-4412373351) 全 4 段计划执行。
+
+### 已知 pre-existing failure（与本 PR 无关）
+
+`packages/cli/src/__tests__/bin-stop.test.ts > calls analyze with transcript_path and commit=true` 在 `origin/main` (`ef6924d`) 上**已经是 fail**——根本原因是 test 在 line 72 / line 80 用 `process.cwd()` 同时作为输入与期望值，但 `runStopPipeline` 会通过 `findTeamagentRoot` 从 cwd 向上 walk 找到祖先 `.teamagent/`，而 worktree (`.codex/worktrees/issue-218/`) 嵌在主 checkout (`/Users/m1/projects/TeamBrain`) 内部，walk-up 命中外层并把 cwd 改写成主 checkout 路径。在外层主 checkout 跑测试时不会出现该现象。
+
+复现：在仓库 base SHA `ef6924d` 上 `npx vitest run packages/cli/src/__tests__/bin-stop.test.ts` 同样 fail。
+
+不在本 PR 范围内修复（按 [docs/PR-PLAN.md](../../PR-PLAN.md) 也不开 follow-up issue；如果要修，应单独在 main checkout 起 PR 改 test 用 `findTeamagentRoot` 的实际值而非 `process.cwd()`）。
+
+后续如出现 `/review` finding，按 [docs/PR-PLAN.md](../../PR-PLAN.md) 在同一 PR branch 上写 fix-plan 并修，禁开 follow-up issue。
