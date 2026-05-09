@@ -1130,7 +1130,17 @@ function doMirrorClaimToMergeSkill(
       `已复制到 ${targetPath}（用户级 FIXEDFLOW 入口）`,
     );
   } catch (err) {
-    return failStep(MIRROR_CLAIM_STEP, String(err).slice(0, 200));
+    // Cosmetic mirror failure (e.g. $HOME read-only, disk full) must NOT
+    // flip result.ok=false (line 517 aggregates `!steps.some(failed)`).
+    // If it did, the success message AND the FIXEDFLOW banner this step
+    // is meant to advertise would both get suppressed — exactly the
+    // outcome the grill spec guarded against with "失败不 fatal". Use
+    // okStep with a warning prefix so the failure is reported but
+    // non-fatal.
+    return okStep(
+      MIRROR_CLAIM_STEP,
+      `⚠️ 镜像失败但 init 继续（cosmetic）: ${String(err).slice(0, 160)}`,
+    );
   }
 }
 
