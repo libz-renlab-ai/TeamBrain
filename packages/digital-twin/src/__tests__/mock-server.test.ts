@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -133,9 +139,14 @@ describe('mock-server', () => {
     expect(existsSync(join(outputDir, body.user_id, '2026-05-09', 'sx.jsonl'))).toBe(true);
   });
 
-  it('rejects non-POST with 405', async () => {
-    const res = await fetch(`${server.url}/v1/cc-sessions`);
+  it('rejects non-POST/GET with 405', async () => {
+    const res = await fetch(`${server.url}/v1/cc-sessions`, { method: 'PUT' });
     expect(res.status).toBe(405);
+  });
+
+  it('GET on POST-only route falls through to 404', async () => {
+    const res = await fetch(`${server.url}/v1/cc-sessions`);
+    expect(res.status).toBe(404);
   });
 
   it('rejects unknown route with 404', async () => {
@@ -219,3 +230,161 @@ describe('dateStamp', () => {
     expect(dateStamp('', NOW)).toBe('2026-05-09');
   });
 });
+
+describe('mock-server dashboard', () => {
+  let server: MockServerHandle;
+  let outputDir: string;
+
+  beforeEach(async () => {
+    outputDir = mkdtempSync(join(tmpdir(), 'dt-dash-'));
+    // seed: userA/2026-05-09/x.jsonl, userA/2026-05-08/y.jsonl, userB/2026-05-08/z.ogg
+    const transcript = '{"role":"user","content":"hello"}\n{"role":"assistant","content":"hi"}\n';
+    const ogg = Buffer.from('OggS fakeoggbody', 'binary');
+    const a09 = join(outputDir, 'userA', '2026-05-09');
+    const a08 = join(outputDir, 'userA', '2026-05-08');
+    const b08 = join(outputDir, 'userB', '2026-05-08');
+    mkdirSync(a09, { recursive: true });
+    mkdirSync(a08, { recursive: true });
+    mkdirSync(b08, { recursive: true });
+    writeFileSync(join(a09, 'x.jsonl'), transcript);
+    writeFileSync(join(a08, 'y.jsonl'), transcript);
+    writeFileSync(join(b08, 'z.ogg'), ogg);
+    server = await startMockServer({ port: 0, outputDir });
+  });
+
+  afterEach(async () => {
+    await server.close();
+  });
+
+  it('GET / returns the HTML dashboard', async () => {
+    const res = await fetch(`${server.url}/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type') ?? '').toContain('text/html');
+    const body = await res.text();
+    expect(body).toContain('TeamAgent Collector');
+  });
+
+  it('GET /index.html also returns the dashboard', async () => {
+    const res = await fetch(`${server.url}/index.html`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type') ?? '').toContain('text/html');
+  });
+
+  it('GET unknown path returns 404', async () => {
+    const res = await fetch(`${server.url}/no-such-path`);
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /api/users returns sorted user list', async () => {
+    const res = await fetch(`${server.url}/api/users`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { users: string[] };
+    expect(body.users).toEqual(['userA', 'userB']);
+  });
+
+  it('GET /api/dates?user=userA returns dates desc', async () => {
+    const res = await fetch(`${server.url}/api/dates?user=userA`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { dates: string[] };
+    expect(body.dates).toEqual(['2026-05-09', '2026-05-08']);
+  });
+
+  it('GET /api/dates without user returns 400', async () => {
+    const res = await fetch(`${server.url}/api/dates`);
+    expect(res.status).toBe(400);
+  });
+
+  it('GET /api/sessions?user=userA&date=2026-05-09 returns one entry', async () => {
+    const res = await fetch(
+      `${server.url}/api/sessions?user=userA&date=2026-05-09`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sessions: Array<{ id: string; ext: string; size: number; mtime: string }>;
+    };
+    expect(body.sessions.length).toBe(1);
+    const first = body.sessions[0]!;
+    expect(first.id).toBe('x');
+    expect(first.ext).toBe('jsonl');
+    expect(first.size).toBeGreaterThan(0);
+    expect(first.mtime).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('GET /api/sessions for nonexistent user returns empty list', async () => {
+    const res = await fetch(
+      `${server.url}/api/sessions?user=ghost&date=2026-05-09`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sessions: unknown[] };
+    expect(body.sessions).toEqual([]);
+  });
+
+  it('GET /api/file jsonl returns text/plain raw content', async () => {
+    const res = await fetch(
+      `${server.url}/api/file?user=userA&date=2026-05-09&id=x&ext=jsonl`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type') ?? '').toContain('text/plain');
+    const body = await res.text();
+    expect(body).toContain('"role":"user"');
+    expect(body).toContain('"role":"assistant"');
+  });
+
+  it('GET /api/file ogg returns audio/ogg raw bytes', async () => {
+    const res = await fetch(
+      `${server.url}/api/file?user=userB&date=2026-05-08&id=z&ext=ogg`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type') ?? '').toBe('audio/ogg');
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf.toString('binary')).toBe('OggS fakeoggbody');
+  });
+
+  it('GET /api/file for missing file returns 404', async () => {
+    const res = await fetch(
+      `${server.url}/api/file?user=userA&date=2026-05-09&id=does-not-exist&ext=jsonl`,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects path traversal: user=..', async () => {
+    const res = await fetch(`${server.url}/api/dates?user=..`);
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects path traversal: user contains slash', async () => {
+    const res = await fetch(
+      `${server.url}/api/dates?user=${encodeURIComponent('userA/extra')}`,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects path traversal: user contains backslash', async () => {
+    const res = await fetch(
+      `${server.url}/api/dates?user=${encodeURIComponent('userA\\extra')}`,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects malformed date: 2026-13-99', async () => {
+    const res = await fetch(
+      `${server.url}/api/file?user=userA&date=2026-13-99&id=x&ext=jsonl`,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects path traversal: id=../etc', async () => {
+    const res = await fetch(
+      `${server.url}/api/file?user=userA&date=2026-05-09&id=${encodeURIComponent('../etc')}&ext=jsonl`,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects unknown ext', async () => {
+    const res = await fetch(
+      `${server.url}/api/file?user=userA&date=2026-05-09&id=x&ext=evil`,
+    );
+    expect(res.status).toBe(400);
+  });
+});
+

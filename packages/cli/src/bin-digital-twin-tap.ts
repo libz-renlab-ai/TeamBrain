@@ -17,7 +17,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import {
-  loadConfig,
+  ensureDefaultConfig,
   isEnabled,
   tapSession,
   digitalTwinPaths,
@@ -57,10 +57,13 @@ export async function main(
   homedirFn: () => string = homedir,
 ): Promise<void> {
   const home = homedirFn();
-  // Config gate: missing / disabled / no token → silent return.
+  // Zero-touch onboarding: auto-create a default config on first invocation
+  // so newly-installed teammates don't need to run `teamagent digital-twin
+  // login` manually. Respects `enabled: false` (user-paused) and malformed
+  // JSON (returns null → silent skip below).
   let cfg;
   try {
-    cfg = loadConfig(digitalTwinPaths(home).configFile);
+    cfg = ensureDefaultConfig(home);
   } catch {
     return;
   }
