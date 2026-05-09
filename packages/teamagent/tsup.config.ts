@@ -26,6 +26,13 @@ const NATIVE_EXTERNAL = [
   // Externalize so the startup bundle does not hard-require these heavy/native
   // optional deps. Their consumers should import lazily where still needed.
   "@xenova/transformers",
+  // ulid uses CJS `require("crypto")` to lazy-load Node crypto. When bundled
+  // into our ESM entry, tsup's `__require` shim throws "Dynamic require not
+  // supported" → ulid falls through to `throw "secure crypto unusable"` at
+  // module-load → bin.js dies before parsing argv. Externalize so Node loads
+  // ulid natively (its UMD entry uses real `require`, which works in CJS
+  // module context). Requires `ulid` to be a sibling-installed dependency.
+  "ulid",
 ];
 
 export default defineConfig([

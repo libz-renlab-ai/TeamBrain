@@ -238,6 +238,9 @@ importers:
       sqlite-vec:
         specifier: ^0.1.9
         version: 0.1.9
+      ulid:
+        specifier: ^2.4.0
+        version: 2.4.0
 
   packages/types:
     dependencies:

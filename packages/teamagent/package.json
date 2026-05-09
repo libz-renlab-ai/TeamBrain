@@ -27,6 +27,7 @@
     "postinstall": "node postinstall.mjs"
   },
   "dependencies": {
-    "sqlite-vec": "^0.1.9"
+    "sqlite-vec": "^0.1.9",
+    "ulid": "^2.4.0"
   }
 }
