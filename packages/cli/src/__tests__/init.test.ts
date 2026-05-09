@@ -1065,7 +1065,14 @@ describe("executeInit — mirror-claim-to-merge-skill (issue #218)", () => {
     tmp = mkTmp();
     ctr = 0;
   });
-  afterEach(() => tmp.cleanup());
+  afterEach(() => {
+    // F17 (review iter 2): safety net for any vi.spyOn that leaked because
+    // executeInit threw before the test's explicit mockRestore() ran.
+    // vitest.config.ts pins singleThread + fileParallelism:false, so a
+    // leaked spy persists for every subsequent test in this file.
+    vi.restoreAllMocks();
+    tmp.cleanup();
+  });
 
   const commonOpts = () => ({
     cwd: tmp.cwd,
