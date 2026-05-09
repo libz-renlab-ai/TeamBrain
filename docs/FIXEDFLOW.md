@@ -51,6 +51,17 @@
 
 简记：**no grill-ready ⇒ driver 起来即退；have grill-ready ⇒ driver 一路跑到 squash-merge；driver 永远只在被人显式调用时才存在。**
 
+## Preempted by an existing PR — 2-outcome contract
+
+如果你（或 driver）准备 claim 一个 issue 时，发现仓库里**已经有别人开了 PR** 实现这个 issue（典型表现：`gh pr list --search "issue-<N>"` 出来一条非自己开的 PR；或者自己 PR 推上去之后才看到 base 上多了对位 PR），结局**只有两种**：
+
+1. **Review and give up（review 全 PASS ⇒ 放弃自己的 PR）** — 用本地 `/review` skill（ADR-0007 权威 review gate）跑一遍那个已存在 PR 的 diff；如果 `/review` 返回 no actionable findings（无 P1/P2，CI 也绿），就**放弃自己这条线**：关闭自己的 PR（如果已开）、`ExitWorktree action="remove"`、删本地 `feat/issue-<N>` 分支、按 `docs/POSTPR.md` 让那条**别人的** PR 走 `gh pr merge <N> --squash --delete-branch`（仅 squash）。不要再为同一个 issue 开重复 PR。
+2. **Append fix to that PR + /review loop（review 有问题 ⇒ 在那个 PR 上追加修复）** — 如果 `/review` 在那个 PR 上找到 P1/P2 finding，**严禁** 另开一个 follow-up PR / follow-up issue（按 `docs/POSTPR.md` 的 hard rule）。改成：在 `docs/plans/<date>-pr-<n>-fix-plan.md` 写 PR-PLAN 三段（task / expected outputs / judge harness），按 `docs/TEAMWORK.md` 的 N+1+(2N) 模式修；fix commits 推到**那个 PR 的同一 branch**（同 org maintainer 通常有权限；fork PR 则在 PR 评论里贴 fix-plan + patch 引导原作者 push），然后**基于那个 PR** 继续跑 `/review` fix-loop 至 PASS，最后 squash-merge 那个 PR、回到自己的 worktree 跑 `git pull --ff-only`。
+
+简记：**review good ⇒ review and give up；review bad ⇒ append fix commits to that PR + /review loop based on that PR ⇒ squash-merge 那个 PR。** 永远不为同一个 issue 维持两个并行 PR。
+
+鸭鸭说 (>ω<)：呷呷~ 如果发现别人已经把活儿干了，鸭鸭就先用 `/review` 给那个 PR 当裁判。判得过就放手让他去 squash-merge；判不过也别另起炉灶，直接把补丁推到那个 PR 的同一个 branch 上，循环 `/review` 到 PASS。一个 issue 永远只对应一个 squash-merged PR，绝不能有两条平行线哟~
+
 ## 步骤负责人分界
 
 | 步骤 | 谁负责 | 进入条件 | 退出条件 |
