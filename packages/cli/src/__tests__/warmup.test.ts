@@ -58,6 +58,39 @@ describe("warmup graceful skip (issue #160)", () => {
       expect(state).not.toBeNull();
       expect(state!.status).toBe("skipped");
       expect(state!.completed_at).toMatch(/^\d{4}-/);
+      // pid=0 (placeholder convention) ensures older teamagent readers that
+      // don't recognize "skipped" fall through to "downloading" with
+      // isPidAlive(0)=true rather than reporting `stale_downloading` FAIL.
+      expect(state!.pid).toBe(0);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("does NOT overwrite a live downloading state (race with detached warmup)", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "warmup-race-"));
+    try {
+      const stateFilePath = path.join(tmp, ".warmup-state.json");
+      // Pre-write a "live" downloading state with a pid that's actually alive
+      // (the current test process). The skip path must respect this and not
+      // overwrite.
+      fs.writeFileSync(stateFilePath, JSON.stringify({
+        status: "downloading",
+        started_at: "2026-05-09T07:00:00Z",
+        pid: process.pid,
+        model: "Xenova/multilingual-e5-small",
+        progress: { loaded_bytes: 1024, total_bytes: 100_000, files_done: 0, files_total: 5 },
+      }), "utf-8");
+      const result = await runWarmup({
+        stderr: () => {},
+        stateFilePath,
+        haveVectorOptionals: () => false,
+      });
+      expect(result.skipped).toBe(true);
+      // State should remain "downloading" — skip path saw a live writer and
+      // backed off.
+      const state = readWarmupState(stateFilePath);
+      expect(state!.status).toBe("downloading");
       expect(state!.pid).toBe(process.pid);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });

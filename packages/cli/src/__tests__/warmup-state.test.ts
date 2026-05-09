@@ -188,6 +188,27 @@ describe("describeWarmupReadiness", () => {
     }
   });
 
+  // Issue #160: graceful skip when optional vector deps absent.
+  it("returns skipped when status is skipped (issue #160)", () => {
+    const tmp = mkTmp("warmup-state-skipped-");
+    try {
+      const filePath = path.join(tmp.dir, "state.json");
+      writeWarmupState(filePath, {
+        status: "skipped",
+        started_at: "2026-05-09T07:00:00Z",
+        completed_at: "2026-05-09T07:00:00Z",
+        pid: process.pid,
+        model: "Xenova/multilingual-e5-small",
+      });
+      const r = describeWarmupReadiness(filePath);
+      expect(r.ready).toBe(false);
+      expect(r.reason).toBe("skipped");
+      expect(r.state?.status).toBe("skipped");
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
   it("returns downloading when status=downloading and pid is current process (alive)", () => {
     const tmp = mkTmp("warmup-state-downloading-");
     try {

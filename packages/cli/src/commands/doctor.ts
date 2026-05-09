@@ -354,6 +354,17 @@ async function checkVectorModelState(home: string): Promise<DoctorCheckResult> {
       detail: `failed: ${r.state.error ?? "unknown"}`,
     };
   }
+  if (r.reason === "skipped" && r.state) {
+    // Issue #160: warmup short-circuited because the optional vector deps
+    // (@xenova/transformers + onnxruntime-node) weren't installed. This is
+    // not a failure — the substring matcher works fine — so doctor reports
+    // status="skip" with a clear "how to enable" hint.
+    return {
+      name: "vector_model",
+      status: "skip",
+      detail: `skipped (vector deps 未安装; 重装时设 TEAMAGENT_INCLUDE_OPTIONAL=1 启用语义匹配)`,
+    };
+  }
   return {
     name: "vector_model",
     status: "fail",

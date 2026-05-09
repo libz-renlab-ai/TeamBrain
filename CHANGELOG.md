@@ -15,6 +15,16 @@ artifacts the user sees) do NOT need an entry.
 
 ### Fixed
 
+- **Issue #160**: `teamagent warmup` now exits 0 with a friendly skip message
+  when the optional vector deps (`@xenova/transformers` + `onnxruntime-node`)
+  are not installed, instead of exit 1 with a misleading "warmup failed"
+  error. The state file (`~/.teamagent/.warmup-state.json`) records
+  `status="skipped"` rather than `status="failed"`, and the postinstall log
+  (`~/.teamagent/postinstall.log`) gains a positive
+  `stage=warmup status=skipped reason=optional-not-installed` line so doctor
+  and bug-report tooling can distinguish "skipped on purpose" from "warmup
+  never reached." `teamagent doctor` reports `vector_model: skip` (not
+  `fail`) for the same state.
 - **Issue #161**: hooks fired from a sub-directory now correctly resolve to
   the project root's `.teamagent/knowledge.db` via walk-up. Previously
   `findTeamagentRoot` was missing entirely and every hook entry hard-coded

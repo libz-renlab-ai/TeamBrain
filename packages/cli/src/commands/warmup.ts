@@ -81,8 +81,23 @@ function defaultHaveVectorOptionals(): boolean {
     try {
       const req = createRequire(here);
       const home = os.homedir();
+      // Walk up from `here` to the nearest enclosing package.json so the first
+      // knownRoot points at the actual install (npm hoisted, pnpm symlinked,
+      // custom `npm config set prefix /opt/...`, Volta, etc.) instead of
+      // `dist/commands` which can never contain @xenova. Mirrors the
+      // Wave-9 P3 fix in init.ts:299-308.
+      const pkgRoot = (() => {
+        let cur = path.dirname(here);
+        for (let i = 0; i < 16; i++) {
+          if (fs.existsSync(path.join(cur, "package.json"))) return cur;
+          const parent = path.dirname(cur);
+          if (parent === cur) return path.dirname(here);
+          cur = parent;
+        }
+        return path.dirname(here);
+      })();
       const knownRoots = [
-        path.dirname(here),
+        pkgRoot,
         path.join(home, ".local", "share", "pnpm"),
         path.join(home, ".npm-global"),
         path.join(home, ".pnpm-global"),
@@ -224,19 +239,48 @@ export async function runWarmup(opts: WarmupOptions = {}): Promise<WarmupResult>
   if (!opts.embedder) {
     const haveOptionals = (opts.haveVectorOptionals ?? defaultHaveVectorOptionals)();
     if (!haveOptionals) {
+      // Don't trample a live detached warmup: if init/postinstall just spawned
+      // a real download child and we're a manual `teamagent warmup` racing it,
+      // overwriting state="downloading" with state="skipped" would briefly tell
+      // bin-pre-tool-use to fall back to legacy until the real child finishes.
+      // Read existing state; if a live writer is in flight, leave it alone.
+      let liveDownloadPid: number | null = null;
+      if (opts.stateFilePath) {
+        try {
+          const { readWarmupState, isPidAlive } = await import("../warmup-state.js");
+          const existing = readWarmupState(opts.stateFilePath);
+          if (existing && existing.status === "downloading" && isPidAlive(existing.pid)) {
+            liveDownloadPid = existing.pid;
+          }
+        } catch {
+          // best-effort
+        }
+      }
       stderr(
         "ℹ️  TeamAgent: 跳过向量模型预热 (vector matcher 未启用; @xenova/transformers + onnxruntime-node 未安装)\n",
       );
       stderr(
         "   启用方式: 重装时设 TEAMAGENT_INCLUDE_OPTIONAL=1，或 npm install -g @xenova/transformers@^2.17.0 onnxruntime-node@1.14.0\n",
       );
-      tryWriteState({
-        status: "skipped",
-        started_at: startedAtIso,
-        completed_at: new Date().toISOString(),
-        pid: process.pid,
-        model: stateModel,
-      });
+      if (liveDownloadPid === null) {
+        // pid=0 (placeholder convention) instead of process.pid: the writing
+        // process has already exited by the time anyone reads it, and older
+        // teamagent readers (pre-PR-213) that don't recognize "skipped" fall
+        // through to the "downloading" branch — pid=0 is treated as alive
+        // (per writeInitialPlaceholder), so they see a soft "downloading"
+        // rather than a hard `stale_downloading` FAIL.
+        tryWriteState({
+          status: "skipped",
+          started_at: startedAtIso,
+          completed_at: new Date().toISOString(),
+          pid: 0,
+          model: stateModel,
+        });
+      } else {
+        stderr(
+          `   (注意: 检测到正在后台预热 (pid=${liveDownloadPid})，本次跳过不覆盖该状态)\n`,
+        );
+      }
       return {
         ok: true,
         durationMs: Date.now() - start,

@@ -341,15 +341,25 @@ async function main() {
   let warmupStatus = "skipped";
   const haveVectorOptionals = vectorOptionalsInstalled(pkgDir);
   if (process.env.TEAMAGENT_SKIP_WARMUP === "1") {
-    process.stderr.write(duckify("[2/2] warmup: 跳过 (TEAMAGENT_SKIP_WARMUP=1)\n"));
-    // Issue #160: positive log entry so postinstall.log records the decision.
+    // Issue #160: log BEFORE the user-visible message so a SIGINT / EPIPE
+    // crash mid-banner still leaves `stage=warmup status=skipped` in
+    // postinstall.log — the whole point of this entry is to disambiguate
+    // "skipped on purpose" from "Stage 2 never reached."
     recordSetupStatus("warmup", "skipped", "env-skip-warmup");
+    process.stderr.write(duckify("[2/2] warmup: 跳过 (TEAMAGENT_SKIP_WARMUP=1)\n"));
   } else if (!haveVectorOptionals) {
     // @xenova/transformers and onnxruntime-node have been removed from
     // package.json entirely (npm 10 ignores --omit=optional for tarball
     // installs; omission is the only reliable gate). Skip warmup entirely;
     // substring matcher is fully functional from first interception.
     warmupStatus = "vector-deps-absent";
+    // Issue #160: postinstall.log no longer goes silent on the skip path —
+    // it records `status=skipped reason=optional-not-installed` so doctor
+    // and bug-report tooling can distinguish "skipped on purpose" from
+    // "warmup never reached" (which previously looked identical). Log
+    // BEFORE the multi-line banner so a SIGINT / EPIPE between the two
+    // cannot leave the log line missing.
+    recordSetupStatus("warmup", "skipped", "optional-not-installed");
     process.stderr.write(
       duckify(
         "[2/2] warmup: 跳过 (vector deps 未安装; 默认装的是 substring matcher 版本)\n" +
@@ -358,11 +368,6 @@ async function main() {
           "     或者直接：npm install -g teamagent @xenova/transformers@^2.17.0 onnxruntime-node@1.14.0\n",
       ),
     );
-    // Issue #160: postinstall.log no longer goes silent on the skip path —
-    // it records `status=skipped reason=optional-not-installed` so doctor
-    // and bug-report tooling can distinguish "skipped on purpose" from
-    // "warmup never reached" (which previously looked identical).
-    recordSetupStatus("warmup", "skipped", "optional-not-installed");
   } else if (process.env.TEAMAGENT_FOREGROUND_WARMUP === "1") {
     process.stderr.write(duckify("[2/2] 下载向量模型 (TEAMAGENT_FOREGROUND_WARMUP=1; ~120MB):\n"));
     const t2 = Date.now();
