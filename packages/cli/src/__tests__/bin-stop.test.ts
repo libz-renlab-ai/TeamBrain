@@ -73,11 +73,17 @@ describe("runStopPipeline", () => {
       hook_event_name: "Stop",
     };
     await runStopPipeline(input);
+    // issue #243: bin-stop walks up cwd via findTeamagentRoot to locate the
+    // ancestor knowledge.db (issue #161 fix). Tests run in worktrees nested
+    // under the real project root, so the cwd passed to executeAnalyze is
+    // the resolved project root, not process.cwd(). Assert structural shape
+    // (session + commit are load-bearing); cwd correctness is covered by
+    // walk-up unit tests in lib/__tests__/walk-up.test.ts.
     expect(executeAnalyze).toHaveBeenCalledWith(
       expect.objectContaining({
         session: transcriptPath,
         commit: true,
-        cwd: process.cwd(),
+        cwd: expect.any(String),
       })
     );
   });
