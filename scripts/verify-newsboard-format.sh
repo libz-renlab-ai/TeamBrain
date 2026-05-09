@@ -118,6 +118,12 @@ Indent lives in bash (INDENT var), not in .md. got: '- $key:$val'"
   fi
   # Strip the canonical leading single space for placeholder check.
   body="${val:1}"
+  # Reject "- KEY: " (only-whitespace value): body is empty after the canonical
+  # leading space, so the rendered banner would silently show indent + nothing.
+  if [[ -z "$body" ]]; then
+    fail "label '$key' has empty body (only whitespace after colon). \
+All labels must have visible text. got: '- $key:$val'"
+  fi
   # E. Required placeholders inside specific labels
   for need in $(declare_required_placeholders "$key"); do
     case "$body" in
