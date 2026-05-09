@@ -6,6 +6,7 @@ import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { openDb } from "@teamagent/adapters";
 import { stripLegacyTeamagentBlock } from "@teamagent/core";
+import { unifiedDiff } from "./doctor-diff.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -16,12 +17,31 @@ export interface DoctorCheckResult {
   fix?: string;
 }
 
+/**
+ * Issue #172: outcome of a single auto-fix attempt. Distinct from
+ * `DoctorCheckResult` because the same check can have a "would change file X"
+ * preview (dry-run), an "applied + backup at Y" record, or a "fix failed" error.
+ */
+export interface FixOutcome {
+  name: string;
+  status: "preview" | "applied" | "skipped" | "error";
+  detail: string;
+  filePath?: string;
+  diff?: string;
+  backupPath?: string;
+  error?: string;
+}
+
 export interface DoctorResult {
   checks: DoctorCheckResult[];
   passed: number;
   failed: number;
   skipped: number;
   allPassed: boolean;
+  /** Issue #172: present when opts.fix is true; entries describe each attempted fix. */
+  fixOutcomes?: FixOutcome[];
+  /** Issue #172: convenience flag — true when opts.fix && opts.dryRun. */
+  dryRun?: boolean;
 }
 
 export type CodexProbe = (env?: NodeJS.ProcessEnv) => ClaudeProbeResult;
@@ -29,10 +49,14 @@ export type McpProbe = (url: string) => Promise<{ reachable: boolean; detail: st
 
 export interface DoctorOptions {
   fix?: boolean;
+  /** Issue #172: when true with `fix`, compute fix preview (unified diff) without writing anything. */
+  dryRun?: boolean;
   json?: boolean;
   postinstall?: boolean;
   cwd?: string;
   homeDir?: string;
+  /** Issue #172: backup destination root; defaults to `<homeDir>/.teamagent/backups`. Test injection point. */
+  backupDir?: string;
   claudeProbe?: ClaudeProbe;
   codexProbe?: CodexProbe;
   mcpProbe?: McpProbe;
@@ -49,44 +73,129 @@ export function parseDoctorArgs(argv: string[]): DoctorOptions {
   }
   return {
     fix: argv.includes("--fix"),
+    dryRun: argv.includes("--dry-run"),
     json: argv.includes("--json"),
     postinstall: argv.includes("--postinstall"),
     cwd,
   };
 }
 
-async function autoFix(check: DoctorCheckResult, opts: DoctorOptions): Promise<void> {
-  if (check.status !== "fail") return;
+/**
+ * Issue #172: copy a file to `<backupDir>/<basename>.<ISO-with-safe-chars>.bak`
+ * before any destructive write. Returns the absolute backup path.
+ *
+ * The ISO timestamp has `:` and `.` replaced with `-` so the resulting filename
+ * is valid on Windows (which forbids `:` in path components).
+ */
+export function backupFile(filePath: string, opts: DoctorOptions): string {
+  const home = opts.homeDir ?? os.homedir();
+  const backupDir = opts.backupDir ?? path.join(home, ".teamagent", "backups");
+  fs.mkdirSync(backupDir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = path.join(backupDir, `${path.basename(filePath)}.${ts}.bak`);
+  fs.copyFileSync(filePath, backupPath);
+  return backupPath;
+}
+
+async function autoFix(check: DoctorCheckResult, opts: DoctorOptions): Promise<FixOutcome> {
+  if (check.status !== "fail") {
+    return { name: check.name, status: "skipped", detail: "check did not fail" };
+  }
   const cwd = opts.cwd ?? process.cwd();
   try {
     if (check.name === "knowledge-db") {
+      if (opts.dryRun) {
+        return {
+          name: check.name,
+          status: "preview",
+          detail: "将运行 `teamagent init` 创建 knowledge.db（无 prior state，因此跳过 backup）",
+        };
+      }
       const { executeInit } = await import("./init.js");
       await executeInit({ cwd, skipImport: true });
+      return {
+        name: check.name,
+        status: "applied",
+        detail: "已通过 `teamagent init` 创建 knowledge.db",
+      };
     } else if (check.name === "hook-registered" || check.name === "hook-script") {
+      if (opts.dryRun) {
+        return {
+          name: check.name,
+          status: "preview",
+          detail: "将向 .claude/settings.local.json 注册 PreToolUse hook",
+        };
+      }
       const { installHook } = await import("./install-hook.js");
       installHook({ cwd });
+      return {
+        name: check.name,
+        status: "applied",
+        detail: "已向 .claude/settings.local.json 注册 PreToolUse hook",
+      };
     } else if (check.name === "claude-md") {
       // B-109: strip the legacy TEAMAGENT:START..END managed block left over
       // from before #63 disabled in-file rule dumps. The new compile path
       // never re-writes it, so dropping the block makes doctor green again.
+      // Issue #172: now also backups before write and supports dry-run preview.
       const claudeMdPath = path.join(cwd, "CLAUDE.md");
-      if (fs.existsSync(claudeMdPath)) {
-        const before = fs.readFileSync(claudeMdPath, "utf-8");
-        const after = stripLegacyTeamagentBlock(before);
-        if (after !== before) {
-          if (after === "") {
-            // The whole file was the block (or block+whitespace). Removing
-            // CLAUDE.md is friendlier than leaving a 0-byte stub that other
-            // tooling may misread.
-            fs.unlinkSync(claudeMdPath);
-          } else {
-            fs.writeFileSync(claudeMdPath, after, "utf-8");
-          }
-        }
+      if (!fs.existsSync(claudeMdPath)) {
+        return {
+          name: check.name,
+          status: "skipped",
+          detail: `CLAUDE.md 不存在: ${claudeMdPath}`,
+          filePath: claudeMdPath,
+        };
       }
+      const before = fs.readFileSync(claudeMdPath, "utf-8");
+      const after = stripLegacyTeamagentBlock(before);
+      if (after === before) {
+        return {
+          name: check.name,
+          status: "skipped",
+          detail: "未检测到 legacy TEAMAGENT 块",
+          filePath: claudeMdPath,
+        };
+      }
+      const willDelete = after === "";
+      const targetAfter = willDelete ? null : after;
+
+      if (opts.dryRun) {
+        return {
+          name: check.name,
+          status: "preview",
+          filePath: claudeMdPath,
+          diff: unifiedDiff(claudeMdPath, before, targetAfter),
+          detail: willDelete
+            ? "将删除 CLAUDE.md（整文件即 legacy 块）"
+            : "将剥离 legacy TEAMAGENT 块",
+        };
+      }
+
+      const backupPath = backupFile(claudeMdPath, opts);
+      if (willDelete) {
+        fs.unlinkSync(claudeMdPath);
+      } else {
+        fs.writeFileSync(claudeMdPath, after, "utf-8");
+      }
+      return {
+        name: check.name,
+        status: "applied",
+        filePath: claudeMdPath,
+        backupPath,
+        detail: willDelete
+          ? "已删除 CLAUDE.md（整文件即 legacy 块）"
+          : "已剥离 legacy TEAMAGENT 块",
+      };
     }
-  } catch {
-    // best-effort
+    return { name: check.name, status: "skipped", detail: "无自动修复" };
+  } catch (e) {
+    return {
+      name: check.name,
+      status: "error",
+      detail: "自动修复失败",
+      error: String(e).slice(0, 200),
+    };
   }
 }
 
@@ -94,19 +203,29 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   const cwd = opts.cwd ?? process.cwd();
   const home = opts.homeDir ?? os.homedir();
   const checks: DoctorCheckResult[] = [];
+  const fixOutcomes: FixOutcome[] = [];
+  // Issue #172: dry-run is opt-in via `--fix --dry-run`. We never re-run
+  // checks after a dry-run autoFix because nothing actually changed.
+  const dryRun = !!opts.fix && !!opts.dryRun;
+
+  const tryFix = async (check: DoctorCheckResult): Promise<void> => {
+    if (!opts.fix || check.status !== "fail") return;
+    const outcome = await autoFix(check, opts);
+    fixOutcomes.push(outcome);
+  };
 
   // Check 1: Node.js version
   const nodeCheck = checkNodeVersion();
   checks.push(nodeCheck);
   if (nodeCheck.status === "fail") {
-    return finalize(checks, true);
+    return finalize(checks, true, opts, fixOutcomes);
   }
 
   // Check 2: Claude Code installed
   const claudeCheck = checkClaudeCode(opts.claudeProbe);
   checks.push(claudeCheck);
   if (claudeCheck.status === "fail") {
-    return finalize(checks, true);
+    return finalize(checks, true, opts, fixOutcomes);
   }
 
   // Check 3: sqlite-vec loadable
@@ -116,19 +235,22 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   const homeCheck = checkHomeDir(home);
   checks.push(homeCheck);
   if (homeCheck.status === "fail") {
-    return finalize(checks, true);
+    return finalize(checks, true, opts, fixOutcomes);
   }
 
   // Check 5: knowledge.db exists
   const dbPath = path.join(cwd, ".teamagent", "knowledge.db");
   const dbCheck = checkKnowledgeDb(dbPath);
   checks.push(dbCheck);
-  if (opts.fix && dbCheck.status === "fail") await autoFix(dbCheck, opts);
+  await tryFix(dbCheck);
+  // Issue #172: parity with the original `--fix` flow — when fix is enabled
+  // (real or dry-run), continue through subsequent checks even if the DB is
+  // still failing. Dry-run preview lists every would-be fix; real --fix falls
+  // through because executeInit/installHook already mutated state.
   if (dbCheck.status === "fail" && !opts.fix) {
-    // Skip remaining checks if DB missing
     checks.push(skip("hook-registered", "knowledge.db 先修"));
     checks.push(skip("hook-script", "knowledge.db 先修"));
-    return finalize(checks, false);
+    return finalize(checks, false, opts, fixOutcomes);
   }
 
   // Check 6: Hook registered
@@ -136,16 +258,16 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   const userSettingsPath = path.join(home, ".claude", "settings.json");
   const hookCheck = checkHookRegistered(settingsPath, userSettingsPath);
   checks.push(hookCheck);
-  if (opts.fix && hookCheck.status === "fail") await autoFix(hookCheck, opts);
+  await tryFix(hookCheck);
   if (hookCheck.status === "fail" && !opts.fix) {
     checks.push(skip("hook-script", "Hook 注册先修"));
-    return finalize(checks, false);
+    return finalize(checks, false, opts, fixOutcomes);
   }
 
   // Check 7: Hook script exists
   const hookScriptCheck = checkHookScript(settingsPath);
   checks.push(hookScriptCheck);
-  if (opts.fix && hookScriptCheck.status === "fail") await autoFix(hookScriptCheck, opts);
+  await tryFix(hookScriptCheck);
 
   // Check 8: settings.json scope (project vs user, PreToolUse vs SessionStart)
   checks.push(checkSettingsJsonScope(settingsPath, path.join(home, ".claude", "settings.json")));
@@ -163,8 +285,14 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   const claudeMdPath = path.join(cwd, "CLAUDE.md");
   const claudeMdCheck = checkClaudeMd(claudeMdPath);
   if (opts.fix && claudeMdCheck.status === "fail") {
-    await autoFix(claudeMdCheck, opts);
-    checks.push(checkClaudeMd(claudeMdPath));
+    await tryFix(claudeMdCheck);
+    if (dryRun) {
+      // Dry-run: file unchanged, keep original check result so the user sees
+      // the same fail row (the diff is in fixOutcomes).
+      checks.push(claudeMdCheck);
+    } else {
+      checks.push(checkClaudeMd(claudeMdPath));
+    }
   } else {
     checks.push(claudeMdCheck);
   }
@@ -172,7 +300,7 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   // Check 13 (issue #91): vector model warmup state.
   checks.push(await checkVectorModelState(home));
 
-  return finalize(checks, false);
+  return finalize(checks, false, opts, fixOutcomes);
 }
 
 /**
@@ -233,7 +361,12 @@ async function checkVectorModelState(home: string): Promise<DoctorCheckResult> {
   };
 }
 
-function finalize(checks: DoctorCheckResult[], earlyExit: boolean): DoctorResult {
+function finalize(
+  checks: DoctorCheckResult[],
+  earlyExit: boolean,
+  opts: DoctorOptions = {},
+  fixOutcomes: FixOutcome[] = [],
+): DoctorResult {
   // Always report the team-sharing product boundary, including early-return
   // paths such as missing knowledge.db or unregistered hooks. It is independent
   // of local environment health and must stay visible in --json output.
@@ -243,7 +376,18 @@ function finalize(checks: DoctorCheckResult[], earlyExit: boolean): DoctorResult
   const passed = checks.filter((c) => c.status === "pass").length;
   const failed = checks.filter((c) => c.status === "fail").length;
   const skipped = checks.filter((c) => c.status === "skip").length;
-  return { checks, passed, failed, skipped, allPassed: failed === 0 && !earlyExit };
+  const result: DoctorResult = {
+    checks,
+    passed,
+    failed,
+    skipped,
+    allPassed: failed === 0 && !earlyExit,
+  };
+  if (opts.fix) {
+    result.fixOutcomes = fixOutcomes;
+    result.dryRun = !!opts.dryRun;
+  }
+  return result;
 }
 
 function skip(name: string, detail: string): DoctorCheckResult {
@@ -736,7 +880,7 @@ export function checkClaudeMd(claudeMdPath: string): DoctorCheckResult {
       name: "claude-md",
       status: "fail",
       detail: "仍包含旧 TEAMAGENT:START 生成块（#63 之后已弃用）",
-      fix: "teamagent doctor --fix  （自动剥离旧块）",
+      fix: "teamagent doctor --fix  （会先备份到 ~/.teamagent/backups/；配 --dry-run 预览）",
     };
   }
   return {
@@ -752,6 +896,42 @@ export function checkTeamSharingStatus(): DoctorCheckResult {
     status: "pass",
     detail: "M5 viral-sync ready: gate-1 secret scan, gate-2 scope classifier, LWW+tombstone merge, m5-publish auto-commit, post-merge auto-pull",
   };
+}
+
+/**
+ * Issue #172: subcommand help for `teamagent doctor --help` / `-h`.
+ * Previously the dispatcher fell through to executeDoctor on `--help`, which
+ * meant new users could not preview what `--fix` would do without running it.
+ */
+export function renderDoctorHelp(): string {
+  return [
+    "teamagent doctor — 检查工具安装是否健康",
+    "",
+    "用法:",
+    "  teamagent doctor                跑全部检查并打印结果",
+    "  teamagent doctor --fix          自动修复能修的项；写入前会先备份到 ~/.teamagent/backups/",
+    "  teamagent doctor --fix --dry-run",
+    "                                   预览要修什么（unified diff），不写入",
+    "  teamagent doctor --json         输出机器可读 JSON（含 fixOutcomes 字段，含 dryRun bool）",
+    "  teamagent doctor --cwd=<path>   指定项目目录（默认为当前目录）",
+    "  teamagent doctor --help         显示本帮助",
+    "",
+    "可自动修复的检查项：",
+    "  knowledge-db        通过 `teamagent init --skip-import` 创建 knowledge.db（无 prior state，跳过 backup）",
+    "  hook-registered     向 .claude/settings.local.json 注册 PreToolUse hook",
+    "  hook-script         同上",
+    "  claude-md           剥离 legacy <!-- TEAMAGENT:START..END --> 块；写入前 backup CLAUDE.md",
+    "",
+    "备份位置:",
+    "  ~/.teamagent/backups/<filename>.<ISO-timestamp>.bak",
+    "  还原: cp <backup-path> <original-path>",
+    "",
+    "示例:",
+    "  teamagent doctor --fix --dry-run    # 看一下会改什么",
+    "  teamagent doctor --fix              # 真改（先备份）",
+    "  teamagent doctor --fix --json       # 应用并输出 JSON 报告",
+    "",
+  ].join("\n") + "\n";
 }
 
 export function renderDoctorResult(result: DoctorResult): string {
@@ -782,6 +962,43 @@ export function renderDoctorResult(result: DoctorResult): string {
     if (result.failed > 0) parts.push(`${result.failed} 项失败`);
     if (result.skipped > 0) parts.push(`${result.skipped} 项跳过`);
     lines.push(`${parts.join("，")}。修复后重跑 teamagent doctor`);
+  }
+
+  // Issue #172: append fix outcomes section when --fix was passed.
+  if (result.fixOutcomes && result.fixOutcomes.length > 0) {
+    lines.push("");
+    lines.push("─".repeat(40));
+    lines.push(result.dryRun ? "🔧 doctor --fix --dry-run（预览，未写入）" : "🔧 doctor --fix（已应用）");
+    lines.push("─".repeat(40));
+    let appliedCount = 0;
+    for (const outcome of result.fixOutcomes) {
+      if (outcome.status === "preview") {
+        lines.push(`👁  ${outcome.name.padEnd(16)}  ${outcome.detail}`);
+        if (outcome.diff) {
+          for (const dl of outcome.diff.split("\n")) {
+            if (dl !== "") lines.push("   " + dl);
+          }
+        }
+      } else if (outcome.status === "applied") {
+        appliedCount++;
+        lines.push(`✅ ${outcome.name.padEnd(16)}  ${outcome.detail}`);
+        if (outcome.backupPath && outcome.filePath) {
+          lines.push(`   备份: ${outcome.backupPath}`);
+          lines.push(`   还原: cp ${outcome.backupPath} ${outcome.filePath}`);
+        }
+      } else if (outcome.status === "skipped") {
+        lines.push(`⏭  ${outcome.name.padEnd(16)}  ${outcome.detail}`);
+      } else {
+        lines.push(`❌ ${outcome.name.padEnd(16)}  ${outcome.detail}${outcome.error ? `: ${outcome.error}` : ""}`);
+      }
+    }
+    if (result.dryRun) {
+      lines.push("");
+      lines.push("不会写入。去掉 --dry-run 真实执行（写入前会先备份到 ~/.teamagent/backups/）。");
+    } else if (appliedCount > 0) {
+      lines.push("");
+      lines.push(`已修复 ${appliedCount} 项。备份位置：~/.teamagent/backups/`);
+    }
   }
 
   return lines.join("\n") + "\n";

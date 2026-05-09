@@ -110,6 +110,7 @@ import { executeConfig } from "./commands/config.js";
 import {
   executeDoctor,
   parseDoctorArgs,
+  renderDoctorHelp,
   renderDoctorResult,
 } from "./commands/doctor.js";
 import {
@@ -1006,6 +1007,13 @@ async function main(): Promise<void> {
       return;
     }
     case "doctor": {
+      // Issue #172: `teamagent doctor --help` previously executed doctor
+      // (because parseDoctorArgs ignored unknown flags). Make `--help`/`-h`
+      // print subcommand-specific help and return without running diagnostics.
+      if (rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(renderDoctorHelp());
+        return;
+      }
       const opts = parseDoctorArgs(rest);
       const result = await executeDoctor({ ...opts, cwd: opts.cwd ?? process.cwd() });
       if (opts.json) {
@@ -1202,14 +1210,14 @@ async function main(): Promise<void> {
           "                                   --install-plugins: 同时注册团队标配插件（opt-in，改写用户全局 settings）",
           "  teamagent install-codex [--dry-run] [--skip-import]",
           "                                   Codex 快捷安装：导出 Skills，并创建 .codex/skills 软链接",
-          "  teamagent doctor [--fix] [--json]",
+          "  teamagent doctor [--fix [--dry-run]] [--json] [--cwd=<path>] [--help]",
           "                                   诊断安装环境（Node版本/Claude Code/sqlite-vec/Hook/CLAUDE.md）",
-          "                                   --fix: 自动修复以下类型的问题（先备份到 ~/.teamagent/backups/）：",
+          "                                   --fix: 自动修复能修的项；写 CLAUDE.md 前先备份到 ~/.teamagent/backups/",
           "                                          - 旧版 TEAMAGENT:START 生成块（剥离）",
-          "                                          - hook 注册路径过期（更新指向当前安装）",
-          "                                          - skill 文件残留（清理）",
-          "                                          配 --dry-run 预览要改什么",
-          "                                   --json: 输出机器可读 JSON",
+          "                                          - 知识库未初始化（teamagent init）",
+          "                                          - hook 未注册（teamagent install-hook）",
+          "                                          配 --dry-run 预览 unified diff，不写入；详细帮助见 `teamagent doctor --help`",
+          "                                   --json: 输出机器可读 JSON（含 fixOutcomes 与 dryRun 字段）",
           "  teamagent install-plugins [--dry-run] [--only=a,b] [--scope=user|project|local]",
           "                                   注册团队标配 plugins（superpowers/sales/playground）",
           "                                   通过 'claude plugin marketplace add' + 'claude plugin install' 调 CC CLI",

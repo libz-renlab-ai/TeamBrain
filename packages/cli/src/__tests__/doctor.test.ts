@@ -8,7 +8,9 @@ import {
   checkClaudeMd,
   executeDoctor,
   renderDoctorResult,
+  renderDoctorHelp,
   parseDoctorArgs,
+  backupFile,
   checkClaudeCode,
   checkTeamSharingStatus,
   pathContainsNodeModulesBin,
@@ -22,6 +24,7 @@ import {
   type McpProbe,
   type DoctorCheckResult,
   type DoctorResult,
+  type FixOutcome,
 } from "../commands/doctor.js";
 
 function makeResult(overrides: Partial<DoctorResult> = {}): DoctorResult {
@@ -535,5 +538,250 @@ describe("checkMcpReachability", () => {
       expect(result.detail).toContain("http://localhost:1");
       expect(result.fix).toBeDefined();
     } finally { cleanup(); }
+  });
+});
+
+// Issue #172: --dry-run + backup + doctor --help safety net.
+describe("doctor --fix safety net (issue #172)", () => {
+  const passingClaudeProbe172: ClaudeProbe = () => ({
+    ok: true,
+    stdout: "2.1.126 (Claude Code)\n",
+    stderr: "",
+  });
+
+  function makeWorkspace172(): { cwd: string; homeDir: string; cleanup: () => void } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-doctor-172-"));
+    const cwd = path.join(root, "workspace");
+    const homeDir = path.join(root, "home");
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.mkdirSync(homeDir, { recursive: true });
+    return { cwd, homeDir, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
+  }
+
+  function createKnowledgeDb172(cwd: string): void {
+    const dbPath = path.join(cwd, ".teamagent", "knowledge.db");
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    const db = openDb(dbPath);
+    db.close();
+  }
+
+  it("parseDoctorArgs picks up --dry-run (alone and with --fix)", () => {
+    expect(parseDoctorArgs(["--dry-run"]).dryRun).toBe(true);
+    const both = parseDoctorArgs(["--fix", "--dry-run"]);
+    expect(both.fix).toBe(true);
+    expect(both.dryRun).toBe(true);
+    expect(parseDoctorArgs([]).dryRun).toBeFalsy();
+  });
+
+  it("--fix --dry-run produces a unified diff outcome and leaves CLAUDE.md untouched", async () => {
+    const ws = makeWorkspace172();
+    try {
+      createKnowledgeDb172(ws.cwd);
+      const claudeMdPath = path.join(ws.cwd, "CLAUDE.md");
+      const original =
+        "# Project\n\nManual notes.\n\n<!-- TEAMAGENT:START - old -->\n- generated rule A\n- generated rule B\n<!-- TEAMAGENT:END -->\n\nFooter.\n";
+      fs.writeFileSync(claudeMdPath, original);
+
+      const result = await executeDoctor({
+        cwd: ws.cwd,
+        homeDir: ws.homeDir,
+        claudeProbe: passingClaudeProbe172,
+        fix: true,
+        dryRun: true,
+      });
+
+      expect(result.dryRun).toBe(true);
+      expect(result.fixOutcomes).toBeDefined();
+      const claudeMdOutcome = (result.fixOutcomes ?? []).find(
+        (o: FixOutcome) => o.name === "claude-md",
+      );
+      expect(claudeMdOutcome?.status).toBe("preview");
+      expect(claudeMdOutcome?.diff).toBeDefined();
+      expect(claudeMdOutcome?.diff).toContain(`--- ${claudeMdPath}`);
+      expect(claudeMdOutcome?.diff).toContain(`+++ ${claudeMdPath}`);
+      expect(claudeMdOutcome?.diff).toMatch(/^-.*generated rule A/m);
+      // No backup directory should have been created (dry-run does no I/O).
+      expect(fs.existsSync(path.join(ws.homeDir, ".teamagent", "backups"))).toBe(false);
+      // File on disk is untouched (sha-via-content equality).
+      expect(fs.readFileSync(claudeMdPath, "utf-8")).toBe(original);
+      // The claude-md check still reports fail because no real fix ran.
+      expect(result.checks.find((c) => c.name === "claude-md")?.status).toBe("fail");
+    } finally {
+      ws.cleanup();
+    }
+  });
+
+  it("--fix without --dry-run writes backup before mutating CLAUDE.md", async () => {
+    const ws = makeWorkspace172();
+    try {
+      createKnowledgeDb172(ws.cwd);
+      const claudeMdPath = path.join(ws.cwd, "CLAUDE.md");
+      const original =
+        "# Project\n\nManual notes.\n\n<!-- TEAMAGENT:START - old -->\n- generated rule\n<!-- TEAMAGENT:END -->\n\nFooter.\n";
+      fs.writeFileSync(claudeMdPath, original);
+
+      const result = await executeDoctor({
+        cwd: ws.cwd,
+        homeDir: ws.homeDir,
+        claudeProbe: passingClaudeProbe172,
+        fix: true,
+      });
+
+      expect(result.dryRun).toBe(false);
+      const claudeMdOutcome = (result.fixOutcomes ?? []).find(
+        (o: FixOutcome) => o.name === "claude-md",
+      );
+      expect(claudeMdOutcome?.status).toBe("applied");
+      expect(claudeMdOutcome?.filePath).toBe(claudeMdPath);
+      expect(claudeMdOutcome?.backupPath).toBeDefined();
+      // Backup file exists with pre-fix content.
+      expect(fs.existsSync(claudeMdOutcome!.backupPath!)).toBe(true);
+      expect(fs.readFileSync(claudeMdOutcome!.backupPath!, "utf-8")).toBe(original);
+      // Backup lives under <homeDir>/.teamagent/backups/.
+      expect(claudeMdOutcome!.backupPath!).toContain(
+        path.join(ws.homeDir, ".teamagent", "backups"),
+      );
+      // CLAUDE.md was rewritten without the legacy block.
+      const after = fs.readFileSync(claudeMdPath, "utf-8");
+      expect(after).not.toContain("TEAMAGENT:START");
+      expect(after).toContain("Manual notes.");
+      expect(after).toContain("Footer.");
+    } finally {
+      ws.cleanup();
+    }
+  });
+
+  it("--fix on a CLAUDE.md that is entirely the legacy block deletes the file but keeps a backup", async () => {
+    const ws = makeWorkspace172();
+    try {
+      createKnowledgeDb172(ws.cwd);
+      const claudeMdPath = path.join(ws.cwd, "CLAUDE.md");
+      const blockOnly = "<!-- TEAMAGENT:START - old -->\n- only rule\n<!-- TEAMAGENT:END -->\n";
+      fs.writeFileSync(claudeMdPath, blockOnly);
+
+      const result = await executeDoctor({
+        cwd: ws.cwd,
+        homeDir: ws.homeDir,
+        claudeProbe: passingClaudeProbe172,
+        fix: true,
+      });
+
+      const outcome = (result.fixOutcomes ?? []).find(
+        (o: FixOutcome) => o.name === "claude-md",
+      );
+      expect(outcome?.status).toBe("applied");
+      expect(fs.existsSync(claudeMdPath)).toBe(false);
+      expect(outcome?.backupPath).toBeDefined();
+      expect(fs.readFileSync(outcome!.backupPath!, "utf-8")).toBe(blockOnly);
+    } finally {
+      ws.cleanup();
+    }
+  });
+
+  it("--fix --dry-run on full-block CLAUDE.md renders +++ /dev/null and does not delete file", async () => {
+    const ws = makeWorkspace172();
+    try {
+      createKnowledgeDb172(ws.cwd);
+      const claudeMdPath = path.join(ws.cwd, "CLAUDE.md");
+      const blockOnly = "<!-- TEAMAGENT:START - old -->\n- only rule\n<!-- TEAMAGENT:END -->\n";
+      fs.writeFileSync(claudeMdPath, blockOnly);
+
+      const result = await executeDoctor({
+        cwd: ws.cwd,
+        homeDir: ws.homeDir,
+        claudeProbe: passingClaudeProbe172,
+        fix: true,
+        dryRun: true,
+      });
+
+      const outcome = (result.fixOutcomes ?? []).find(
+        (o: FixOutcome) => o.name === "claude-md",
+      );
+      expect(outcome?.status).toBe("preview");
+      expect(outcome?.diff).toContain("+++ /dev/null");
+      expect(fs.existsSync(claudeMdPath)).toBe(true);
+      expect(fs.readFileSync(claudeMdPath, "utf-8")).toBe(blockOnly);
+    } finally {
+      ws.cleanup();
+    }
+  });
+
+  it("backupFile creates a Windows-safe filename and copies content byte-for-byte", () => {
+    const ws = makeWorkspace172();
+    try {
+      const filePath = path.join(ws.cwd, "CLAUDE.md");
+      const original = "hello\nworld\n";
+      fs.writeFileSync(filePath, original);
+      const backupPath = backupFile(filePath, { homeDir: ws.homeDir });
+      expect(fs.readFileSync(backupPath, "utf-8")).toBe(original);
+      const basename = path.basename(backupPath);
+      // Must not contain ':' (Windows reserved) and must end with .bak
+      expect(basename).not.toContain(":");
+      expect(basename.endsWith(".bak")).toBe(true);
+      expect(basename.startsWith("CLAUDE.md.")).toBe(true);
+    } finally {
+      ws.cleanup();
+    }
+  });
+
+  it("renderDoctorHelp prints subcommand help (no diagnostics) covering --dry-run, backup, --json, --cwd", () => {
+    const out = renderDoctorHelp();
+    expect(out).toContain("--dry-run");
+    expect(out).toContain("--json");
+    expect(out).toContain("--cwd");
+    expect(out).toContain("备份");
+    expect(out).toContain("~/.teamagent/backups/");
+    // Must NOT contain the diagnostic header that real `doctor` execution prints.
+    expect(out).not.toContain("环境诊断 / Environment Check");
+  });
+
+  it("renderDoctorResult appends a dry-run preview section with diff lines", () => {
+    const fakeResult: DoctorResult = {
+      checks: [],
+      passed: 0,
+      failed: 1,
+      skipped: 0,
+      allPassed: false,
+      dryRun: true,
+      fixOutcomes: [
+        {
+          name: "claude-md",
+          status: "preview",
+          filePath: "/tmp/proj/CLAUDE.md",
+          diff: "--- /tmp/proj/CLAUDE.md\n+++ /tmp/proj/CLAUDE.md\n@@ -1,3 +1,1 @@\n header\n-old block\n footer\n",
+          detail: "将剥离 legacy TEAMAGENT 块",
+        },
+      ],
+    };
+    const out = renderDoctorResult(fakeResult);
+    expect(out).toContain("doctor --fix --dry-run");
+    expect(out).toContain("将剥离");
+    expect(out).toContain("-old block");
+    expect(out).toContain("不会写入");
+  });
+
+  it("renderDoctorResult appends an applied section with backup + restore command", () => {
+    const fakeResult: DoctorResult = {
+      checks: [],
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      allPassed: true,
+      dryRun: false,
+      fixOutcomes: [
+        {
+          name: "claude-md",
+          status: "applied",
+          filePath: "/tmp/proj/CLAUDE.md",
+          backupPath: "/tmp/home/.teamagent/backups/CLAUDE.md.2026-05-09T16-22-34-000Z.bak",
+          detail: "已剥离 legacy TEAMAGENT 块",
+        },
+      ],
+    };
+    const out = renderDoctorResult(fakeResult);
+    expect(out).toContain("doctor --fix");
+    expect(out).toContain("已剥离");
+    expect(out).toContain("备份: /tmp/home/.teamagent/backups/CLAUDE.md.2026-05-09T16-22-34-000Z.bak");
+    expect(out).toContain("还原: cp /tmp/home/.teamagent/backups/CLAUDE.md.2026-05-09T16-22-34-000Z.bak /tmp/proj/CLAUDE.md");
   });
 });

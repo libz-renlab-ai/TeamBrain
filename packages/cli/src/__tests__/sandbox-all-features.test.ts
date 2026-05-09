@@ -396,10 +396,11 @@ describe("Feature: e2e-evaluate arg parsing", () => {
 // ─── Feature: doctor arg parsing ─────────────────────────────────────────────
 
 describe("Feature: doctor arg parsing", () => {
-  it("defaults fix=false json=false", () => {
+  it("defaults fix=false json=false dryRun=false", () => {
     const args = parseDoctorArgs([]);
     expect(args.fix).toBe(false);
     expect(args.json).toBe(false);
+    expect(args.dryRun).toBeFalsy();
   });
 
   it("parses --fix", () => {
@@ -408,6 +409,12 @@ describe("Feature: doctor arg parsing", () => {
 
   it("parses --json", () => {
     expect(parseDoctorArgs(["--json"]).json).toBe(true);
+  });
+
+  it("parses --fix --dry-run together (issue #172)", () => {
+    const args = parseDoctorArgs(["--fix", "--dry-run"]);
+    expect(args.fix).toBe(true);
+    expect(args.dryRun).toBe(true);
   });
 });
 
