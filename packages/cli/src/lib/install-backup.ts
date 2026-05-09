@@ -220,6 +220,28 @@ export function rollbackFromBackup(opts: RollbackOptions): RollbackResult {
     return { status: "error", reason };
   }
 
+  // /review iter-1 hardening: validate the tarball BEFORE the destructive
+  // rmSync. existsSync + size>0 only catches missing/empty files; a truncated
+  // gzip stream or a tarball with a corrupt header still passes. `tar -tzf`
+  // lists contents without extracting — any corrupt-header / truncation /
+  // gzip-checksum failure returns non-zero and we leave installDir alone.
+  // Without this gate, a corrupt backup + rmSync = empty installDir, which
+  // is exactly the partial-install corruption #158 set out to prevent.
+  try {
+    execFileSync("tar", tarArgs("-tzf", backupPath), {
+      stdio: ["ignore", "ignore", "pipe"],
+      windowsHide: true,
+      timeout: 30_000,
+    });
+  } catch (err) {
+    const reason = `backup-validation-failed: ${String((err as Error).message ?? err).slice(0, 200)}`;
+    appendLog(
+      opts.homeDir,
+      `[${new Date().toISOString()}] stage=install status=rollback-skipped reason=${reason}`,
+    );
+    return { status: "error", reason };
+  }
+
   // Re-create installDir empty so tar extracts into a clean shell.
   try {
     fs.rmSync(opts.installDir, { recursive: true, force: true });

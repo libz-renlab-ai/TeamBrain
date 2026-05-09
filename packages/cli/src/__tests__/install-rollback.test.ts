@@ -169,6 +169,45 @@ describe("rollbackFromBackup", () => {
     });
     expect(r.status).toBe("ok");
   });
+
+  it("refuses to rm installDir when the backup tarball is corrupt (#158 iter-1 hardening)", () => {
+    // Seed a real install that we expect to survive the rollback attempt.
+    seedInstall("marker.txt", "PRESERVED");
+
+    // Plant a "backup" file that exists, has size > 0, and ends in .tgz —
+    // but is NOT a valid gzip stream. This is exactly what an interrupted
+    // backup write or a bit-flipped on-disk file looks like to the existsSync
+    // + statSync gate. Without `tar -tzf` validation, rollbackFromBackup
+    // would `rm -rf installDir` first and tar -xzf fails second, leaving
+    // the install empty — exactly the partial-install corruption #158 set
+    // out to prevent.
+    fs.mkdirSync(backupDir, { recursive: true });
+    const corruptBackup = path.join(backupDir, "2026-05-09T13-00-00-000Z.tgz");
+    fs.writeFileSync(corruptBackup, "this is not a gzip stream\n");
+
+    const r = rollbackFromBackup({
+      homeDir,
+      installDir,
+      backupPath: corruptBackup,
+    });
+
+    expect(r.status).toBe("error");
+    expect(r.reason ?? "").toMatch(/backup-validation-failed|tar/i);
+
+    // The crucial assertion: the existing install must still be present.
+    // If this fails, we've recreated the very bug #158 was filed for.
+    expect(fs.existsSync(path.join(installDir, "marker.txt"))).toBe(true);
+    expect(
+      fs.readFileSync(path.join(installDir, "marker.txt"), "utf-8"),
+    ).toBe("PRESERVED");
+    // Log entry must record the skip with reason=backup-validation-failed.
+    const lines = readLogLines();
+    const skip = lines.find((l) =>
+      l.includes("stage=install") && l.includes("status=rollback-skipped"),
+    );
+    expect(skip).toBeDefined();
+    expect(skip).toContain("reason=backup-validation-failed");
+  });
 });
 
 describe("end-to-end policy", () => {

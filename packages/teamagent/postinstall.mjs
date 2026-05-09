@@ -113,12 +113,22 @@ function treesitterOptionalsInstalled(pkgDir) {
   if (!found) {
     try {
       const req = createRequire(pathToFileURL(path.join(pkgDir, "package.json")).href);
+      // /review iter-1 hardening: original list — pkgDir, ~/.local/share/pnpm,
+      // ~/.npm-global, ~/.pnpm-global — has zero hits on Windows where pnpm
+      // lives at %LOCALAPPDATA%\pnpm (e.g. C:\Users\<u>\AppData\Local\pnpm)
+      // and npm at %APPDATA%\npm. Without these roots the fallback
+      // false-negatives every Windows user who explicitly installed the
+      // tree-sitter packages, permanently flagging matcher AST as absent.
       const knownRoots = [
         pkgDir,
         path.join(os.homedir(), ".local", "share", "pnpm"),
         path.join(os.homedir(), ".npm-global"),
         path.join(os.homedir(), ".pnpm-global"),
-      ];
+        // Windows pnpm + npm globals.
+        process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "pnpm") : null,
+        process.env.APPDATA ? path.join(process.env.APPDATA, "npm", "node_modules") : null,
+        process.env.APPDATA ? path.join(process.env.APPDATA, "npm") : null,
+      ].filter(Boolean);
       const isUnderKnownRoot = (resolved) =>
         knownRoots.some((root) => resolved.startsWith(root + path.sep) || resolved === root);
       let wtsResolved, tsResolved, pyResolved;

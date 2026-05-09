@@ -32,7 +32,17 @@ artifacts the user sees) do NOT need an entry.
   reached." Users wanting AST-precise filtering can opt back in:
   `npm install -g teamagent web-tree-sitter@^0.26 tree-sitter-typescript@^0.23 tree-sitter-python@^0.23`.
   Defense-in-depth install-time backup + rollback in `release/install.sh`
-  guards against future analogous failures (any cause). (#158)
+  guards against future analogous failures (any cause). The rollback path
+  (both shell + `packages/cli/src/lib/install-backup.ts`) validates the
+  backup tarball with `tar -tzf` BEFORE `rm -rf $INSTALL_DIR`; a corrupt
+  or truncated backup would otherwise wipe the install dir and then fail
+  to extract — recreating the very partial-install corruption #158 was
+  filed for. The backup canary uses `dist/bin.js` existence (not just
+  "directory non-empty") so spurious .nfs* / .smbXXXX cruft on hostile
+  filesystems isn't archived as garbage. `treeSitterDepsInstalled`
+  `knownRoots` includes Windows %LOCALAPPDATA%/pnpm and %APPDATA%/npm so
+  Windows users who explicitly install the tree-sitter packages aren't
+  permanently flagged as "AST 过滤: 未安装". (#158)
 - **Issue #160**: `teamagent warmup` now exits 0 with a friendly skip message
   when the optional vector deps (`@xenova/transformers` + `onnxruntime-node`)
   are not installed, instead of exit 1 with a misleading "warmup failed"
