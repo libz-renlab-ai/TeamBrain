@@ -8,11 +8,10 @@ import {
 } from "../default-plugins.js";
 
 describe("DEFAULT_MARKETPLACES", () => {
-  it("contains the 2 team-standard marketplaces", () => {
+  it("contains the 1 team-standard marketplace", () => {
     const names = DEFAULT_MARKETPLACES.map((m) => m.name);
     expect(names).toEqual([
       "claude-plugins-official",
-      "knowledge-work-plugins",
     ]);
   });
 
@@ -21,17 +20,19 @@ describe("DEFAULT_MARKETPLACES", () => {
       DEFAULT_MARKETPLACES.map((m) => [m.name, m.repo]),
     );
     expect(byName["claude-plugins-official"]).toBe("anthropics/claude-plugins-official");
-    expect(byName["knowledge-work-plugins"]).toBe("anthropics/knowledge-work-plugins");
   });
 });
 
 describe("DEFAULT_PLUGINS", () => {
-  it("contains the 3 team-standard plugins", () => {
+  it("contains the 6 team-standard plugins (mirrors .claude/settings.json enabledPlugins)", () => {
     const specs = DEFAULT_PLUGINS.map((p) => `${p.plugin}@${p.marketplace}`);
     expect(specs).toEqual([
-      "superpowers@claude-plugins-official",
       "playground@claude-plugins-official",
-      "sales@knowledge-work-plugins",
+      "claude-code-setup@claude-plugins-official",
+      "code-review@claude-plugins-official",
+      "code-simplifier@claude-plugins-official",
+      "commit-commands@claude-plugins-official",
+      "frontend-design@claude-plugins-official",
     ]);
   });
 
@@ -45,14 +46,14 @@ describe("DEFAULT_PLUGINS", () => {
 
 describe("parsePluginSpec", () => {
   it('parses "plugin@marketplace"', () => {
-    expect(parsePluginSpec("superpowers@claude-plugins-official")).toEqual({
-      plugin: "superpowers",
+    expect(parsePluginSpec("playground@claude-plugins-official")).toEqual({
+      plugin: "playground",
       marketplace: "claude-plugins-official",
     } satisfies PluginSpec);
   });
 
   it("throws on missing @", () => {
-    expect(() => parsePluginSpec("superpowers")).toThrow(/invalid plugin spec/);
+    expect(() => parsePluginSpec("playground")).toThrow(/invalid plugin spec/);
   });
 
   it("throws on empty plugin or marketplace", () => {
@@ -62,8 +63,8 @@ describe("parsePluginSpec", () => {
   });
 
   it("trims surrounding whitespace", () => {
-    expect(parsePluginSpec("  superpowers@claude-plugins-official  ")).toEqual({
-      plugin: "superpowers",
+    expect(parsePluginSpec("  playground@claude-plugins-official  ")).toEqual({
+      plugin: "playground",
       marketplace: "claude-plugins-official",
     });
   });
@@ -71,8 +72,8 @@ describe("parsePluginSpec", () => {
 
 describe("formatPluginSpec", () => {
   it('produces "plugin@marketplace"', () => {
-    expect(formatPluginSpec({ plugin: "sales", marketplace: "knowledge-work-plugins" })).toBe(
-      "sales@knowledge-work-plugins",
+    expect(formatPluginSpec({ plugin: "frontend-design", marketplace: "claude-plugins-official" })).toBe(
+      "frontend-design@claude-plugins-official",
     );
   });
 

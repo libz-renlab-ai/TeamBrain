@@ -1,10 +1,14 @@
 /**
- * 团队标准插件 bundle。`teamagent install-plugins` 按本列表依次:
+ * 团队标准插件 bundle —— 与项目级 `.claude/settings.json` 的 enabledPlugins
+ * 保持一致；`.claude/settings.json` 是 source of truth，本文件镜像它。
+ *
+ * `teamagent install-plugins` 按本列表依次:
  *   1. 注册 marketplace（`claude plugin marketplace add`）
  *   2. 安装各 plugin（`claude plugin install <plugin>@<marketplace>`）
  *
- * 修改方式：直接编辑本文件；这是"团队标配"，单用户可以 `--plugins=<list>`
- * 或 `teamagent plugin uninstall` 运行时覆盖。
+ * 修改方式：同步更新本文件 + `.claude/settings.json:enabledPlugins`，
+ * 二者必须保持一致。单用户可以 `--plugins=<list>` 或
+ * `teamagent plugin uninstall` 运行时覆盖。
  */
 
 export interface MarketplaceSpec {
@@ -19,13 +23,15 @@ export interface PluginSpec {
 
 export const DEFAULT_MARKETPLACES: readonly MarketplaceSpec[] = [
   { name: "claude-plugins-official", repo: "anthropics/claude-plugins-official" },
-  { name: "knowledge-work-plugins", repo: "anthropics/knowledge-work-plugins" },
 ];
 
 export const DEFAULT_PLUGINS: readonly PluginSpec[] = [
-  { plugin: "superpowers", marketplace: "claude-plugins-official" },
   { plugin: "playground", marketplace: "claude-plugins-official" },
-  { plugin: "sales", marketplace: "knowledge-work-plugins" },
+  { plugin: "claude-code-setup", marketplace: "claude-plugins-official" },
+  { plugin: "code-review", marketplace: "claude-plugins-official" },
+  { plugin: "code-simplifier", marketplace: "claude-plugins-official" },
+  { plugin: "commit-commands", marketplace: "claude-plugins-official" },
+  { plugin: "frontend-design", marketplace: "claude-plugins-official" },
 ];
 
 export function parsePluginSpec(raw: string): PluginSpec {
