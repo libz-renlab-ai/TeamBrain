@@ -36,8 +36,19 @@ export function shellQuote(p: string): string {
  * Build the settings.json `command` string for a user-level hook entry that
  * targets a staged bundle at `stagedPath`. Returns a bash -c invocation that
  * exits 0 silently when the bundle is missing, otherwise execs node on it.
+ *
+ * Quoting strategy: the path is passed as a *positional argv* (`$1`) rather
+ * than inlined into the bash body. This keeps the outer single-quoted body
+ * a constant string with zero path interpolation, so paths containing single
+ * quotes (e.g. `/home/Jane O'Brien/...`) cannot break the body's outer
+ * `'...'` quoting. The path-as-argv is double-quoted via `shellQuote`, where
+ * single quotes are POSIX-literal, sidestepping the regression that an inline
+ * form would have introduced over the pre-shim raw `node "<path>"` command.
+ *
+ * The literal `_` between body and path is a conventional placeholder for
+ * `$0` (script name); `$1` is the staged path.
  */
 export function buildUserLevelHookCommand(stagedPath: string): string {
   const q = shellQuote(toForwardSlash(stagedPath));
-  return `bash -c '[ -f ${q} ] || exit 0; exec node ${q}'`;
+  return `bash -c '[ -f "$1" ] || exit 0; exec node "$1"' _ ${q}`;
 }
