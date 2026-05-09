@@ -1170,7 +1170,10 @@ describe("executeInit — mirror-claim-to-merge-skill (issue #218)", () => {
     const copySpy = vi
       .spyOn(nodeFs, "copyFileSync")
       .mockImplementation((src, dest) => {
-        if (String(dest).includes("/.claude/skills/teamagent/claim-to-merge/")) {
+        // Cross-platform path check: Windows uses `\`, POSIX uses `/`.
+        // Normalize before substring match so the test holds on both.
+        const destPosix = String(dest).split(path.sep).join("/");
+        if (destPosix.includes("/.claude/skills/teamagent/claim-to-merge/")) {
           throw new Error("EACCES: simulated permission denied");
         }
         // Defer to real impl for other writes (none expected in this test).
