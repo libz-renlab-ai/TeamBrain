@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import nodeFs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { executeInit, parseInitArgs, renderInitResult } from "../commands/init.js";
+import {
+  executeInit,
+  parseInitArgs,
+  renderInitResult,
+  FIXEDFLOW_BANNER_DOC_PATHS,
+} from "../commands/init.js";
 import { DualLayerStore, SqliteKnowledgeStore, openDb } from "@teamagent/adapters";
 import type { LLMClient } from "@teamagent/ports";
 
@@ -878,5 +883,24 @@ describe("renderInitResult — new UX", () => {
     expect(out).toContain("预览模式");
     expect(out).toContain("FIXEDFLOW");
     expect(out).toContain("docs/FIXEDFLOW.md");
+  });
+
+  // Issue #218 — F8 path-exists guard. Banner mentions a fixed list of doc
+  // paths; if any of them is renamed/moved without updating
+  // FIXEDFLOW_BANNER_DOC_PATHS, the banner silently lies. Lock it down by
+  // asserting every path resolves on disk relative to the repo root.
+  it("FIXEDFLOW banner only references docs that exist on disk", () => {
+    // vitest is configured to run from repo root (see vitest.config.ts
+    // include pattern packages/*/src/**/__tests__/**). Sanity-check we are
+    // there before walking the path list.
+    const repoRoot = process.cwd();
+    expect(nodeFs.existsSync(path.join(repoRoot, "AGENTS.md"))).toBe(true);
+    for (const rel of FIXEDFLOW_BANNER_DOC_PATHS) {
+      const abs = path.join(repoRoot, rel);
+      expect(
+        nodeFs.existsSync(abs),
+        `FIXEDFLOW banner doc ${rel} does not exist at ${abs}`,
+      ).toBe(true);
+    }
   });
 });
