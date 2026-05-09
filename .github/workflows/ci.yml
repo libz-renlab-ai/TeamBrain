@@ -26,6 +26,9 @@ jobs:
             verify-command: echo "skip verify on Windows smoke lane"
     steps:
       - uses: actions/checkout@v4
+      - name: Verify newsboard format (docs/newsboard.md ↔ hook contract)
+        if: matrix.os == 'ubuntu-latest'
+        run: bash scripts/verify-newsboard-format.sh
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
