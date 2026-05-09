@@ -298,7 +298,9 @@ async function main(): Promise<void> {
         projectAndGlobal.stdoutPath,
         projectAndGlobal.stderrPath,
         projectAndGlobal.exitCodePath,
-        "exact:TeamAgent正在运行 · 规则库：5条",
+        // issue #168: 中文标签 + 时间窗后缀 + B-lite 待命引导。
+        // 此 audit 不 seed events.db，故 helped/risk 显示为 "-"，hint 走 idle 分支。
+        "exact:TeamAgent | 规则:5 | 帮过:-今/-周 | 拦过:-今 | 待命中（让我学几条规则吧）",
       ],
       { allowFailure: true },
     );
@@ -328,7 +330,8 @@ async function main(): Promise<void> {
         globalOnly.stdoutPath,
         globalOnly.stderrPath,
         globalOnly.exitCodePath,
-        "exact:TeamAgent正在运行 · 规则库：3条",
+        // issue #168: 同前；audit 不 seed events.db。
+        "exact:TeamAgent | 规则:3 | 帮过:-今/-周 | 拦过:-今 | 待命中（让我学几条规则吧）",
       ],
       { allowFailure: true },
     );
