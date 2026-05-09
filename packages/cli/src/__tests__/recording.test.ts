@@ -176,6 +176,97 @@ describe("recording memory", () => {
     expect(fs.readFileSync(reportPath, "utf-8")).toContain("Recording Memory Golden Prompt Benchmark");
   });
 
+  it("walks up to project root for public store / metrics / private key (issue #161)", async () => {
+    // Create root with .teamagent/knowledge.db marker, then call from a
+    // subfolder. publicStorePath, metricsPath, and the privateStorePath hash
+    // must all resolve to the project root, not the subfolder.
+    const root = tmpdir();
+    const homeDir = tmpdir();
+    fs.mkdirSync(path.join(root, ".teamagent"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".teamagent", "knowledge.db"), "");
+
+    const subdir = path.join(root, "packages", "cli");
+    fs.mkdirSync(subdir, { recursive: true });
+
+    // Import a public recording from the subdir.
+    const filePath = path.join(subdir, "material.json");
+    fs.writeFileSync(filePath, JSON.stringify({
+      title: "walk-up public",
+      source: "docs/walkup-public.md",
+      transcript: "transcript body",
+      uploadedBy: "teamagent",
+      useWhen: "When verifying issue #161 walk-up.",
+      summary: "Public store should resolve to project root.",
+      visibility: "public",
+    }), "utf-8");
+
+    await executeRecording({
+      action: "import",
+      filePath,
+      cwd: subdir,
+      homeDir,
+      now,
+      idGen: () => "rec-walkup-public",
+    });
+
+    // Public store written at root, NOT under subdir
+    expect(fs.existsSync(path.join(root, ".teamagent", "recordings.json"))).toBe(true);
+    expect(fs.existsSync(path.join(subdir, ".teamagent", "recordings.json"))).toBe(false);
+
+    // Metrics written at root, not subdir
+    expect(fs.existsSync(path.join(root, ".teamagent", "recording-memory", "metrics.jsonl"))).toBe(true);
+    expect(fs.existsSync(path.join(subdir, ".teamagent", "recording-memory", "metrics.jsonl"))).toBe(false);
+
+    // Search from subdir should find the recording (via the same project root)
+    const search = await executeRecording({
+      action: "search",
+      query: "walk up",
+      cwd: subdir,
+      homeDir,
+      now,
+    });
+    expect(search.kind).toBe("search");
+    if (search.kind === "search") {
+      expect(search.results[0]?.record.id).toBe("rec-walkup-public");
+    }
+
+    // Importing a private recording from a deeper subfolder must also map to
+    // the same project key (so root and subfolder share the private store).
+    const privateFile = path.join(subdir, "private-material.json");
+    fs.writeFileSync(privateFile, JSON.stringify({
+      title: "walk-up private",
+      source: "docs/walkup-private.md",
+      transcript: "private transcript",
+      uploadedBy: "teamagent",
+      useWhen: "Private walk-up.",
+      summary: "Private store key must hash project root.",
+      visibility: "private",
+    }), "utf-8");
+
+    await executeRecording({
+      action: "import",
+      filePath: privateFile,
+      cwd: subdir,
+      homeDir,
+      now,
+      idGen: () => "rec-walkup-private",
+    });
+
+    const fromRoot = await executeRecording({
+      action: "search",
+      query: "walk up",
+      cwd: root,
+      homeDir,
+      now,
+    });
+    expect(fromRoot.kind).toBe("search");
+    if (fromRoot.kind === "search") {
+      const ids = fromRoot.results.map((r) => r.record.id);
+      expect(ids).toContain("rec-walkup-public");
+      expect(ids).toContain("rec-walkup-private");
+    }
+  });
+
   it("keeps token estimation monotonic and formatter under default budget", () => {
     expect(estimateRecordingTokens("abcd")).toBe(1);
     expect(estimateRecordingTokens("a".repeat(100))).toBeGreaterThan(estimateRecordingTokens("a".repeat(20)));

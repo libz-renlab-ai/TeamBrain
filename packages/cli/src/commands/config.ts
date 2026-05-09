@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { findTeamagentRoot } from "../find-teamagent-root.js";
 
 export interface TeamAgentConfig {
   stop_mode: "sync" | "async";
@@ -16,7 +17,8 @@ const DEFAULTS: TeamAgentConfig = {
 };
 
 export function readTeamAgentConfig(cwd: string): TeamAgentConfig {
-  const file = path.join(cwd, ".teamagent", "config.json");
+  const root = findTeamagentRoot(cwd);
+  const file = path.join(root, ".teamagent", "config.json");
   if (!fs.existsSync(file)) return { ...DEFAULTS };
   try {
     const raw = fs.readFileSync(file, "utf-8");

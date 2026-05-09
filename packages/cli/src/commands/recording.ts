@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { findTeamagentRoot } from "../find-teamagent-root.js";
 
 export type RecordingVisibility = "private" | "public";
 export type RecordingAction = "help" | "import" | "search" | "show" | "inject" | "metrics" | "benchmark";
@@ -209,12 +210,20 @@ const GOLDEN_PROMPTS = [
   { prompt: "When is a full recording transcript allowed in context?", expectedSource: "docs/specs/2026-04-29-recording-memory-performance-verification.md#golden-prompt-benchmark" },
 ];
 
+// Walk up to project root so subfolder writes land in the same .teamagent
+// directory as the project root (issue #161). Falls back to cwd when no
+// .teamagent/knowledge.db exists yet (e.g. `recording import` against a
+// fresh tmp dir in tests).
+function projectRoot(cwd: string): string {
+  return findTeamagentRoot(cwd);
+}
+
 function projectKey(cwd: string): string {
-  return createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 20);
+  return createHash("sha256").update(path.resolve(projectRoot(cwd))).digest("hex").slice(0, 20);
 }
 
 function publicStorePath(cwd: string): string {
-  return path.join(cwd, ".teamagent", "recordings.json");
+  return path.join(projectRoot(cwd), ".teamagent", "recordings.json");
 }
 
 function privateStorePath(cwd: string, homeDir: string): string {
@@ -227,7 +236,7 @@ function privateStorePath(cwd: string, homeDir: string): string {
 }
 
 function metricsPath(cwd: string): string {
-  return path.join(cwd, ".teamagent", "recording-memory", "metrics.jsonl");
+  return path.join(projectRoot(cwd), ".teamagent", "recording-memory", "metrics.jsonl");
 }
 
 function readJsonl<T>(filePath: string): T[] {

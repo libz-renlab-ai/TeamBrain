@@ -15,6 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
+import { findTeamagentRoot } from "../util/find-teamagent-root.js";
 
 interface RuleRecord {
   id: string;
@@ -51,11 +52,11 @@ function loadDbRules(dbPath: string): RuleRecord[] {
 function loadRules(): RuleRecord[] {
   const fixtureFile = process.env["TEAMAGENT_MCP_RULES_FILE"];
   if (fixtureFile) return loadFixtureRules(fixtureFile);
-  const dbPath = path.join(
-    process.env["TEAMAGENT_CWD"] ?? process.cwd(),
-    ".teamagent",
-    "knowledge.db",
-  );
+  // Walk up so `claude` invoked from a project subfolder still finds the
+  // project's knowledge.db (issue #161).
+  const cwd = process.env["TEAMAGENT_CWD"] ?? process.cwd();
+  const root = findTeamagentRoot(cwd);
+  const dbPath = path.join(root, ".teamagent", "knowledge.db");
   if (fs.existsSync(dbPath)) return loadDbRules(dbPath);
   return [];
 }

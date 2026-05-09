@@ -87,6 +87,39 @@ describe("getRecentEntries", () => {
     expect(entry!.confidence).toBeCloseTo(0.85, 2);
   });
 
+  it("walks up to project root when called from a subfolder (issue #161)", async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-re-walkup-"));
+    const teamagentDir = path.join(tmpDir, ".teamagent");
+    fs.mkdirSync(teamagentDir, { recursive: true });
+    const dbPath = path.join(teamagentDir, "knowledge.db");
+
+    const db = openDb(dbPath);
+    db.exec(`
+      INSERT INTO knowledge (
+        id, scope_level, category, type, nature,
+        trigger, correct_pattern, correct_pattern_tldr,
+        confidence, current_tier, max_tier_ever, tier_entered_at,
+        enforcement, status, hit_count, success_count, override_count,
+        resurrect_count, demerit, source, created_at
+      ) VALUES (
+        'walkup-entry-1', 'personal', 'best-practice', 'avoidance', 'objective',
+        'walk up trigger', 'walk up pattern', '走上去找到 db',
+        0.92, 'experimental', 'experimental', datetime('now'),
+        'passive', 'active', 0, 0, 0,
+        0, 0, 'accumulated', datetime('now')
+      )
+    `);
+    closeDb(db);
+
+    const subdir = path.join(tmpDir, "packages", "cli");
+    fs.mkdirSync(subdir, { recursive: true });
+
+    const result = await getRecentEntries(subdir);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.tldr).toBe("走上去找到 db");
+  });
+
   it("falls back to trigger when correct_pattern_tldr is null", async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-re-notldr-"));
     const teamagentDir = path.join(tmpDir, ".teamagent");

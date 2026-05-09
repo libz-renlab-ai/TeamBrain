@@ -103,6 +103,20 @@ describe("scan-cursor", () => {
   });
 });
 
+describe("walk-up (#161): scan-cursor resolves from subfolder", () => {
+  it("readCursor resolves cursor file from parent when cwd is a subfolder", () => {
+    const root = makeTmpCwd();
+    // Write cursor at root level
+    writeCursor(root, "sess-161", 42);
+    // Call from a subfolder
+    const sub = path.join(root, "sub");
+    fs.mkdirSync(sub, { recursive: true });
+    // Create knowledge.db at root so walk-up finds it
+    fs.writeFileSync(path.join(root, ".teamagent", "knowledge.db"), "");
+    expect(readCursor(sub, "sess-161")).toBe(42);
+  });
+});
+
 describe("B-051: atomic writeCursorAndSeen", () => {
   it("writeCursorAndSeen writes both cursor and seen atomically", () => {
     const dir = makeTmpCwd();

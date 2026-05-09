@@ -74,4 +74,20 @@ describe("harvest-writer", () => {
     ).not.toThrow();
     expect(fs.existsSync(getHarvestPath(nested))).toBe(true);
   });
+
+  it("walk-up (#161): appendHarvest writes to parent harvest file when cwd is a subfolder", () => {
+    // Create knowledge.db at root so walk-up resolves to root
+    fs.mkdirSync(path.join(cwd, ".teamagent"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, ".teamagent", "knowledge.db"), "");
+    const sub = path.join(cwd, "sub");
+    fs.mkdirSync(sub, { recursive: true });
+    appendHarvest(sub, {
+      sessionId: "s-161", mode: "incremental", lastTurnIndex: 1,
+      correctionsFound: 0, extracted: 0, skipped: 0, failed: 0,
+      rejected: 0, deduped: 0, newEntries: [],
+    });
+    // Harvest should be at root, not sub
+    expect(fs.existsSync(path.join(cwd, ".teamagent", "last-harvest.md"))).toBe(true);
+    expect(fs.existsSync(path.join(sub, ".teamagent", "last-harvest.md"))).toBe(false);
+  });
 });

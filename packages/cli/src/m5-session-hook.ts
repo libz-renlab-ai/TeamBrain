@@ -8,6 +8,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { findTeamagentRoot } from "./find-teamagent-root.js";
 import { runM5Infect } from "./commands/m5-infect.js";
 import { runM5Bootstrap } from "./commands/m5-bootstrap.js";
 import { runM5Sync } from "./commands/m5-sync.js";
@@ -39,7 +40,10 @@ export function isGitProject(projectRoot: string): boolean {
 
 /** 当前项目是否已被 infect。 */
 export function isInfected(projectRoot: string): boolean {
-  return fs.existsSync(path.join(projectRoot, ".teamagent", "manifest.json"));
+  // Walk up to find the nearest ancestor with .teamagent/knowledge.db so that
+  // calling from a subdirectory still finds the project's manifest.json.
+  const root = findTeamagentRoot(projectRoot);
+  return fs.existsSync(path.join(root, ".teamagent", "manifest.json"));
 }
 
 /**

@@ -5,6 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { findTeamagentRoot } from "./find-teamagent-root.js";
 
 export const HARVEST_FILE_RELATIVE = path.join(".teamagent", "last-harvest.md");
 
@@ -28,7 +29,8 @@ export interface HarvestRecord {
 }
 
 export function getHarvestPath(cwd: string): string {
-  return path.join(cwd, HARVEST_FILE_RELATIVE);
+  const root = findTeamagentRoot(cwd);
+  return path.join(root, HARVEST_FILE_RELATIVE);
 }
 
 export function appendHarvest(cwd: string, record: HarvestRecord): void {

@@ -46,9 +46,12 @@ function isProjectDir(cwd: string): boolean {
 }
 
 function autoInitDisabled(cwd: string): boolean {
-  // User can opt out per-project OR globally
+  // User can opt out per-project OR globally.
+  // Walk up to find the nearest ancestor with .teamagent/knowledge.db so that
+  // the disabled flag is read from the project root, not the current subfolder.
+  const root = findTeamagentRoot(cwd);
   return (
-    existsSync(join(cwd, ".teamagent", "auto-init.disabled")) ||
+    existsSync(join(root, ".teamagent", "auto-init.disabled")) ||
     existsSync(join(os.homedir(), ".teamagent", "auto-init.disabled"))
   );
 }

@@ -9,6 +9,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { findTeamagentRoot } from "./find-teamagent-root.js";
 
 export const CURSOR_FILE_RELATIVE = path.join(".teamagent", "scan-cursor.json");
 
@@ -26,7 +27,8 @@ interface CursorFile {
 const MAX_SEEN_PER_SESSION = 500;
 
 export function getCursorFilePath(cwd: string): string {
-  return path.join(cwd, CURSOR_FILE_RELATIVE);
+  const root = findTeamagentRoot(cwd);
+  return path.join(root, CURSOR_FILE_RELATIVE);
 }
 
 function loadFile(cwd: string): CursorFile {
