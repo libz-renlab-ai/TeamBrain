@@ -49,8 +49,16 @@ const AST_CONTEXT = path.resolve(
 
 describe("packages/core ast-context source contract (web-tree-sitter must be lazy)", () => {
   it("uses only `import type` for every static import of web-tree-sitter", () => {
-    const src = fs.readFileSync(AST_CONTEXT, "utf-8");
+    const rawSrc = fs.readFileSync(AST_CONTEXT, "utf-8");
     const rel = path.relative(process.cwd(), AST_CONTEXT);
+
+    // Strip comments before scanning — otherwise documentation that mentions
+    // the buggy pattern (e.g. "old code: `import { Parser } from \"web-tree-sitter\"`")
+    // would be mistaken for a real static value import. We only care about
+    // executable code.
+    const src = rawSrc
+      .replace(/\/\/[^\n]*/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
 
     // Walk every `from "web-tree-sitter"` occurrence that belongs to a static
     // import (i.e. NOT a dynamic `import("web-tree-sitter")` expression). For
@@ -194,9 +202,18 @@ describe("packages/cli hook bundle config", () => {
       expect(bins.length).toBeGreaterThan(0);
 
       // Module names that must NEVER appear as a top-level eager
-      // `var <ident> = require("<name>")` line in any hook bundle.
-      // Add to this list when a new native external is introduced.
-      const LAZY_REQUIRED_NATIVES = ["web-tree-sitter"];
+      // `var <ident> = require("<name>")` line in any hook bundle. The
+      // tree-sitter language packs share `web-tree-sitter`'s WASM-load
+      // pattern (only referenced via `require.resolve(...wasm)` strings
+      // in ast-context.ts), so they're zero-impact additions today and
+      // cheap insurance against a future static import.
+      // Add to this list when a new native external joins NATIVE_EXTERNAL
+      // and could plausibly be statically imported from a hot bundle path.
+      const LAZY_REQUIRED_NATIVES = [
+        "web-tree-sitter",
+        "tree-sitter-typescript",
+        "tree-sitter-python",
+      ];
 
       for (const bin of bins) {
         const text = fs.readFileSync(path.join(distDir, bin), "utf-8");
