@@ -10,8 +10,12 @@ import {
   serializeUpdateState,
   defaultUpdateState,
   shouldCheckUpdate,
+  shouldPromptUpgrade,
+  parseChangelog,
+  renderUpgradePrompt,
   type UpdateState,
 } from "@teamagent/core";
+import { loadBundledChangelog } from "./changelog-loader.js";
 import { rotateIfTooLarge } from "./log-rotate.js";
 import { findTeamagentRoot } from "./lib/walk-up.js";
 import { hasProjectMarker } from "./lib/project-markers.js";
@@ -243,4 +247,93 @@ export function maybeShowReinstallBanner(
 
   state.reinstall_banner_shown_at = now();
   writeUpdateState(state);
+}
+
+// ─── issue #225: soft-force upgrade prompt ───────────────────────────────
+
+/**
+ * Issue #225 — soft-force upgrade prompt (gstack-style).
+ *
+ * Renders the multi-line stderr banner with version line, what's-new bullets,
+ * and three CLI choices (--now / --snooze / --never) when:
+ *   - state.never_prompt is false
+ *   - TEAMAGENT_NEVER_PROMPT env var is not "1"
+ *   - state.snooze_until_ts has elapsed
+ *   - state has a pending_banner (set by background updater on successful
+ *     install) OR the caller passes an explicit pendingToVersion
+ *
+ * Does NOT mark `pending_banner.shown = true` — the legacy
+ * `maybeShowPendingBanner` mark-shown semantics are intentionally preserved
+ * for the "已自动更新" post-install one-shot, but the upgrade-available
+ * banner re-fires every SessionStart until the user picks A/B/C. That's
+ * the whole point of soft-force.
+ */
+export function maybeShowUpgradePrompt(
+  stderr: (s: string) => void = (s) => process.stderr.write(s),
+  now: () => number = () => Date.now(),
+  loadChangelog: () => string = loadBundledChangelog,
+): void {
+  const state = readUpdateState();
+  const decision = shouldPromptUpgrade({
+    state,
+    now: now(),
+    env: process.env,
+  });
+  if (!decision) return;
+
+  const banner = state.pending_banner;
+  if (!banner) return; // shouldPromptUpgrade also requires this; defense
+
+  const fromVersion = state.last_installed_version || "";
+  // Read CHANGELOG once and reuse it for BOTH version inference and bullet
+  // parsing — calling the loader twice (once here, once in guessVersion)
+  // double-reads dist/CHANGELOG.md and breaks tests that inject a fixture
+  // since guessVersion would silently fall back to the real on-disk copy.
+  const changelogContent = (() => {
+    try {
+      return loadChangelog();
+    } catch {
+      return "";
+    }
+  })();
+  // banner.to is a SHA in older flows; the soft-force surface needs a
+  // semver-like string. Fall back to the SHA's first 7 chars when CHANGELOG
+  // is missing — the prompt still shows the user "something is available"
+  // even with an empty bullet list.
+  const toVersion = guessVersion(changelogContent, banner.to);
+  const bullets = parseChangelog(changelogContent, fromVersion, toVersion, {
+    maxBullets: 7,
+  });
+
+  stderr(
+    renderUpgradePrompt({
+      fromVersion,
+      toVersion,
+      bullets,
+      snoozeLevel: state.snooze_level,
+    }),
+  );
+  // No state mutation: the prompt re-fires every SessionStart until the user
+  // picks --now (clears snooze, runs updater) / --snooze (advances level) /
+  // --never (sets never_prompt=true). That's the soft-force.
+}
+
+/**
+ * If the supplied CHANGELOG content has an H2 heading newer than what's
+ * installed, prefer that as the toVersion so the bullet list is non-empty.
+ * Otherwise return the SHA's first 7 chars (banner.to) as a last-resort
+ * label — the prompt still surfaces "an upgrade is available."
+ *
+ * Pure helper — takes the changelog content as input rather than re-loading
+ * so callers (and tests) control exactly which CHANGELOG drives both the
+ * version label and the bullet list.
+ */
+function guessVersion(changelogContent: string, fallback: string): string {
+  if (changelogContent && changelogContent.length > 0) {
+    const newest = changelogContent.match(
+      /^##\s+(?:\[)?(\d+\.\d+\.\d+(?:[.-][\w.]+)?)(?:\])?/m,
+    );
+    if (newest && newest[1]) return newest[1];
+  }
+  return fallback ? fallback.slice(0, 7) : "(unknown)";
 }
