@@ -225,11 +225,112 @@ fi
 # Step 4: Extract and install
 INSTALL_DIR="${HOME}/.local/lib/teamagent"
 BIN_DIR="${HOME}/.local/bin"
+BACKUP_DIR="${HOME}/.teamagent/backups"
+SETUP_LOG="${HOME}/.teamagent/postinstall.log"
+BACKUP_KEEP=3
+
+# ── Issue #158 safety net: snapshot existing install before destructive steps ─
+# Defense-in-depth so a future failure between `mkdir -p` and the final `ln`
+# (or any non-atomic step in `tar -xzf …`) cannot leave the user without a
+# working teamagent. The install.sh-installed surface lives at INSTALL_DIR;
+# the original #158 reproducer (`npm i -g github:…`) bypasses install.sh
+# entirely and is fixed by removing tree-sitter deps from package.json. The
+# spec / tests for this policy live in
+# packages/cli/src/lib/install-backup.ts (tested cross-platform via vitest).
+#
+# Contract mirrored from the TS module:
+#   - backup file: $BACKUP_DIR/<ISO-with-colons-replaced-by-dashes>.tgz
+#   - retention: keep newest 3 by mtime, FIFO eviction
+#   - rollback log line: `[<ts>] stage=install status=rolled-back source=<path>`
+#   - no-op when INSTALL_DIR is absent or empty
+mkdir -p "$BACKUP_DIR"
+mkdir -p "$(dirname "$SETUP_LOG")"
+
+_iso_now() { date -u +"%Y-%m-%dT%H-%M-%SZ"; }
+_iso_now_log() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+
+_log_setup() {
+  printf '[%s] %s\n' "$(_iso_now_log)" "$1" >> "$SETUP_LOG" 2>/dev/null || true
+}
+
+_backup_existing_install() {
+  if [ ! -d "$INSTALL_DIR" ]; then
+    BACKUP_PATH=""
+    _log_setup "stage=backup status=skipped reason=no-existing-install"
+    return 0
+  fi
+  # Skip if the install dir is empty (nothing worth saving)
+  if [ -z "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
+    BACKUP_PATH=""
+    _log_setup "stage=backup status=skipped reason=empty-install"
+    return 0
+  fi
+  local ts
+  ts=$(_iso_now)
+  BACKUP_PATH="${BACKUP_DIR}/${ts}.tgz"
+  if (cd "$(dirname "$INSTALL_DIR")" && tar -czf "$BACKUP_PATH" "$(basename "$INSTALL_DIR")") 2>/dev/null; then
+    _log_setup "stage=backup status=ok target=$BACKUP_PATH"
+    printf '[install] backed up existing install → %s\n' "$BACKUP_PATH"
+  else
+    rm -f "$BACKUP_PATH" 2>/dev/null || true
+    BACKUP_PATH=""
+    _log_setup "stage=backup status=failed reason=tar-create-failed"
+    printf '[install] WARNING: backup of existing install failed; continuing without rollback safety\n' >&2
+  fi
+}
+
+_prune_old_backups() {
+  # Keep newest BACKUP_KEEP *.tgz; delete the rest. Cross-platform sort by
+  # mtime: ls -1t lists newest first.
+  if [ ! -d "$BACKUP_DIR" ]; then return 0; fi
+  # shellcheck disable=SC2012
+  ls -1t "$BACKUP_DIR"/*.tgz 2>/dev/null | tail -n +"$((BACKUP_KEEP + 1))" | while IFS= read -r old; do
+    [ -n "$old" ] && rm -f "$old"
+  done
+}
+
+_rollback_from_backup() {
+  # Triggered by ERR trap; called with no args. Restores INSTALL_DIR from
+  # $BACKUP_PATH (set by _backup_existing_install). Best-effort — never
+  # itself errors out (we are already in a failure path).
+  set +e
+  if [ -z "${BACKUP_PATH:-}" ] || [ ! -f "$BACKUP_PATH" ]; then
+    _log_setup "stage=install status=rollback-skipped reason=no-backup-available"
+    printf '\n[install] install failed and no backup was available to restore.\n' >&2
+    return 0
+  fi
+  rm -rf "$INSTALL_DIR" 2>/dev/null
+  mkdir -p "$(dirname "$INSTALL_DIR")"
+  if (cd "$(dirname "$INSTALL_DIR")" && tar -xzf "$BACKUP_PATH") 2>/dev/null; then
+    _log_setup "stage=install status=rolled-back source=$BACKUP_PATH"
+    # Use ts shorthand from the filename for the user message.
+    local ts
+    ts=$(basename "$BACKUP_PATH" .tgz)
+    printf '\n⚠️  teamagent install failed; restored backup from %s\n' "$ts" >&2
+  else
+    _log_setup "stage=install status=rollback-failed reason=tar-extract-failed"
+    printf '\n[install] WARNING: backup restore failed; backup preserved at: %s\n' "$BACKUP_PATH" >&2
+  fi
+}
+
+# Snapshot BEFORE any mutation of INSTALL_DIR.
+BACKUP_PATH=""
+_backup_existing_install
+_prune_old_backups
+
+# Arm rollback only for the destructive window. ERR trap fires on any
+# non-zero exit under `set -e`; we install it just before the mkdir / tar /
+# ln sequence so prior `read -r answer` (safe-mode prompt) cannot trip it.
+trap '_rollback_from_backup' ERR
+
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 
 tar -xzf "$TMPDIR_INSTALL/$TARBALL_NAME" -C "$INSTALL_DIR" --strip-components=1
 chmod +x "$INSTALL_DIR/dist/bin.js" 2>/dev/null || true
 ln -sf "$INSTALL_DIR/dist/bin.js" "$BIN_DIR/teamagent"
+
+# Disarm rollback trap — install completed successfully past the destructive window.
+trap - ERR
 
 # Step 5: PATH hint
 if ! command -v teamagent >/dev/null 2>&1; then
