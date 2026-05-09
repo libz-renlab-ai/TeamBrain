@@ -128,7 +128,7 @@ _Avoid_: snapshot, recording, capture, sample（前三者与早期 ad-hoc 录像
 
 **Three replay tiers**:
 (a) byte-level event diff（毫秒、每 commit、`pnpm test` 也跑）；(b) sequence + DB-state-after diff（秒级、每 PR）；(c) LLM-judge expected-decisions 对照（分钟级、temperature=0、dual-consensus、PR-blocking）。三层走 α-strict gate：任一 FAIL 即阻 PR；唯一逃生口是 `<fixture>/judge-overrides.jsonl` append-only 人审记录。详 ADR-0010。
-_Avoid_: layer / level / stage（与 L1/L2/L3 storage layer 撞名；tier 是 canonical 词）
+_Avoid_: layer / level / stage（与 L1/L2/L3 storage layer 撞名；tier 是 canonical 词）；裸 `tier` 也避免——calibration `Tier`（rule maturity 6 档）≠ replay tier（verification 三层），写时用 `replay tier` / `verification tier` 显式区分。
 
 ### Review & PR workflow（开 PR 到 merge 之间的 review 链；ADR-0007 设定 `/review` skill 为权威 gate）
 
