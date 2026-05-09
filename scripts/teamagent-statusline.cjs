@@ -4,10 +4,14 @@
 // Suppress Node 22's `(node:NNN) ExperimentalWarning: SQLite is an experimental
 // feature ...` line. CC concatenates statusline stdout+stderr onto the same
 // status row, so the warning corrupts the rendered line and tricks new users
-// into thinking the install is broken (issue #168). statusline is a short-lived
-// read-only sub-process, so silencing all process warnings here is scoped.
+// into thinking the install is broken (issue #168). Filter ONLY
+// ExperimentalWarning — preserve DeprecationWarning, MaxListenersExceededWarning,
+// UnhandledPromiseRejectionWarning, etc. so we still see real production issues.
 process.removeAllListeners("warning");
-process.on("warning", () => {});
+process.on("warning", (w) => {
+  if (w?.name === "ExperimentalWarning") return;
+  process.stderr.write(`(node:${process.pid}) ${w?.name ?? "Warning"}: ${w?.message ?? w}\n`);
+});
 
 const path = require("path");
 const os = require("os");
@@ -124,9 +128,13 @@ function getLastLearnedDate(db) {
 // 新用户算账算不通。HELPED = 工具的"正向贡献"（静默命中、AI 听了提醒、KB 增长）；
 // RISK = 工具拦下/标记的风险事件（warned / blocked / bypass / bad pattern）。
 // 同一条事件只能落在一组里。
+//
+// 注意：不收 `hook-post.result` 与 `error.candidate.rejected` —— 前者是
+// post-tool-use 元事件（成功失败一并 emit），把失败次数算成"帮过"会把指标
+// 反向膨胀；后者是用户对 extractor 错误候选的"否决"（rule was wrong），
+// 算工具贡献语义不通。两者都是 metadata，不进 HELPED；为保证正交也不进 RISK。
 const HELPED_EVENT_KINDS = [
   "hook-pre.passive_matched", // 静默命中（passive 规则）—— PreToolUse 实际发出的"matched"事件
-  "hook-post.result",
   "ai.narrative.injected",
   "ai.narrative.complied",
   "ai.override.complied",
@@ -137,7 +145,6 @@ const HELPED_EVENT_KINDS = [
   "init.completed",
   "scenario.run",
   "error.candidate.approved",
-  "error.candidate.rejected",
 ];
 
 const RISK_EVENT_KINDS = [

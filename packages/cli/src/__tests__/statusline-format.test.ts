@@ -173,17 +173,21 @@ describe("statusline issue #168 — labelled fields + de-overlap + warning suppr
   it("HELPED_EVENT_KINDS and RISK_EVENT_KINDS arrays do not overlap (static check)", () => {
     const src = fs.readFileSync(STATUSLINE, "utf-8");
     function extractArray(name: string): string[] {
-      const m = src.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`));
-      const body = m?.[1];
-      if (!body) throw new Error(`array ${name} not found in statusline source`);
-      const items = body
+      // 用 matchAll + 断言唯一声明，避免未来一次重复 const 把第二份 shadow 偷藏过去
+      // （/review adversarial pass finding #2，issue #168 PR）。
+      const matches = Array.from(
+        src.matchAll(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`, "g")),
+      );
+      expect(matches.length, `${name} should be declared exactly once`).toBe(1);
+      const body = matches[0]?.[1];
+      if (!body) throw new Error(`array ${name} body empty`);
+      return body
         .split("\n")
         .map((line) => {
           const q = line.match(/"([^"]+)"/);
           return q ? q[1] : null;
         })
         .filter((v): v is string => v !== null);
-      return items;
     }
     const helped = extractArray("HELPED_EVENT_KINDS");
     const risk = extractArray("RISK_EVENT_KINDS");
@@ -191,5 +195,48 @@ describe("statusline issue #168 — labelled fields + de-overlap + warning suppr
     expect(risk.length).toBeGreaterThan(0);
     const overlap = helped.filter((k) => risk.includes(k));
     expect(overlap).toEqual([]);
+  });
+
+  it("does not count hook-post.result or error.candidate.rejected as helped (metadata events)", () => {
+    // /review adversarial pass finding #1: hook-post.result fires for every
+    // post-tool-use including failures, and error.candidate.rejected is a user
+    // saying "your extracted candidate was wrong" — neither is a "tool helped"
+    // signal. Both must NOT inflate the 帮过 counter.
+    const home = mkTmpHome();
+    try {
+      seedKnowledgeWithRows(home, [{ status: "active", type: "avoidance" }]);
+      seedEvents(home, [
+        { kind: "hook-post.result", daysAgo: 0 },
+        { kind: "hook-post.result", daysAgo: 0 },
+        { kind: "error.candidate.rejected", daysAgo: 0 },
+      ]);
+      const r = runStatusline(home);
+      expect(r.stdout).toContain("帮过:0今/0周");
+      // 也不能误归到风险里；它们是 metadata，两边都不进
+      expect(r.stdout).toContain("拦过:0今");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves non-Experimental warnings on stderr (DeprecationWarning still surfaces)", () => {
+    // /review adversarial pass finding #3: blanket suppression hides real
+    // production issues. Filter must be selective.
+    const home = mkTmpHome();
+    try {
+      seedKnowledgeWithRows(home, [{ status: "active", type: "avoidance" }]);
+      // We can't easily trigger a DeprecationWarning from inside the spawned
+      // statusline process, but we can assert the handler shape: it explicitly
+      // checks `w.name === "ExperimentalWarning"` and writes others to stderr.
+      const src = fs.readFileSync(STATUSLINE, "utf-8");
+      expect(src).toContain('w?.name === "ExperimentalWarning"');
+      expect(src).toMatch(/process\.stderr\.write/);
+      // And the smoke run still exits clean
+      const r = runStatusline(home);
+      expect(r.status).toBe(0);
+      expect(r.stderr).not.toContain("ExperimentalWarning");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });
