@@ -3,7 +3,11 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { applyUserLevelChannelOps } from "./install-hook.js";
+import {
+  applyUserLevelChannelOps,
+  findMostRecentSettingsBackup,
+  hasTeamagentChannelEntry,
+} from "./install-hook.js";
 
 /**
  * v0.11.0 — soft-retire shim for `teamagent install-user-hook`.
@@ -85,10 +89,12 @@ export function installUserHook(
   opts: InstallUserHookOptions = {},
 ): InstallUserHookResult {
   // v0.11.0 — soft-retire deprecation warning. Kept on stderr so CI logs
-  // surface it even when callers capture stdout into JSON.
+  // surface it even when callers capture stdout into JSON. Wording avoids
+  // internal helper names so users grepping the message land in this file
+  // (the public command surface), not in implementation churn.
   process.stderr.write(
     "[deprecation] `teamagent install-user-hook` is deprecated. " +
-      "`teamagent init` now installs SessionStart at user level via applyUserLevelChannelOps. " +
+      "`teamagent init` now installs the user-level SessionStart hook automatically. " +
       "This standalone command will be removed in the next major version (v1.0).\n",
   );
 
@@ -127,7 +133,7 @@ export function installUserHook(
   // Test contract: `backupPath` is null on first install (no prior settings.json
   // existed → writeSettings did not create a .bak-<ts> sibling); non-null on
   // re-install pointing at the most recent `.bak-<ts>` left by writeSettings.
-  const backupPath = findMostRecentBackup(settingsPath);
+  const backupPath = findMostRecentSettingsBackup(settingsPath);
 
   return { settingsPath, backupPath, hookEntry: stagedPath, alreadyInstalled };
 }
@@ -135,8 +141,12 @@ export function installUserHook(
 /**
  * Inspect `~/.claude/settings.json` for an existing TeamAgent SessionStart
  * entry, including untagged-legacy entries whose command points at
- * `bin-session-start.cjs`. Returns false on missing / malformed file (the
- * pre-shim behaviour matched this).
+ * `bin-session-start.cjs`. Returns false on missing / malformed file.
+ *
+ * Implementation delegates to install-hook.ts's shared `hasTeamagentChannelEntry`
+ * predicate so the SessionStart "already installed?" test uses the exact same
+ * dual-signal logic (tagged OR untagged-legacy bundle filename match) as the
+ * channelOps loop's strip+repush idempotency check.
  */
 function detectAlreadyInstalledSessionStart(settingsPath: string): boolean {
   if (!fs.existsSync(settingsPath)) return false;
@@ -144,47 +154,14 @@ function detectAlreadyInstalledSessionStart(settingsPath: string): boolean {
     const raw = fs.readFileSync(settingsPath, "utf-8").trim();
     if (!raw) return false;
     const parsed = JSON.parse(raw) as ClaudeSettings;
-    const list = parsed.hooks?.SessionStart;
-    if (!Array.isArray(list)) return false;
-    return list.some((h) => {
-      if (h._teamagentTag === SESSION_START_TAG) return true;
-      if (h._teamagentTag) return false;
-      const cmds = h.hooks?.map((c) => c.command ?? "") ?? [];
-      return cmds.some((c) => c.includes("bin-session-start.cjs"));
-    });
+    return hasTeamagentChannelEntry(
+      parsed as Parameters<typeof hasTeamagentChannelEntry>[0],
+      "SessionStart",
+      SESSION_START_TAG,
+    );
   } catch {
     return false;
   }
-}
-
-/**
- * Locate the most recent `.bak-<timestamp>` sibling of `filePath`. Used to
- * preserve the pre-shim test contract that returns `backupPath` after a
- * re-install. `writeSettings` (called inside `applyUserLevelChannelOps`)
- * creates these backups; this function picks the freshest one.
- */
-function findMostRecentBackup(filePath: string): string | null {
-  const dir = path.dirname(filePath);
-  const base = path.basename(filePath);
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(dir);
-  } catch {
-    return null;
-  }
-  const baks = entries
-    .filter((e) => e.startsWith(`${base}.bak-`))
-    .map((e) => {
-      const full = path.join(dir, e);
-      try {
-        return { name: full, mtimeMs: fs.statSync(full).mtimeMs };
-      } catch {
-        return { name: full, mtimeMs: 0 };
-      }
-    })
-    .sort((a, b) => b.mtimeMs - a.mtimeMs);
-  const newest = baks[0];
-  return newest ? newest.name : null;
 }
 
 /**

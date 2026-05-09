@@ -73,6 +73,44 @@ describe("installHook", () => {
     );
     expect(content.hooks.PreToolUse).toHaveLength(1);
   });
+
+  // v0.11.0 channelOps unification: project-level applyChannelOps now also
+  // strips untagged-legacy entries that point at TeamAgent bundle filenames
+  // (mirrors B-086 user-level dedup). Without this test, a future refactor
+  // could silently regress project-level dedup since the symmetric user-level
+  // test (line ~790) only exercises ~/.claude/settings.json — not
+  // <cwd>/.claude/settings.local.json.
+  it("(B-086 project) untagged-legacy PreToolUse entry replaced cleanly on install", () => {
+    const settingsPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "Bash",
+              hooks: [
+                {
+                  type: "command",
+                  command: "node /old/install/path/bin-pre-tool-use.cjs",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      "utf-8",
+    );
+
+    installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userLevel: false });
+
+    const content = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    expect(content.hooks.PreToolUse).toHaveLength(1);
+    expect(content.hooks.PreToolUse[0]._teamagentTag).toBe("teamagent-pre-tool-use");
+    const cmd: string = content.hooks.PreToolUse[0].hooks[0].command;
+    expect(cmd).not.toContain("/old/install/path/bin-pre-tool-use.cjs");
+  });
 });
 
 describe("uninstallHook", () => {

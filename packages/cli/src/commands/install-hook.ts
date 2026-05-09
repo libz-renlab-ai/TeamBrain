@@ -306,9 +306,9 @@ const ALL_CHANNELS: ReadonlyArray<ChannelDef> = [
   { channel: "Stop",             tag: STOP_HOOK_TAG,      bundleFilename: "bin-stop.cjs",                                                     timeout: 60, scopes: ["project", "user"] },
   { channel: "SessionEnd",       tag: SESSION_END_TAG,    bundleFilename: "bin-session-end.cjs",                                              timeout: 30, scopes: ["project", "user"] },
   { channel: "PreCompact",       tag: PRE_COMPACT_TAG,    bundleFilename: "bin-pre-compact.cjs",                                              timeout: 30, scopes: ["project", "user"] },
-  // user-level only — see CHANNEL_BUNDLE_FILENAMES + the rationale at line 815-823
-  // of the pre-v0.11 file. SessionStart is whole-machine; digital-twin-tap stays
-  // user-level so v0.11's removal of digital-twin-tap.sh from committed
+  // user-level only. SessionStart is whole-machine semantics (the SessionStart
+  // hook auto-inits any project's knowledge.db). digital-twin-tap stays
+  // user-level too so v0.11's removal of digital-twin-tap.sh from committed
   // .claude/settings.json doesn't reintroduce a project-level double-tap.
   { channel: "SessionStart",     tag: SESSION_START_TAG,  bundleFilename: "bin-session-start.cjs",                                            timeout: 10, scopes: ["user"] },
   { channel: "Stop",             tag: DIGITAL_TWIN_TAG,   bundleFilename: "bin-digital-twin-tap.cjs",                                         timeout: 5,  scopes: ["user"] },
@@ -358,6 +358,16 @@ const ALL_HOOK_CHANNELS: ReadonlyArray<HookChannel> = [
  * The caller is responsible for read+write of the settings file and (for user
  * scope) lock acquisition. This helper is pure mutation of an in-memory
  * `ClaudeSettings`.
+ *
+ * Contract:
+ * - **Idempotent**: repeated calls with the same `(scope, ops, settings,
+ *   homeDir)` shape produce the same final settings shape (strip-then-push).
+ * - **Lock requirement**: caller MUST hold the user-level settings lock when
+ *   `scope === "user"`. Project scope is cwd-scoped and needs no lock.
+ * - **Precondition**: `settings.hooks` may be undefined on entry; the helper
+ *   creates it. `settings.hooks[channel]` may be undefined or any HookEntry[].
+ * - **Postcondition**: `settings.hooks[channel]` is either present with at
+ *   least one entry or absent (empty arrays are pruned).
  */
 function applyChannelOps(opts: {
   scope: "project" | "user";
@@ -431,8 +441,12 @@ function applyChannelOps(opts: {
  * including untagged-legacy entries that point at the channel's bundle
  * filename. Used to derive `alreadyInstalled` BEFORE `applyChannelOps`
  * strips and re-pushes the entry.
+ *
+ * Exported so the soft-retired `installUserHook` shim (and any future caller
+ * that needs the same "did we already register this channel?" predicate)
+ * can reuse the exact same dual-signal logic without redefining it locally.
  */
-function hasTeamagentChannelEntry(
+export function hasTeamagentChannelEntry(
   settings: ClaudeSettings,
   channel: HookChannel,
   tag: string,
@@ -543,22 +557,49 @@ function safeMtime(p: string): number {
   }
 }
 
-function pruneOldBackups(file: string): void {
+/**
+ * List `.bak-<ts>` siblings of `file` sorted newest-first by mtime. Shared
+ * helper for both pruning (older entries trimmed) and lookup (the soft-retired
+ * `installUserHook` shim needs the freshest backup to populate its
+ * `backupPath` return field). Keeping the listing in one place ties it to the
+ * `.bak-<ts>` naming convention `writeSettings` writes — change one, change
+ * the other together.
+ */
+function listSettingsBackups(
+  file: string,
+): ReadonlyArray<{ name: string; mtimeMs: number }> {
   const dir = path.dirname(file);
   const base = path.basename(file);
   let entries: string[];
   try {
     entries = fs.readdirSync(dir);
   } catch {
-    return;
+    return [];
   }
-  const baks = entries
+  return entries
     .filter((e) => e.startsWith(`${base}.bak-`))
     .map((e) => ({ name: e, mtimeMs: safeMtime(path.join(dir, e)) }))
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+/**
+ * Locate the most recent `.bak-<timestamp>` sibling of `file`. Returns the
+ * absolute path, or null when no backups exist. Exported so the soft-retired
+ * `installUserHook` shim can populate its `backupPath` return field without
+ * reimplementing the listing logic.
+ */
+export function findMostRecentSettingsBackup(file: string): string | null {
+  const baks = listSettingsBackups(file);
+  const newest = baks[0];
+  return newest ? path.join(path.dirname(file), newest.name) : null;
+}
+
+function pruneOldBackups(file: string): void {
+  const baks = listSettingsBackups(file);
   // We're about to create one more backup. Keep the newest
   // (RETENTION_BACKUPS - 1) and let that new one round us up to
   // RETENTION_BACKUPS total.
+  const dir = path.dirname(file);
   for (const old of baks.slice(RETENTION_BACKUPS - 1)) {
     try {
       fs.unlinkSync(path.join(dir, old.name));
