@@ -13,8 +13,31 @@ artifacts the user sees) do NOT need an entry.
 
 ## Unreleased
 
+## 0.11.0 — 2026-05-09
+
+Closes the three follow-ups captured in PR #232 § 8 ("Follow-up captured for next major version") via one bundled cleanup PR. See `docs/plans/2026-05-09-install-hook-cleanup-v0.11/plan.md` for the full scope decision.
+
+### Deprecated
+
+- **`teamagent install-user-hook` is now a soft-retire shim**. The
+  command body is reduced to a thin wrapper around the shared
+  `applyUserLevelChannelOps` helper added in this PR; the deprecation
+  warning is updated to mention the new helper name. The standalone
+  command remains functional through the v1.0 deprecation window because
+  `packages/teamagent/postinstall.mjs:365` still calls it directly during
+  every `npm install -g teamagent` — hard-deletion is the v1.0 cut.
+
 ### Fixed
 
+- **In-TeamBrain double-tap on Stop hook eliminated**. Pre-v0.11 the
+  TeamBrain repo's committed `.claude/settings.json` registered both a
+  `digital-twin-tap.sh` bash wrapper AND `bin-digital-twin-tap.cjs`
+  (user-level via `teamagent init`), so every Stop event spawned the
+  digital-twin tap twice. `tapSession()`'s `(cwd, session_id)` idempotency
+  dedup'd the database write, but the wasted process spawns and file
+  reads (~50ms per Stop) added up. v0.11.0 drops the `.sh` wrapper and
+  collapses to the `.cjs` user-level path alone — net 1 spawn per Stop
+  in TeamBrain (previously 2) and unchanged in other projects (still 1).
 - **Issue #158**: `npm i -g github:libz-renlab-ai/TeamBrain#release` no longer
   fails on Windows + destroys the user's prior teamagent install. The 3
   tree-sitter native deps (`web-tree-sitter`, `tree-sitter-typescript`,
