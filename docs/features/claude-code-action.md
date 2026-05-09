@@ -44,6 +44,30 @@ to Anthropic via the `CLAUDE_CODE_OAUTH_TOKEN` repo secret. Permissions granted:
 (plus `actions: read` on the mention bot so Claude can read CI results when
 asked).
 
+## Prerequisites — both halves of the install
+
+`/install-github-app` is **two-sided**, and only the local half writes files
+into the repo. Both halves must complete or the action 401s at runtime:
+
+1. **Workflow YAML + repo secret** (local half, what `/install-github-app`
+   does on your machine): writes `.github/workflows/claude.yml` +
+   `claude-code-review.yml` and stores `CLAUDE_CODE_OAUTH_TOKEN` as a repo
+   secret. PR #190 already shipped the YAML; the secret may or may not be
+   set depending on whether the install flow's GitHub-side OAuth was
+   completed.
+2. **Claude Code GitHub App install on the repo** (remote half, browser
+   flow at `https://github.com/apps/claude`): the App must be granted
+   access to this repository. Without it, the action's OIDC →
+   app-token-exchange step returns `401 Unauthorized — Claude Code is
+   not installed on this repository. Please install the Claude Code
+   GitHub App at https://github.com/apps/claude`. Re-running
+   `/install-github-app` is the supported way to re-trigger the OAuth
+   flow if it was cancelled.
+
+The OAuth token alone is **not** sufficient. The token authenticates the
+action to Anthropic API, but the App install is what authorises Anthropic
+to mint a per-PR app token via OIDC exchange.
+
 ## Required secret
 
 `CLAUDE_CODE_OAUTH_TOKEN` — a Claude Code OAuth token, set as a **repo secret**
@@ -131,6 +155,31 @@ cloud comment is silent or 👍.
   access. It's **not** a GitHub PAT; it doesn't read code outside the PR
   diff that Claude already has via the checkout. Rotate via
   `/install-github-app` if compromised.
+
+## Troubleshooting
+
+**`App token exchange failed: 401 Unauthorized — Claude Code is not
+installed on this repository. Please install the Claude Code GitHub App
+at https://github.com/apps/claude`** (verbatim error from the cloud
+`claude-review` job).
+
+Means the OAuth token half is set but the GitHub App half isn't. The
+`anthropics/claude-code-action@v1` step exchanges its OIDC token for a
+per-PR app token via Anthropic's token-exchange endpoint, which checks
+that the App is installed on the calling repository. If the install
+flow's browser-side authorization was cancelled or never completed, the
+exchange returns 401 and the action fails before any review runs. Fix:
+re-run `/install-github-app` and complete the GitHub App authorization
+when redirected to `https://github.com/apps/claude`. The local `/review`
+skill is unaffected by this failure mode (it doesn't touch GitHub Apps).
+
+**Workflow runs but never posts a comment, no error.** Check the run logs
+for `INPUT_PLUGINS` / `INPUT_PLUGIN_MARKETPLACES` lines — both must be
+non-empty for the auto-review job to load `code-review@claude-code-plugins`.
+
+**Cloud review disagrees with local `/review`.** Per ADR-0007 the local
+finding wins by default. Triage via `docs/POSTPR.md`'s
+review-finding-vs-implementation row.
 
 ## See also
 
