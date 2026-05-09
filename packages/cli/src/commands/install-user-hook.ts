@@ -3,20 +3,28 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { buildUserLevelHookCommand } from "../lib/user-level-hook-shim.js";
+import { applyUserLevelChannelOps } from "./install-hook.js";
 
 /**
- * 注册一个**用户级** SessionStart hook 到 `~/.claude/settings.json`。
+ * v0.11.0 — soft-retire shim for `teamagent install-user-hook`.
  *
- * 目的：让 Claude Code 打开**任何**项目时都先跑 auto-init 检测。若项目
- * 缺 `.teamagent/knowledge.db` 且像个正经项目 (有 .git/package.json 等),
- * 后台自动跑 `teamagent init`。
+ * History:
+ * - Before PR #230 (B+C scope) this file owned ~120 lines of bespoke
+ *   SessionStart-write logic that duplicated parts of `installHook()`'s
+ *   user-level branch.
+ * - PR #230 folded SessionStart registration into `installHook()`'s
+ *   user-level write path and added a deprecation warning here. The
+ *   bespoke implementation stayed for backward compatibility.
+ * - This PR (v0.11.0) finishes the job: the body is now a thin shim that
+ *   delegates to `applyUserLevelChannelOps` with a `channelFilter` of
+ *   `["SessionStart"]`. The standalone command remains functional through
+ *   the next major version cycle (deletion is for v1.0).
  *
- * 与 `install-hook` 的区别：
- * - `install-hook`    → `<项目>/.claude/settings.local.json` (PreToolUse/Stop 等)
- * - `install-user-hook` → `~/.claude/settings.json`          (SessionStart only)
- *
- * 写前先 backup, 只合并新键, 绝不覆写他人 SessionStart hook。
+ * Why "soft-retire" not "delete":
+ *   `packages/teamagent/postinstall.mjs:365` calls this command directly
+ *   on every `npm install -g teamagent`. Hard-deleting would break the
+ *   install path itself; the shim keeps the surface intact while we
+ *   complete the deprecation grace period.
  */
 
 const SESSION_START_TAG = "teamagent-session-start";
@@ -54,7 +62,7 @@ export interface InstallUserHookResult {
 }
 
 function defaultSessionStartEntry(): string {
-  // 同 install-hook 的 cliRoot 查找逻辑
+  // 与 install-hook 的 cliRoot 查找逻辑对齐
   const here = fileURLToPath(import.meta.url);
   let dir = path.dirname(here);
   for (let i = 0; i < 6; i++) {
@@ -68,19 +76,20 @@ function defaultSessionStartEntry(): string {
   return path.join(path.dirname(path.dirname(here)), "bin-session-start.cjs");
 }
 
+/**
+ * v0.11.0 shim — registers a user-level SessionStart hook by delegating to
+ * `applyUserLevelChannelOps`. Preserves the pre-shim return shape exactly so
+ * `postinstall.mjs:365` and the existing test suite don't break.
+ */
 export function installUserHook(
   opts: InstallUserHookOptions = {},
 ): InstallUserHookResult {
-  // B+C scope (2026-05-09): SessionStart registration is now folded into
-  // `installHook()`'s user-level write path (`mergeUserLevelHooks`). This
-  // standalone command remains functional for backward compatibility but is
-  // deprecated — `teamagent init` already performs the same registration.
-  // Emitting on stderr so the message reaches CI logs even when callers
-  // capture stdout into JSON.
+  // v0.11.0 — soft-retire deprecation warning. Kept on stderr so CI logs
+  // surface it even when callers capture stdout into JSON.
   process.stderr.write(
     "[deprecation] `teamagent install-user-hook` is deprecated. " +
-      "`teamagent init` now installs SessionStart at user level via mergeUserLevelHooks. " +
-      "This standalone command will be removed in the next major version.\n",
+      "`teamagent init` now installs SessionStart at user level via applyUserLevelChannelOps. " +
+      "This standalone command will be removed in the next major version (v1.0).\n",
   );
 
   const home = opts.homeDir ?? os.homedir();
@@ -94,82 +103,96 @@ export function installUserHook(
     );
   }
 
-  // B-091: stage the bundle to a stable user-owned location and reference
-  // *that* in settings.json — not the bundle inside whichever node_modules /
-  // tmp clone produced this install. Otherwise nvm version switches, npm
-  // reinstalls, or `/private/tmp/<repo>` cleanups silently break every
-  // future Claude Code SessionStart hook.
-  const stagedPath = path.join(home, ".teamagent", "hooks", "bin-session-start.cjs");
-  fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
-  fs.copyFileSync(hookEntry, stagedPath);
+  // Test contract: `alreadyInstalled` reflects whether a TeamAgent SessionStart
+  // entry was present BEFORE this call (idempotent re-install detection). Must
+  // be checked before applyUserLevelChannelOps strips and re-pushes.
+  const alreadyInstalled = detectAlreadyInstalledSessionStart(settingsPath);
 
-  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-
-  // Backup 已有 settings.json (带时间戳, 不覆盖历史备份)
-  let backupPath: string | null = null;
-  if (fs.existsSync(settingsPath)) {
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    backupPath = `${settingsPath}.bak-${ts}`;
-    fs.copyFileSync(settingsPath, backupPath);
-  }
-
-  const raw = fs.existsSync(settingsPath)
-    ? fs.readFileSync(settingsPath, "utf-8").trim()
-    : "";
-  const settings: ClaudeSettings = raw ? JSON.parse(raw) : {};
-  if (!settings.hooks) settings.hooks = {};
-  if (!settings.hooks.SessionStart) settings.hooks.SessionStart = [];
-
-  // B-086: legacy entries written before _teamagentTag was added (npm
-  // tarball install pre-tag, or different install path) appear as untagged
-  // hook entries pointing at some `bin-session-start.cjs`. Plain tag-only
-  // dedup misses them and they accumulate across reinstalls. Also strip
-  // them here so a re-install consolidates back to a single tagged entry.
-  const before = settings.hooks.SessionStart.length;
-  settings.hooks.SessionStart = settings.hooks.SessionStart.filter(
-    (h) => !isTeamagentSessionStartEntry(h),
+  applyUserLevelChannelOps(
+    home,
+    { sessionStartEntry: hookEntry },
+    { channelFilter: ["SessionStart"] },
   );
-  const removedLegacy = before - settings.hooks.SessionStart.length;
 
-  // After cleanup we always append a fresh tagged entry pointing at the
-  // staged bundle path (~/.teamagent/hooks/bin-session-start.cjs).
-  // `alreadyInstalled` reflects whether the same tagged entry was already
-  // present BEFORE cleanup, so callers can distinguish first-install from
-  // re-install for messaging.
-  const alreadyInstalled = removedLegacy > 0;
-  settings.hooks.SessionStart.push({
-    _teamagentTag: SESSION_START_TAG,
-    hooks: [
-      {
-        type: "command",
-        // Issue #209: wrap in graceful shim so a missing
-        // ~/.teamagent/hooks/bin-session-start.cjs exits 0 silently rather
-        // than printing MODULE_NOT_FOUND on every Claude Code launch. See
-        // lib/user-level-hook-shim.ts for the full rationale.
-        command: buildUserLevelHookCommand(stagedPath),
-        timeout: 10,
-      },
-    ],
-  });
+  // B-091 stable path: applyUserLevelChannelOps stages the bundle to
+  // `~/.teamagent/hooks/bin-session-start.cjs`. Mirror the staging convention
+  // here so the returned `hookEntry` is the staged path (not the source).
+  const stagedPath = path.join(
+    home,
+    ".teamagent",
+    "hooks",
+    "bin-session-start.cjs",
+  );
 
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf-8");
+  // Test contract: `backupPath` is null on first install (no prior settings.json
+  // existed → writeSettings did not create a .bak-<ts> sibling); non-null on
+  // re-install pointing at the most recent `.bak-<ts>` left by writeSettings.
+  const backupPath = findMostRecentBackup(settingsPath);
+
   return { settingsPath, backupPath, hookEntry: stagedPath, alreadyInstalled };
 }
 
 /**
- * 判定一条 SessionStart hook 是否属于 teamagent。
- *
- * 双重信号：
- * - 显式 `_teamagentTag === SESSION_START_TAG`（强信号）
- * - command 字符串包含 `bin-session-start.cjs`（启发式，覆盖加 tag 之前的旧
- *   安装；该 binary 名字是 teamagent 独占的，与外部 hook 几乎不会冲突）
+ * Inspect `~/.claude/settings.json` for an existing TeamAgent SessionStart
+ * entry, including untagged-legacy entries whose command points at
+ * `bin-session-start.cjs`. Returns false on missing / malformed file (the
+ * pre-shim behaviour matched this).
  */
-function isTeamagentSessionStartEntry(entry: HookEntry): boolean {
-  if (entry._teamagentTag === SESSION_START_TAG) return true;
-  const cmds = entry.hooks?.map((c) => c.command ?? "") ?? [];
-  return cmds.some((c) => c.includes("bin-session-start.cjs"));
+function detectAlreadyInstalledSessionStart(settingsPath: string): boolean {
+  if (!fs.existsSync(settingsPath)) return false;
+  try {
+    const raw = fs.readFileSync(settingsPath, "utf-8").trim();
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as ClaudeSettings;
+    const list = parsed.hooks?.SessionStart;
+    if (!Array.isArray(list)) return false;
+    return list.some((h) => {
+      if (h._teamagentTag === SESSION_START_TAG) return true;
+      if (h._teamagentTag) return false;
+      const cmds = h.hooks?.map((c) => c.command ?? "") ?? [];
+      return cmds.some((c) => c.includes("bin-session-start.cjs"));
+    });
+  } catch {
+    return false;
+  }
 }
 
+/**
+ * Locate the most recent `.bak-<timestamp>` sibling of `filePath`. Used to
+ * preserve the pre-shim test contract that returns `backupPath` after a
+ * re-install. `writeSettings` (called inside `applyUserLevelChannelOps`)
+ * creates these backups; this function picks the freshest one.
+ */
+function findMostRecentBackup(filePath: string): string | null {
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return null;
+  }
+  const baks = entries
+    .filter((e) => e.startsWith(`${base}.bak-`))
+    .map((e) => {
+      const full = path.join(dir, e);
+      try {
+        return { name: full, mtimeMs: fs.statSync(full).mtimeMs };
+      } catch {
+        return { name: full, mtimeMs: 0 };
+      }
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const newest = baks[0];
+  return newest ? newest.name : null;
+}
+
+/**
+ * Uninstall: sweep `~/.claude/settings.json` for any TeamAgent-owned
+ * SessionStart entry (tagged + untagged-legacy that point at
+ * `bin-session-start.cjs`). Untouched: this function is small enough that
+ * delegating into install-hook.ts would be more code than keeping it here.
+ */
 export function uninstallUserHook(
   opts: { homeDir?: string } = {},
 ): { settingsPath: string; removed: boolean } {
@@ -179,20 +202,39 @@ export function uninstallUserHook(
 
   const raw = fs.readFileSync(settingsPath, "utf-8").trim();
   if (!raw) return { settingsPath, removed: false };
-  const settings = JSON.parse(raw) as ClaudeSettings;
-  if (!settings.hooks?.SessionStart) return { settingsPath, removed: false };
 
-  const before = settings.hooks.SessionStart.length;
-  // B-086: also remove untagged legacy entries pointing at any
-  // bin-session-start.cjs — they're orphans from pre-tag installs.
-  settings.hooks.SessionStart = settings.hooks.SessionStart.filter(
+  let settings: ClaudeSettings;
+  try {
+    settings = JSON.parse(raw) as ClaudeSettings;
+  } catch {
+    return { settingsPath, removed: false };
+  }
+  const hooks = settings.hooks;
+  if (!hooks?.SessionStart) return { settingsPath, removed: false };
+
+  const before = hooks.SessionStart.length;
+  hooks.SessionStart = hooks.SessionStart.filter(
     (h) => !isTeamagentSessionStartEntry(h),
   );
-  const changed = settings.hooks.SessionStart.length !== before;
-  if (settings.hooks.SessionStart.length === 0) delete settings.hooks.SessionStart;
-  if (settings.hooks && Object.keys(settings.hooks).length === 0)
+  const changed = hooks.SessionStart.length !== before;
+  if (hooks.SessionStart.length === 0) {
+    delete hooks.SessionStart;
+  }
+  if (Object.keys(hooks).length === 0) {
     delete settings.hooks;
+  }
 
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf-8");
+  fs.writeFileSync(
+    settingsPath,
+    JSON.stringify(settings, null, 2) + "\n",
+    "utf-8",
+  );
   return { settingsPath, removed: changed };
+}
+
+function isTeamagentSessionStartEntry(entry: HookEntry): boolean {
+  if (entry._teamagentTag === SESSION_START_TAG) return true;
+  if (entry._teamagentTag) return false;
+  const cmds = entry.hooks?.map((c) => c.command ?? "") ?? [];
+  return cmds.some((c) => c.includes("bin-session-start.cjs"));
 }
