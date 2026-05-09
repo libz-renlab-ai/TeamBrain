@@ -202,6 +202,75 @@ describe("checkCmd — ETag and sha persistence on success", () => {
     expect(written.last_branch_etag).toBe("");
   });
 
+  // ── PR #194 follow-up tests for F5 (checkCmd backoff) ────────────────────
+
+  it("checkCmd: backoff active → early return, no fetch (PR #194 F5)", async () => {
+    const s = defaultUpdateState();
+    s.next_check_after_ts = Date.now() + 60 * 60 * 1000; // 1h from now
+    writeState(s);
+
+    // fetchRemoteSha should never be called
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain("backoff active until");
+    expect(mockFetchRemoteSha).not.toHaveBeenCalled();
+  });
+
+  it("checkCmd: backoff window expired → fetch proceeds (PR #194 F5)", async () => {
+    const s = defaultUpdateState();
+    s.next_check_after_ts = Date.now() - 60 * 1000; // 1 min ago — expired
+    writeState(s);
+
+    mockFetchRemoteSha.mockResolvedValue({
+      ok: true, sha: "abc1234", etag: null, source: "200",
+    } satisfies FetchShaResult);
+
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(true);
+    expect(mockFetchRemoteSha).toHaveBeenCalled();
+  });
+
+  it("checkCmd: rate_limit_anonymous → persists backoff state (PR #194 F5)", async () => {
+    writeState(defaultUpdateState());
+    mockFetchRemoteSha.mockResolvedValue({
+      ok: false,
+      reason: "rate_limit_anonymous",
+      status: 403,
+      message: "GitHub anonymous rate limit exhausted; set TEAMAGENT_GITHUB_TOKEN to authenticate (5000 req/h)",
+    } satisfies FetchShaResult);
+
+    const before = Date.now();
+    const r = await runUpdateCommand("check");
+    const after = Date.now();
+
+    expect(r.ok).toBe(false);
+    const written = readState();
+    expect(written.consecutive_rate_limits).toBe(1);
+    // First failure: 2^(1-1) = 1h
+    expect(written.next_check_after_ts).toBeGreaterThanOrEqual(before + 60 * 60 * 1000);
+    expect(written.next_check_after_ts).toBeLessThanOrEqual(after + 60 * 60 * 1000);
+    // Must NOT bump install-failure counter
+    expect(written.consecutive_install_failures).toBe(0);
+  });
+
+  it("checkCmd: success resets rate_limits and next_check_after_ts (PR #194 F5)", async () => {
+    const s = defaultUpdateState();
+    s.consecutive_rate_limits = 3;
+    s.next_check_after_ts = Date.now() - 1000; // expired
+    writeState(s);
+
+    mockFetchRemoteSha.mockResolvedValue({
+      ok: true, sha: "newsha", etag: 'W/"new"', source: "200",
+    } satisfies FetchShaResult);
+
+    await runUpdateCommand("check");
+    const written = readState();
+    expect(written.consecutive_rate_limits).toBe(0);
+    expect(written.next_check_after_ts).toBe(0);
+    expect(written.last_branch_etag).toBe('W/"new"');
+    expect(written.last_branch_sha).toBe("newsha");
+  });
+
   it("returns up-to-date when sha matches last_installed_sha", async () => {
     const s = defaultUpdateState();
     s.last_installed_sha = "current-sha";

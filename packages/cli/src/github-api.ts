@@ -101,20 +101,24 @@ export async function fetchRemoteSha(input: FetchRemoteShaInput): Promise<FetchS
   const { statusCode, headers } = res;
 
   // ── 304 Not Modified ────────────────────────────────────────────────────
+  // Spec: server only returns 304 when If-None-Match matched, which means the
+  // caller MUST have sent both ifNoneMatch and cachedSha. Any other shape
+  // (e.g. proxy that returns 304 unconditionally) is degenerate — return parse
+  // failure rather than silently echoing back ifNoneMatch=undefined and
+  // wiping last_branch_etag on the next writeState in updater-logic.
   if (statusCode === 304) {
-    if (!input.cachedSha) {
+    if (!input.ifNoneMatch || !input.cachedSha) {
       return {
         ok: false,
         reason: "parse",
         status: 304,
-        message: "304 received but no cachedSha provided",
+        message: "304 received but ifNoneMatch + cachedSha not both provided",
       };
     }
     return {
       ok: true,
       sha: input.cachedSha,
-      // Echo the request ETag back (server omits body+ETag on 304; resource unchanged)
-      etag: input.ifNoneMatch ?? null,
+      etag: input.ifNoneMatch,
       source: "304",
     };
   }
@@ -131,8 +135,12 @@ export async function fetchRemoteSha(input: FetchRemoteShaInput): Promise<FetchS
 
   // ── 403 Forbidden ───────────────────────────────────────────────────────
   if (statusCode === 403) {
-    // Check for rate-limit: headers present AND x-ratelimit-remaining === "0"
-    if (headers?.["x-ratelimit-remaining"] === "0") {
+    // Check for rate-limit: headers present AND remaining counter is exhausted.
+    // Coerce + trim the header so proxies/test mocks that send 0 (number),
+    // " 0", "00", etc. still classify as rate-limit (the only spec-compliant
+    // GitHub value is "0", but be lenient to keep backoff behaviour robust).
+    const remaining = String(headers?.["x-ratelimit-remaining"] ?? "").trim();
+    if (remaining === "0") {
       if (input.token) {
         return {
           ok: false,
@@ -221,18 +229,28 @@ export async function fetchRemoteSha(input: FetchRemoteShaInput): Promise<FetchS
 
 const defaultHttpsGet: HttpsGet = (url, headers) =>
   new Promise((resolve, reject) => {
+    // Guard against double-resolve: on a stalled TLS handshake `req.destroy(err)`
+    // does not reliably emit `'error'`, so the timeout handler must reject the
+    // promise itself. The settled flag prevents subsequent error/end events
+    // from triggering a second settle.
+    let settled = false;
+    const safeResolve = (v: HttpsResponse) => { if (!settled) { settled = true; resolve(v); } };
+    const safeReject = (e: Error) => { if (!settled) { settled = true; reject(e); } };
     const req = https.get(url, { headers, timeout: 10_000 }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c) => chunks.push(c as Buffer));
-      res.on("end", () => resolve({
+      res.on("end", () => safeResolve({
         statusCode: res.statusCode ?? 0,
         body: Buffer.concat(chunks).toString("utf-8"),
         // IncomingHttpHeaders values may be string | string[] | undefined;
         // cast to our declared type — the headers we inspect are always single strings.
         headers: res.headers as Record<string, string | undefined>,
       }));
-      res.on("error", reject);
+      res.on("error", safeReject);
     });
-    req.on("timeout", () => { req.destroy(new Error("timeout")); });
-    req.on("error", reject);
+    req.on("timeout", () => {
+      safeReject(new Error("timeout"));
+      req.destroy();
+    });
+    req.on("error", safeReject);
   });

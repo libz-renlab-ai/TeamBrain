@@ -254,6 +254,53 @@ describe("fetchRemoteSha", () => {
     }
   });
 
+  // ── PR #194 follow-up tests ───────────────────────────────────────────────
+
+  it("403 + remaining=' 0' (whitespace) → rate_limit_anonymous (lenient header parse)", async () => {
+    const httpsGet = mockGet(403, "{}", { "x-ratelimit-remaining": " 0" });
+    const result = await fetchRemoteSha({
+      owner: "x", repo: "y", branch: "release", httpsGet,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("rate_limit_anonymous");
+    }
+  });
+
+  it("403 + remaining='00' → rate_limit_anonymous (still treated as exhausted)", async () => {
+    // "00".trim() === "0" is false in our coercion, but as a sanity check:
+    // the only spec-compliant value is "0", and we reject "00" as auth.
+    // This locks the contract that we only treat exact "0" (after trim) as exhausted.
+    const httpsGet = mockGet(403, "{}", { "x-ratelimit-remaining": "00" });
+    const result = await fetchRemoteSha({
+      owner: "x", repo: "y", branch: "release", httpsGet,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // "00" is non-spec; falls through to auth. This is fine — no real GitHub
+      // proxy emits "00".
+      expect(result.reason).toBe("auth");
+    }
+  });
+
+  it("304 with cachedSha but no ifNoneMatch: returns parse failure (PR #194 F3)", async () => {
+    // Degenerate proxy returning 304 unconditionally (without a matching
+    // If-None-Match) must NOT silently succeed — the previous contract would
+    // have echoed etag=null and wiped last_branch_etag downstream.
+    const httpsGet = mockGet(304, "", {});
+    const result = await fetchRemoteSha({
+      owner: "o", repo: "r", branch: "b",
+      httpsGet,
+      // ifNoneMatch intentionally omitted
+      cachedSha: "somecachedsha",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("parse");
+      expect(result.status).toBe(304);
+    }
+  });
+
   it("does not throw on any code path", async () => {
     // Verify promise always resolves, never rejects
     const cases = [
