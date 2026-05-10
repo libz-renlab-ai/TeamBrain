@@ -94,6 +94,22 @@ _Avoid_: setter, owner, author（与 viral sync 的 Author 撞名）
 Claude Code 用 Agent tool 派出的、专门做 tier 重判的临时 agent。读 events / 搜 gbrain / 看 repo，最后调 `teamagent set-tier` 写回。**不在 TeamBrain 进程里跑**——TeamBrain 不内嵌 LLM。
 _Avoid_: AgenticCalibrator（暗示是 TeamBrain 内部模块、与 ADR-0004 冲突）, AI calibrator, smart calibrator
 
+### Subagents in the verification stack（per `docs/AGENTIC-CODING-POLICY.md` §3 / §1；issue #273）
+
+仓内同时存在三类 Claude Code Agent-tool 派生 / user-level skill 入口，三者都是 host-agent 进程内的 LLM 行为，TeamBrain core 仍 LLM-free（与 ADR-0004 一致）。它们职责正交，不可互相替代。
+
+**Verification subagent**:
+`/fixed-flow-driver` skill 在 step 4 `/review loop` 内、每轮 fix commit 之后、`/review` 之前 spawn 的 Claude Code Agent-tool 派生 subagent。读 `git diff HEAD~1` + commit message + grill comment；输出 repro 命令 + pass/fail + 反例输入；写到当前 `docs/plans/<date>-pr-<n>-fix-plan.md` 的 §judge harness 段。**不**进 `packages/core/`，**不**进 `packages/cli/`，**不**直接 `bus.emit({...})`，**不**读 `/review` skill 输出（避免对答案过拟合），**不**修改 repo（read-only 出 repro）。
+_Avoid_: blind verification subagent（grill 阶段历史名；canonical 词是 Verification subagent）, attacker subagent（暗示对抗，实际职责是独立验证）, test-writing subagent（与 §2 self-witness ad-hoc 测试禁令冲突）
+
+**Three-subagent triage table**:
+
+| subagent / skill | 调用方 | 输入 | 输出 / 写入 | 调用时机 |
+|---|---|---|---|---|
+| **Verification subagent** | `/fixed-flow-driver` driver，fix-loop 内 | 当前 diff、最近一次 commit、grill comment | pass/fail + repro 命令，写入 `docs/plans/<date>-pr-<n>-fix-plan.md` §judge harness | 每轮 fix commit 之后，`/review` 之前 |
+| **`/review` skill** (gstack, ADR-0007) | `/fixed-flow-driver` driver，POSTPR loop | PR diff、CI 状态 | finding list，driver 据此回写 fix-plan | step 4 fix-loop 入口 |
+| **Calibration subagent** (ADR-0004) | Claude Code 主线，Stop hook 后 | TeamBrain events、规则 evidence | `teamagent set-tier` CLI 调用 | rule maturity 重判，**与 verification 链路正交** |
+
 ### Module structure（port / adapter 在物理目录上的分布）
 
 **Archived port**:
