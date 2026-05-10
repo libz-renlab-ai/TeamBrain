@@ -1,0 +1,10 @@
+{
+  "probe_id": "V2",
+  "claude_yml_exists": false,
+  "claude_code_review_yml_exists": false,
+  "find_returned_paths": [],
+  "post_pr_claude_review_runs_count": 0,
+  "post_pr_claude_runs_count": 0,
+  "captured_at": "2026-05-10T12:25:00Z",
+  "note": "post_pr_claude_*_runs_count = 0 because workflow files are deleted in this PR's commits; no future PR opened from this branch will trigger them. Pre-deletion historical runs are out of scope per V2 pass criterion (only NEW PR triggers count)."
+}

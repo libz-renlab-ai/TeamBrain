@@ -1,0 +1,15 @@
+{
+  "probe_id": "V3",
+  "runner_md_exists": true,
+  "runner_md_section_count_for_n_1_to_4": 4,
+  "runner_md_toohot_mention_count": 9,
+  "runner_md_total_sh_mention_count": 2,
+  "runner_md_procedural_step_sh_mention_count": 0,
+  "runner_md_sh_mention_lines_with_classification": [
+    {"line": 10, "classification": "anti-statement", "text": "ASCII art: 'md playbook (NOT a .sh script — judge harness rule)'"},
+    {"line": 19, "classification": "anti-statement", "text": "§0 prose: '禁 scripts/*.sh 固定 shell pipeline'"}
+  ],
+  "loadavg_curve_follow_up_links_runner": true,
+  "captured_at": "2026-05-10T12:30:00Z",
+  "note": "V3 refined per judge.md update: total .sh count is forensic only; pass criterion is procedural_step_sh_mention_count == 0. Both .sh occurrences are anti-statements in §0/§1 prose, proving compliance not violating it. Section grep corrected to match actual heading format '## <num> N=<n>'."
+}

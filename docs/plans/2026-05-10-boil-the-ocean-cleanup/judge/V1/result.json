@@ -1,0 +1,18 @@
+{
+  "probe_id": "V1",
+  "ci_run": {
+    "input_branch": "wip/boil-the-ocean-cleanup",
+    "run_id": 25628617294,
+    "status": "completed",
+    "conclusion": "success",
+    "duration_sec": 87,
+    "evidence_url": "https://github.com/libz-renlab-ai/TeamBrain/actions/runs/25628617294",
+    "started_at": "2026-05-10T12:22:37Z",
+    "ended_at": "2026-05-10T12:24:09Z"
+  },
+  "static_check": {
+    "remaining_v4_or_v3_pins": [],
+    "expected_remaining": []
+  },
+  "captured_at": "2026-05-10T12:25:00Z"
+}
