@@ -1,6 +1,24 @@
+> **DEPRECATED — both workflows removed in PR #274 (2026-05-10).**
+>
+> `anthropics/claude-code-action@v1` failed on every PR with
+> `Internal error: directory mismatch for directory ... tsconfig.json, fd 4`
+> and the workflow files referenced `secrets.ANTHROPIC_API_KEY` which the
+> repo did not define. Per ADR-0007 the local `/review` skill is the
+> authoritative POSTPR gate, so the cloud workflows were redundant
+> supplementary noise.
+>
+> The page below is preserved for historical reference only — describing
+> what `/install-github-app` used to install before deletion. To re-enable
+> a cloud review path, restore both `.github/workflows/{claude.yml,claude-code-review.yml}`
+> and configure a real `ANTHROPIC_API_KEY` secret (the action does not
+> accept the MiniMax base URL the repo uses elsewhere). See PR #274
+> `docs/plans/2026-05-10-boil-the-ocean-cleanup/research.md` §2 for the
+> full root-cause writeup.
+
 ```text
                 ┌─────────────────────────────────────────────────┐
-                │      Claude Code GitHub Action — two workflows   │
+                │   [HISTORICAL] Claude Code GH Action workflows   │
+                │   removed in PR #274 — kept here for reference   │
                 └─────────────────────────────────────────────────┘
 
    PR opened / synchronized              issue / PR comment / review
@@ -21,15 +39,16 @@
                               ▼
               POSTPR loop — local /review skill stays
               the authoritative gate (ADR-0007); the
-              cloud signal above is supplementary.
+              cloud signal above WAS supplementary.
 ```
 
-# Claude Code GitHub Action — `/install-github-app` outputs
+# Claude Code GitHub Action — `/install-github-app` outputs (HISTORICAL)
 
 This page documents the two GitHub Actions workflows that `/install-github-app`
-(invoked locally inside Claude Code) installs into the repo via PR #190
-`Add Claude Code GitHub Workflow`. Both workflows live under
-`.github/workflows/` and run on Anthropic's `anthropics/claude-code-action@v1`.
+(invoked locally inside Claude Code) used to install into the repo via PR #190
+`Add Claude Code GitHub Workflow`. Both workflows lived under
+`.github/workflows/` and ran on Anthropic's `anthropics/claude-code-action@v1`.
+**They were removed in PR #274 (2026-05-10).**
 
 ## What gets installed
 
@@ -96,13 +115,14 @@ Examples that do **not** fire it:
 - A comment containing `claude` without the leading `@`.
 - A PR description body. (Use a comment instead.)
 
-## How the auto-review fires
+## How the auto-review used to fire (pre-PR #274)
 
-`claude-code-review.yml` fires on every relevant `pull_request` event. The
-optional path filter and PR-author allowlist are commented out by default,
-so the job runs on every PR regardless of who opened it or which paths
-changed. If we want to scope it later, edit the `paths:` and `if:` blocks
-inside that workflow file (PR-PLAN required).
+`claude-code-review.yml` fired on every relevant `pull_request` event. The
+optional path filter and PR-author allowlist were commented out by default,
+so the job ran on every PR regardless of who opened it or which paths
+changed. Scoping would have required editing the `paths:` and `if:` blocks
+inside that workflow file (PR-PLAN required). The workflow was deleted
+in PR #274; this section is historical narrative only.
 
 The job's prompt is hard-coded to:
 
@@ -124,14 +144,12 @@ by `/install-github-app`. The dual-signal reality after this install:
 | Signal | Location | Authority for POSTPR loop |
 |---|---|---|
 | **Local `/review` skill** | gstack user-level skill, run by the agent or by a human typing `/review` in Claude Code | **Authoritative gate.** ADR-0007 names this as the only blocking signal; `claudefast -p "what should we do when we make a PR?"` must still return a `/review`-anchored answer. |
-| **Cloud `claude-code-review.yml` job** | Auto-runs on every `pull_request` open/sync; posts as a PR review/comment | **Supplementary signal**, non-blocking. Useful as a quick second pair of eyes and as a record on the PR thread. Does not replace the local loop. |
-| **`@claude` mention bot** (`claude.yml`) | On-demand, fires only on explicit `@claude` mention | Not a review gate at all — it's a utility for ad-hoc help on issues / PRs. |
+| **Cloud `claude-code-review.yml` job** [REMOVED PR #274] | Used to auto-run on every `pull_request` open/sync; posted as a PR review/comment | **WAS** a supplementary signal, non-blocking. Removed because the underlying action chronically failed; ADR-0007's local gate was already authoritative. |
+| **`@claude` mention bot** (`claude.yml`) [REMOVED PR #274] | Used to fire on explicit `@claude` mention in issue/PR comments | Was never a review gate — utility for ad-hoc help. Removed alongside the auto-review workflow for the same reason. |
 
-If the cloud signal disagrees with the local `/review` skill, the local
-finding wins by default; treat the disagreement as input to the POSTPR
-triage table in `docs/POSTPR.md` (review-finding vs implementation conflict
-row). Don't merge with an outstanding local `/review` finding even if the
-cloud comment is silent or 👍.
+After PR #274 the only signal in this table is the local `/review` skill;
+there is no cloud counterpart to reconcile against. The historical
+disagreement-resolution rule (local wins) is moot.
 
 ## Caveats
 

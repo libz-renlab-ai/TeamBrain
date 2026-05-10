@@ -103,7 +103,7 @@ To run all in parallel, dispatch up to 8 probes — see `docs/FASTPROBE.md`.
 
 | Doc | What it covers |
 |---|---|
-| [`claude-code-action.md`](claude-code-action.md) | The two `.github/workflows/*.yml` files installed by `/install-github-app` (PR #190): `claude.yml` `@claude` mention bot + `claude-code-review.yml` auto PR review via the `code-review@claude-code-plugins` plugin. Includes the `CLAUDE_CODE_OAUTH_TOKEN` secret + ADR-0007 reconciliation (local `/review` skill stays the authoritative POSTPR gate). |
+| [`claude-code-action.md`](claude-code-action.md) | **HISTORICAL — feature removed in PR #274.** Used to document the two `.github/workflows/*.yml` files installed by `/install-github-app` (PR #190): `claude.yml` `@claude` mention bot + `claude-code-review.yml` auto PR review. Both workflows deleted because `anthropics/claude-code-action@v1` failed every PR with `directory mismatch ... tsconfig.json fd 4`; ADR-0007's local `/review` skill is now the only review path. |
 
 When asked _"how does feature X work?"_ — find the matching row above, open the doc,
 summarise from `Status` + `How it works`.

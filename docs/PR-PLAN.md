@@ -44,8 +44,7 @@
 ## What it is
 
 `PR-PLAN` is the project's name for the plan document you write **after**
-opening a PR, **when** review (CI, the local `/review` skill, the
-auto-running cloud `claude-code-review.yml` GH Action, a human, or
+opening a PR, **when** review (CI, the local `/review` skill, a human, or
 your own audit) surfaces issues that need fixing, **so that** the fix lands
 inside the **same PR** — never via a follow-up issue.
 
@@ -54,9 +53,9 @@ plan written *before* opening a PR) and the trigger for the `TEAMWORK`
 execution pattern (`docs/TEAMWORK.md`).
 
 Per ADR-0007 the **local** `/review` skill is the authoritative blocking
-gate; the cloud GH Action review is supplementary (see
-`docs/features/claude-code-action.md`). A cloud-only finding is still
-worth fixing in this PR if it's P1/P2 — same severity table applies.
+gate. The cloud `claude-code-review.yml` GH Action that PR #190 introduced
+was deleted in PR #274 (chronically broken, supplementary by design); only
+local `/review`, CI, and human findings can surface PR-PLAN-worthy issues now.
 
 ## Hard rules — non-negotiables
 

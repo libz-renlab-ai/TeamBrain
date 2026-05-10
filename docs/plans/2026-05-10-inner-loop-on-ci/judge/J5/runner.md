@@ -43,7 +43,7 @@
    git commit --allow-empty -m "J5 sample N=1"
    git push origin wip/j5-s1
    ```
-3. **等 ~10 秒**让 GitHub Actions runner 接到 push（runner 在 GitHub 那边跑，不影响本地 loadavg；但确保 push 已发出有助于符合 spec "while CI is running"）。
+3. **等 ~10 秒**让本地 `git push` 子进程完全退出（push 阶段会短暂占用本地 CPU，等它结束再采才反映 idle 态）。CI runner 在 GitHub 远端跑，不进本地 loadavg；spec "while CI is running" 这句指的是「我们已经把测试 offload 给 CI 而不是 `pnpm test` 占本地 CPU」，**不是**要把本地 sample 时刻对齐 CI runner 的 CPU 高峰。如需进一步排除残余衰减，可加到 30s。
 4. 在另一个终端跑：
    ```
    toohot --once > /tmp/j5-sample-1.txt 2>&1
