@@ -85,7 +85,7 @@ pnpm teamagent <cmd>  # 跑 CLI（M0 可用：skeleton-demo）
 
 - 操作手册：[`docs/INNER-LOOP-TESTING.md`](docs/INNER-LOOP-TESTING.md)
 - 决策与权衡：[`docs/adr/0011-inner-loop-on-ci.md`](docs/adr/0011-inner-loop-on-ci.md)
-- Repo secret：`MINIMAX_TOKEN`；YAML 内 `env: ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_TOKEN }}`。Token rotate 流程见 INNER-LOOP-TESTING.md。
+- Repo secret：`MINIMAX_API_KEY`；YAML 内 `env: ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_API_KEY }}`。Token rotate 流程见 INNER-LOOP-TESTING.md。
 
 ## claudefast 约定
 

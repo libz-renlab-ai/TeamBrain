@@ -87,7 +87,7 @@
 
 ## J3 — secret/env injection works
 
-**Hypothesis**: GitHub secret `MINIMAX_TOKEN` 通过 `env: ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_TOKEN }}` 正确注入；非敏感 env (`ANTHROPIC_BASE_URL` 等) 正确填入；token 字面值**绝不**出现在 log。
+**Hypothesis**: GitHub secret `MINIMAX_API_KEY` 通过 `env: ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_API_KEY }}` 正确注入；非敏感 env (`ANTHROPIC_BASE_URL` 等) 正确填入；token 字面值**绝不**出现在 log。
 
 **Steps**:
 1. `git checkout -b wip/judge-secret main`
@@ -116,7 +116,7 @@
   "conclusion": "success",
   "env_assertion": {
     "ANTHROPIC_BASE_URL_match": true,
-    "MINIMAX_TOKEN_present": true
+    "MINIMAX_API_KEY_present": true
   },
   "token_in_log_count": 0,
   "evidence_url": "...",

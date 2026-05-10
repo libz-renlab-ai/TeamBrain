@@ -66,7 +66,7 @@ Common causes:
   `package.json`. Fix locally with `pnpm install`, commit lockfile, re-push.
 - A test that depends on env var fails → check the `env:` block of
   `inner-loop.yml` AND the GitHub repo secret (`gh secret list` should show
-  `MINIMAX_TOKEN`).
+  `MINIMAX_API_KEY`).
 - Flake (network blip, runner timeout) → re-push an empty commit:
   `git commit --allow-empty -m "rerun" && git push`.
 
@@ -89,7 +89,7 @@ push to wip instead — the scheduler cost compounds quickly.
 
 ## Secrets — rotate + inject
 
-The repo secret `MINIMAX_TOKEN` carries the MiniMax API key. The workflow
+The repo secret `MINIMAX_API_KEY` carries the MiniMax API key. The workflow
 YAML aliases it to `ANTHROPIC_API_KEY` env (because `claudefast` wrapper does
 the same).
 
@@ -100,7 +100,7 @@ To rotate:
 3. In a private terminal:
    ```bash
    read -rs NEW_TOKEN          # silent stdin, no echo
-   gh secret set MINIMAX_TOKEN -b"$NEW_TOKEN"
+   gh secret set MINIMAX_API_KEY -b"$NEW_TOKEN"
    unset NEW_TOKEN
    ```
 4. Update local `~/.zshrc` `claudefast` wrapper to the new token if you use

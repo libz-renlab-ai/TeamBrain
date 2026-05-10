@@ -52,13 +52,13 @@ dedicated GitHub Actions workflow.
 3. **Single-file targeted runs** (`pnpm vitest run <path>`) remain allowed
    locally as a development-mode exception. They spawn one worker and do not
    enter the scheduler-overload regime.
-4. **Secrets**: a single repo secret `MINIMAX_TOKEN` is injected via
-   `env: ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_TOKEN }}` in the workflow YAML
+4. **Secrets**: a single repo secret `MINIMAX_API_KEY` is injected via
+   `env: ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_API_KEY }}` in the workflow YAML
    (the `claudefast` wrapper already aliases the MiniMax token to the
    `ANTHROPIC_API_KEY` env name; CI sticks with the same convention).
    Non-sensitive env values (base URL, model names, disable flags) are written
    plainly in the YAML. Token rotation is a manual user step
-   (`gh secret set MINIMAX_TOKEN -b"$NEW_TOKEN"`).
+   (`gh secret set MINIMAX_API_KEY -b"$NEW_TOKEN"`).
 
 ## Consequences
 
