@@ -39,9 +39,9 @@
 ### 做什么
 
 1. **新建** `.github/workflows/inner-loop.yml`，触发条件 `push: branches: [wip/**]`，单 lane `ubuntu-latest`，跑 `pnpm install --frozen-lockfile` + `pnpm test` + `pnpm verify`。
-2. **新建** `docs/adr/0011-inner-loop-on-ci.md`，归档「秒级 inner loop → 分钟级 CI inner loop 换 macOS 永远不进 scheduler-overload 区」决策与所有 reject 的 alternative。
+2. **新建** `docs/adr/0012-inner-loop-on-ci.md`，归档「秒级 inner loop → 分钟级 CI inner loop 换 macOS 永远不进 scheduler-overload 区」决策与所有 reject 的 alternative。
 3. **新建** `docs/INNER-LOOP-TESTING.md`（活文档），写：怎么 push wip 分支、Claude Code 怎么 `gh run watch` 读结果、targeted 单文件本地例外的具体边界、CI 红了怎么 debug、secret rotate 流程。
-4. **修改** `CLAUDE.md`，加 5-10 行 pointer 段链 ADR-0011 + INNER-LOOP-TESTING.md。
+4. **修改** `CLAUDE.md`，加 5-10 行 pointer 段链 ADR-0012 + INNER-LOOP-TESTING.md。
 5. **修改** `docs/CONTEXT.md`，新增四个 term 词条：**inner-loop testing** / **wip 分支** / **single-file targeted exception** / **scheduler-overload**。
 6. **配置** repo secret `MINIMAX_API_KEY`（rotate 完旧 MiniMax token 后，用户自跑 `gh secret set MINIMAX_API_KEY -b"$NEW_MINIMAX_API_KEY"`）；YAML `env:` 块用 alias `ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_API_KEY }}` —— 因为 claudefast wrapper 把 MiniMax token 当 `ANTHROPIC_API_KEY` 用，CI 沿用同语义。
 
@@ -70,9 +70,9 @@ PR-ready 验收清单：
 | Artifact | 路径 | 验收标准 |
 |---|---|---|
 | 新 workflow | `.github/workflows/inner-loop.yml` | push `wip/judge-pass` 后 `gh run list --workflow=inner-loop.yml -L 1 --json status,conclusion` 返回 `{status:"completed", conclusion:"success"}` |
-| ADR | `docs/adr/0011-inner-loop-on-ci.md` | 五段：Status / Context / Decision / Consequences / Alternatives；Alternatives 列出 ①+② / 🅰️改 ci.yml / 🅲️ workflow_dispatch / (β) SSH / (γ) 双栈 五个 reject 方案 |
+| ADR | `docs/adr/0012-inner-loop-on-ci.md` | 五段：Status / Context / Decision / Consequences / Alternatives；Alternatives 列出 ①+② / 🅰️改 ci.yml / 🅲️ workflow_dispatch / (β) SSH / (γ) 双栈 五个 reject 方案 |
 | How-to 活文档 | `docs/INNER-LOOP-TESTING.md` | 五段：push 流程 / Claude Code 读 CI / targeted 例外边界 / 红 CI debug / secrets rotate |
-| CLAUDE.md 引用 | `CLAUDE.md` | 新增 pointer 段，链 ADR-0011 + INNER-LOOP-TESTING.md |
+| CLAUDE.md 引用 | `CLAUDE.md` | 新增 pointer 段，链 ADR-0012 + INNER-LOOP-TESTING.md |
 | GitHub secret | repo secret `MINIMAX_API_KEY` | `gh secret list` 输出含 `MINIMAX_API_KEY`；YAML alias 给 `ANTHROPIC_API_KEY` env；token 真值绝不在 git / transcript / 文档 |
 | CONTEXT.md 词条 | `docs/CONTEXT.md` | 新增四 term 定义 |
 

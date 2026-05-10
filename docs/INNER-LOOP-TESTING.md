@@ -14,7 +14,7 @@
 ```
 
 Live doc explaining how to use the wip-branch / `inner-loop.yml` channel.
-For the rationale, see `docs/adr/0011-inner-loop-on-ci.md`.
+For the rationale, see `docs/adr/0012-inner-loop-on-ci.md`.
 
 ## Channel selection
 
@@ -121,7 +121,7 @@ git branch -D wip/<name>
 
 ## Boundaries with related docs
 
-- Decision rationale → `docs/adr/0011-inner-loop-on-ci.md`
+- Decision rationale → `docs/adr/0012-inner-loop-on-ci.md`
 - Implementation plan → `docs/plans/2026-05-10-inner-loop-on-ci/plan.md`
 - Verification harness → `docs/plans/2026-05-10-inner-loop-on-ci/judge.md`
 - PR-gate testing → `.github/workflows/ci.yml`

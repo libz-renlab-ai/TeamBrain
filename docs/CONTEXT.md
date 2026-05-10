@@ -199,11 +199,11 @@ _Avoid_: "fix plan", "follow-up issue"
 
 ## Testing channels
 
-新增（ADR-0011，2026-05-10）。
+新增（ADR-0012，2026-05-10）。
 
 **Inner-loop testing**:
 工作进行中的全量测试套件运行通道；由 `wip/**` 分支推送触发 `.github/workflows/inner-loop.yml` 执行 `pnpm test` + `pnpm verify`。
-_Avoid_: developer-loop testing、quick-test、`pnpm test` 本地直跑（后者已被 ADR-0011 禁掉）
+_Avoid_: developer-loop testing、quick-test、`pnpm test` 本地直跑（后者已被 ADR-0012 禁掉）
 
 **wip 分支**:
 临时分支命名空间 `wip/<topic>`，用于 inner-loop CI 触发；非 PR 分支，PR merge 后即可删除。

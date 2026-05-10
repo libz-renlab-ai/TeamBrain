@@ -10,7 +10,7 @@
       "loadavg_15m": 10.91,
       "thermal": "normal (no thermal/performance/power warning recorded)",
       "captured_at": "2026-05-10T07:13:43Z",
-      "method": "no session running pnpm test locally; full-suite testing already routed to inner-loop.yml CI per ADR-0011",
+      "method": "no session running pnpm test locally; full-suite testing already routed to inner-loop.yml CI per ADR-0012",
       "top_claude_processes_by_cpu": [
         {"pid": 6234, "cpu_pct": 93.1, "comm": "claude"},
         {"pid": 31847, "cpu_pct": 31.9, "comm": "claude"},

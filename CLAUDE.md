@@ -75,7 +75,7 @@ pnpm teamagent <cmd>  # 跑 CLI（M0 可用：skeleton-demo）
 
 ## 测试在哪里跑
 
-并行 ≥4 session 同时本地 `pnpm test` 会让 macOS scheduler 队列饱和（`toohot` 2026-05-10 实测 loadavg 274 / thermal normal —— **是 scheduler-overload 不是热墙**），所以全量测试已经搬到独立 CI workflow。详见 ADR-0011。
+并行 ≥4 session 同时本地 `pnpm test` 会让 macOS scheduler 队列饱和（`toohot` 2026-05-10 实测 loadavg 274 / thermal normal —— **是 scheduler-overload 不是热墙**），所以全量测试已经搬到独立 CI workflow。详见 ADR-0012。
 
 | 跑什么 | 在哪跑 | 命令 |
 |---|---|---|
@@ -84,7 +84,7 @@ pnpm teamagent <cmd>  # 跑 CLI（M0 可用：skeleton-demo）
 | **PR-gate 全套** | CI on PR / main | 现有 `ci.yml`，含 ubuntu + windows + typecheck，**不动** |
 
 - 操作手册：[`docs/INNER-LOOP-TESTING.md`](docs/INNER-LOOP-TESTING.md)
-- 决策与权衡：[`docs/adr/0011-inner-loop-on-ci.md`](docs/adr/0011-inner-loop-on-ci.md)
+- 决策与权衡：[`docs/adr/0012-inner-loop-on-ci.md`](docs/adr/0012-inner-loop-on-ci.md)
 - Repo secret：`MINIMAX_API_KEY`；YAML 内 `env: ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_API_KEY }}`。Token rotate 流程见 INNER-LOOP-TESTING.md。
 
 ## claudefast 约定
