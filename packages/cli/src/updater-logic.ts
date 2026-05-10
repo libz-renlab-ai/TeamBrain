@@ -24,8 +24,12 @@ export interface UpdaterDeps {
    * Issue #245 — fired once after a successful npm install + migrate, with
    * elapsed time spanning both. Optional so existing tests stay green
    * without injecting an emit stub.
+   *
+   * Returns void or Promise<void>; runUpdater awaits the result so the
+   * detached bin-updater process doesn't exit before the events.db row
+   * lands (same lifetime concern as the snooze/never CLI commands).
    */
-  emitInstalled?: (event: UpdateInstalledEvent) => void;
+  emitInstalled?: (event: UpdateInstalledEvent) => void | Promise<void>;
 }
 
 export async function runUpdater(deps: UpdaterDeps): Promise<void> {
@@ -134,15 +138,16 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
       pending_banner: banner,
     };
     deps.writeState(success);
-    deps.pruneOldBackups();
-    deps.log(`updated to ${remoteSha}`);
-    // Issue #245: emit AFTER persist so events.db only carries fully-
-    // committed installs. fromVer/toVer fall back to short SHA when the
-    // tracked version string isn't populated yet (last_installed_version
-    // can lag behind sha rotation by one SessionStart).
+    // Issue #245 review iter-1 P2 fix: emit BEFORE pruneOldBackups. Backup
+    // pruning is a maintenance side effect that can throw on disk-full /
+    // permission-denied; if it does, the function exits via finally and
+    // the install event is silently dropped — telemetry would miss real
+    // installs whenever rollback dir cleanup blows up. Emit must follow
+    // the persist (so events.db only carries committed installs) but
+    // precede the maintenance call.
     if (deps.emitInstalled) {
       try {
-        deps.emitInstalled(
+        await deps.emitInstalled(
           makeUpdateInstalledEvent({
             fromVer: state.last_installed_version || fromSha.slice(0, 7) || "(none)",
             toVer: remoteSha.slice(0, 7),
@@ -154,6 +159,8 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
         deps.log(`emitInstalled failed: ${(err as Error).message}`);
       }
     }
+    deps.pruneOldBackups();
+    deps.log(`updated to ${remoteSha}`);
   } finally {
     deps.releaseLock();
   }

@@ -14,7 +14,7 @@ import {
 import type { FetchShaFailure } from "../github-api.js";
 import { withUpdateStateLock } from "../lib/update-state-lock.js";
 import {
-  emitUpgradeEventSync,
+  emitUpgradeEvent,
   type EmitUpgradeOptions,
 } from "../lib/upgrade-event-emitter.js";
 
@@ -101,6 +101,15 @@ export async function runUpdateCommand(sub: UpdateSubcommand, args: string[] = [
   }
 }
 
+// Issue #245 review iter-1 P2 fix: short-lived CLI processes (`teamagent
+// update --snooze` / `--never`) call `emitUpgradeEventSync` and immediately
+// return; the inner `void emitUpgradeEvent(event).catch(...)` fire-and-forget
+// would lose the events.db row when the process exits before the dynamic
+// `@teamagent/adapters` import + sqlite open finishes. We instead resolve
+// the persisted-row write upfront via `emitUpgradeEvent` (async), so the
+// surrounding `await runUpdateCommand("snooze")` blocks the CLI exit until
+// the row lands. Keeps the existing eventLog-injection path for tests.
+
 /**
  * Issue #225 — soft-force upgrade snooze advance.
  *
@@ -111,7 +120,7 @@ export async function runUpdateCommand(sub: UpdateSubcommand, args: string[] = [
  * Issue #245: also emit `update-snoozed` to AttributionBus + events.db
  * so the snooze 转化率 telemetry has a row per snooze action.
  */
-function snoozeCmd(emitOpts: EmitUpgradeOptions = {}): UpdateRunResult {
+async function snoozeCmd(emitOpts: EmitUpgradeOptions = {}): Promise<UpdateRunResult> {
   const s = readState();
   const nowMs = Date.now();
   const result = nextSnooze(s.snooze_level, nowMs);
@@ -123,7 +132,10 @@ function snoozeCmd(emitOpts: EmitUpgradeOptions = {}): UpdateRunResult {
     // stops re-firing across SessionStarts (until a new version's banner lands).
     prompt_dismissed_for_to: s.pending_banner?.to ?? "",
   });
-  emitUpgradeEventSync(
+  // Issue #245 review iter-1: await emit so the events.db row is persisted
+  // before the CLI returns and the process exits. Without await, the
+  // dynamic adapters import + sqlite open is racing with process exit.
+  await emitUpgradeEvent(
     makeUpdateSnoozedEvent({
       level: result.snooze_level,
       untilTs: result.snooze_until_ts,
@@ -155,7 +167,7 @@ function snoozeCmd(emitOpts: EmitUpgradeOptions = {}): UpdateRunResult {
  * Issue #245: emit `update-never-set` so the permanent-opt-out conversion
  * shows up in 装机率 telemetry.
  */
-function neverCmd(emitOpts: EmitUpgradeOptions = {}): UpdateRunResult {
+async function neverCmd(emitOpts: EmitUpgradeOptions = {}): Promise<UpdateRunResult> {
   const s = readState();
   const nowMs = Date.now();
   writeState({
@@ -166,7 +178,8 @@ function neverCmd(emitOpts: EmitUpgradeOptions = {}): UpdateRunResult {
     // re-fire (a brand new pending_banner.to will fire fresh).
     prompt_dismissed_for_to: s.pending_banner?.to ?? "",
   });
-  emitUpgradeEventSync(
+  // Issue #245 review iter-1: await emit (see snoozeCmd note above).
+  await emitUpgradeEvent(
     makeUpdateNeverSetEvent({ nowMs }),
     {
       eventsDbPath: path.join(home(), "events.db"),
