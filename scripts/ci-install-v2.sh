@@ -33,6 +33,9 @@ pass=true
 if [ "${#preview_missing[@]}" -ne 0 ]; then
   pass=false
 fi
+if [ "${#install_sections[@]}" -ne 5 ]; then
+  pass=false
+fi
 
 node - "$pass" "${install_sections[*]}" <<'NODE'
 const pass = process.argv[2] === "true";
