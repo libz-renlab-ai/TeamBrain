@@ -60,6 +60,7 @@ Run `/review` on the diff. For each invocation:
    - Write or update `docs/plans/<YYYY-MM-DD>-pr-<PR_NUMBER>-fix-plan.md` per `docs/PR-PLAN.md` (3 sections: task / expected outputs / judge harness). PR may not exist yet; if so, name the file `docs/plans/<YYYY-MM-DD>-issue-${N}-iter-<K>-fix-plan.md` and rename it after the PR opens in step 5.
    - Fix in the same branch per project rule (NO follow-up issues).
    - Atomic commit per fix concept.
+   - **Spawn Verification subagent** (per `docs/AGENTIC-CODING-POLICY.md` §3): use the Claude Code Agent tool to dispatch a read-only subagent that reads `git diff HEAD~1`, the latest commit message, and the grill comment; it outputs `pass | fail | uncertain` + a repro command + counter-example inputs; append the result to the §judge harness section of the current fix-plan.md **before** re-entering the loop. The Verification subagent MUST NOT modify the repo, MUST NOT read `/review` skill output (avoid overfitting to the answer), and MUST NOT live in `packages/core/` or `packages/cli/` (FCIS + scope-binding per ADR-0004 / ADR-0008). It does not replace `/review` skill — `/review` PASS is the only authoritative termination gate (ADR-0007).
 4. PushNotification at iter ∈ {10, 25, 50, 100} with subject `FIXEDFLOW issue #${N} iter ${K}, tokens=<>`.
 5. Every 10 iters, post comment to issue `#${N}` with token-burn summary.
 6. Check for `needs-human` label every iter. If user has set it, write a `report.md` recording the bail and exit.
@@ -119,6 +120,8 @@ Exit cleanly. The maintainer can pick up the next grill-ready issue when ready b
 - `docs/PR-PLAN.md` — same-PR fix loop, no follow-up issues
 - `docs/POSTPR.md` — /review-loop-until-PASS shape
 - `docs/feature-verification.md` — feature-verification gate if the implementation introduces a new feature
+- `docs/AGENTIC-CODING-POLICY.md` §3 — Verification subagent definition + scope (issue #273)
+- `docs/CONTEXT.md` `### Subagents in the verification stack` — three-subagent triage table
 - AGENTS.md rule 11 — Boris research → plan → annotate → implement → report
 - AGENTS.md `.codex/worktrees/` rule
 - TeamBrain CLAUDE.md non-draft-PR rule
