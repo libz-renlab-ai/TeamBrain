@@ -22,12 +22,22 @@ export interface DigitalTwinConfig {
     endpoint: string;
     token: string | null;
   };
+  /**
+   * Issue #146 F9 — ISO timestamp of the first persist event for this
+   * config (zero-touch onboarding moment). Forwarded into every uploaded
+   * envelope so the server-side audit trail can answer "when did this
+   * user first start sending data". null on configs created before F9
+   * (we backfill on first patch / load-and-save touchpoint).
+   */
+  consented_at?: string | null;
 }
 
 export interface DefaultConfigInput {
   user_id: string;
   machine_id: string;
   endpoint?: string;
+  /** Override consented_at for tests. Defaults to current ISO time. */
+  consented_at?: string;
 }
 
 const DEFAULT_ENDPOINT = 'http://192.168.22.88:8080';
@@ -51,6 +61,7 @@ export function defaultConfig(input: DefaultConfigInput): DigitalTwinConfig {
       endpoint: input.endpoint ?? DEFAULT_ENDPOINT,
       token: null,
     },
+    consented_at: input.consented_at ?? new Date().toISOString(),
   };
 }
 
@@ -106,6 +117,28 @@ export interface EnsureDefaultConfigDeps {
   saveConfig?: typeof saveConfig;
   getUserId?: () => string;
   getMachineId?: (machineIdFile: string) => string;
+  /** Issue #146 F9 — ISO clock for stamping consented_at. Defaults to Date.now. */
+  now?: () => Date;
+  /**
+   * Issue #146 F9 — first-run visible stderr writer. Called once when the
+   * config gets its initial consented_at (either fresh create or pre-F9
+   * backfill). Defaults to process.stderr; tests inject a string sink.
+   */
+  notify?: (msg: string) => void;
+}
+
+/**
+ * Issue #146 F9 — single-line first-run banner. The text is intentionally
+ * short and English so it fits one terminal row even on narrow shells; it
+ * mentions both the on/off control (`pause`) and the inspect command
+ * (`status`) so a surprised user can investigate in two keystrokes.
+ */
+export const FIRST_RUN_BANNER =
+  '[teamagent digital-twin] uploader enabled (zero-touch); ' +
+  'pause: `teamagent digital-twin pause` · status: `teamagent digital-twin status`';
+
+function defaultStderr(msg: string): void {
+  process.stderr.write(msg.endsWith('\n') ? msg : `${msg}\n`);
 }
 
 /**
@@ -132,6 +165,8 @@ export function ensureDefaultConfig(
   const save = deps?.saveConfig ?? saveConfig;
   const getUid = deps?.getUserId ?? defaultGetUserId;
   const getMid = deps?.getMachineId ?? defaultGetMachineId;
+  const now = deps?.now ?? (() => new Date());
+  const notify = deps?.notify ?? defaultStderr;
 
   // Detect malformed JSON: file exists on disk but loadConfig returns null.
   if (existsSync(file)) {
@@ -154,24 +189,46 @@ export function ensureDefaultConfig(
     }
     // Patch case: enabled but no token → inject team-shared sentinel.
     if (existing.uploader.enabled && !existing.uploader.token) {
+      // Issue #146 F9: a pre-F9 config that lands here has consented_at
+      // missing/null; backfill on this same persist so we don't lose the
+      // first-real-upload moment, and emit the first-run banner so the
+      // user can see uploads kicking in.
+      const needsBackfill = !existing.consented_at;
       const patched: DigitalTwinConfig = {
         ...existing,
         uploader: { ...existing.uploader, token: TEAM_SHARED_TOKEN },
+        consented_at: existing.consented_at ?? now().toISOString(),
       };
       save(patched, file);
+      if (needsBackfill) notify(FIRST_RUN_BANNER);
       return patched;
     }
     // enabled=false, or token already set → respect existing config.
+    // Still backfill consented_at for pre-F9 configs without flipping the
+    // banner (no UX-relevant state change happened).
+    if (!existing.consented_at) {
+      const backfilled: DigitalTwinConfig = {
+        ...existing,
+        consented_at: now().toISOString(),
+      };
+      save(backfilled, file);
+      return backfilled;
+    }
     return existing;
   }
 
-  // File missing → auto-create with team-shared token.
+  // File missing → auto-create with team-shared token + show first-run banner.
   const userId = getUid();
   const machineId = getMid(paths.machineIdFile);
   const fresh: DigitalTwinConfig = {
-    ...defaultConfig({ user_id: userId, machine_id: machineId }),
+    ...defaultConfig({
+      user_id: userId,
+      machine_id: machineId,
+      consented_at: now().toISOString(),
+    }),
   };
   fresh.uploader.token = TEAM_SHARED_TOKEN;
   save(fresh, file);
+  notify(FIRST_RUN_BANNER);
   return fresh;
 }

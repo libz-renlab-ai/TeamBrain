@@ -24,6 +24,7 @@ import path from 'node:path';
 import { homedir as osHomedir } from 'node:os';
 import { digitalTwinPaths, type DigitalTwinPaths } from '../paths.js';
 import { isCcSessionMetadata, type CcSessionMetadata } from '../schemas/cc-session.js';
+import { isRecordingMetadata, type RecordingMetadata } from '../schemas/recording.js';
 
 export const DEFAULT_QUEUE_CAPACITY_BYTES = 5_000 * 1024 * 1024; // 5000 MB
 
@@ -36,10 +37,18 @@ export interface QueueEntry {
   metadataSize: number;
 }
 
+/**
+ * Issue #146 F3: a pending queue entry is now polymorphic over kind. The
+ * daemon dispatches uploader endpoint + envelope builder based on
+ * `metadata.kind`; loadEntry validates either shape and returns the
+ * matching tagged metadata.
+ */
+export type LoadedEntryMetadata = CcSessionMetadata | RecordingMetadata;
+
 export interface LoadedEntry {
   entry: QueueEntry;
   payloadBytes: Buffer;
-  metadata: CcSessionMetadata;
+  metadata: LoadedEntryMetadata;
 }
 
 function getPaths(home: string): DigitalTwinPaths {
@@ -111,8 +120,16 @@ export function loadEntry(entry: QueueEntry): LoadedEntry | null {
   } catch {
     return null;
   }
-  if (!isCcSessionMetadata(parsed)) return null;
-  return { entry, payloadBytes, metadata: parsed };
+  // Issue #146 F3: kind-aware validation. cc-session and recording metadata
+  // share the on-disk pair shape (<id>.payload + <id>.json) but use distinct
+  // schemas; loadEntry accepts either.
+  if (isCcSessionMetadata(parsed)) {
+    return { entry, payloadBytes, metadata: parsed };
+  }
+  if (isRecordingMetadata(parsed)) {
+    return { entry, payloadBytes, metadata: parsed };
+  }
+  return null;
 }
 
 /** Delete payload + metadata after successful upload. */

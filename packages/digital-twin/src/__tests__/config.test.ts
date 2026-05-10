@@ -9,6 +9,7 @@ import {
   isEnabled,
   ensureDefaultConfig,
   TEAM_SHARED_TOKEN,
+  type DigitalTwinConfig,
 } from '../config.js';
 import { digitalTwinPaths } from '../paths.js';
 
@@ -120,6 +121,9 @@ describe('config', () => {
     const fakeDeps = {
       getUserId: () => 'auto@example.com',
       getMachineId: () => 'auto-host-12345678',
+      // Silence the issue #146 F9 banner by default; the dedicated F9
+      // tests below override notify to capture and assert.
+      notify: () => {},
     };
 
     it('missing config → creates with team-shared token', () => {
@@ -250,6 +254,95 @@ describe('config', () => {
       expect(cfg).toBeNull();
       const after = readFileSync(file, 'utf-8');
       expect(after).toBe(before);
+    });
+
+    // Issue #146 F9 — first-run consent banner + consented_at audit field.
+    it('missing config: stamps consented_at and emits first-run banner once', () => {
+      const home = freshHome();
+      const notifications: string[] = [];
+      const fixedNow = new Date('2026-05-10T11:22:33.000Z');
+      const cfg = ensureDefaultConfig(home, {
+        ...fakeDeps,
+        now: () => fixedNow,
+        notify: (msg) => notifications.push(msg),
+      });
+      expect(cfg).not.toBeNull();
+      expect(cfg!.consented_at).toBe(fixedNow.toISOString());
+      // Single banner; mentions both pause + status (so user can navigate).
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toContain('teamagent digital-twin');
+      expect(notifications[0]).toMatch(/pause/i);
+      expect(notifications[0]).toMatch(/status/i);
+    });
+
+    it('pre-F9 patch case (token=null, no consented_at): backfills + emits banner', () => {
+      const home = freshHome();
+      const file = digitalTwinPaths(home).configFile;
+      // Hand-craft a pre-F9 config: no consented_at, enabled=true, token=null.
+      const preF9: Record<string, unknown> = {
+        schema_version: '1',
+        identity: { user_id: 'old@x', machine_id: 'old-host' },
+        uploader: { enabled: true, endpoint: 'http://x:8080', token: null },
+      };
+      saveConfig(preF9 as unknown as DigitalTwinConfig, file);
+
+      const notifications: string[] = [];
+      const fixedNow = new Date('2026-05-10T11:22:33.000Z');
+      const cfg = ensureDefaultConfig(home, {
+        ...fakeDeps,
+        now: () => fixedNow,
+        notify: (msg) => notifications.push(msg),
+      });
+      expect(cfg!.consented_at).toBe(fixedNow.toISOString());
+      expect(cfg!.uploader.token).toBe(TEAM_SHARED_TOKEN);
+      // Backfill with token patch counts as the first real-upload moment;
+      // banner fires exactly once.
+      expect(notifications).toHaveLength(1);
+    });
+
+    it('pre-F9 enabled=false (no consented_at): backfills silently (no banner)', () => {
+      const home = freshHome();
+      const file = digitalTwinPaths(home).configFile;
+      const preF9: Record<string, unknown> = {
+        schema_version: '1',
+        identity: { user_id: 'paused@x', machine_id: 'paused-host' },
+        uploader: { enabled: false, endpoint: 'http://x:8080', token: null },
+      };
+      saveConfig(preF9 as unknown as DigitalTwinConfig, file);
+
+      const notifications: string[] = [];
+      const fixedNow = new Date('2026-05-10T11:22:33.000Z');
+      const cfg = ensureDefaultConfig(home, {
+        ...fakeDeps,
+        now: () => fixedNow,
+        notify: (msg) => notifications.push(msg),
+      });
+      // Backfill happened but no UX-relevant change (uploads still off) → silent.
+      expect(cfg!.consented_at).toBe(fixedNow.toISOString());
+      expect(notifications).toHaveLength(0);
+    });
+
+    it('config with consented_at already set: no backfill, no banner (idempotent)', () => {
+      const home = freshHome();
+      const file = digitalTwinPaths(home).configFile;
+      const existing = defaultConfig({
+        user_id: 'real@x',
+        machine_id: 'real-host',
+        consented_at: '2026-05-09T00:00:00.000Z',
+      });
+      existing.uploader.token = 'real-token';
+      saveConfig(existing, file);
+
+      const before = readFileSync(file, 'utf-8');
+      const notifications: string[] = [];
+      const cfg = ensureDefaultConfig(home, {
+        ...fakeDeps,
+        notify: (msg) => notifications.push(msg),
+      });
+      expect(cfg!.consented_at).toBe('2026-05-09T00:00:00.000Z');
+      expect(notifications).toHaveLength(0);
+      // File byte-identical (idempotent path).
+      expect(readFileSync(file, 'utf-8')).toBe(before);
     });
   });
 });

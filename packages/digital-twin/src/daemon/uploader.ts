@@ -1,11 +1,12 @@
 /**
  * Single-shot uploader for the digital-twin daemon.
  *
- * Per plan §1.4:
- *   POST ${endpoint}/v1/cc-sessions
- *   Authorization: Bearer ${token}
- *   Idempotency-Key: <id>
+ * Issue #146 F3: kind-aware dispatch. The same uploader handles
+ * `cc-session` (POST /v1/cc-sessions, gzip+base64 jsonl) and `recording`
+ * (POST /v1/recordings, base64 OGG) entries; route + envelope builder are
+ * selected from `metadata.kind` so process-manager can stay kind-agnostic.
  *
+ * Auth + classification:
  *   200 / 204 → success
  *   401       → auth failed (caller should exit 1; user must re-login)
  *   429 / 5xx → transient, retry with exponential backoff
@@ -16,6 +17,11 @@ import {
   type CcSessionEnvelope,
   type CcSessionMetadata,
 } from '../schemas/cc-session.js';
+import {
+  buildRecordingEnvelope,
+  type RecordingEnvelope,
+  type RecordingMetadata,
+} from '../schemas/recording.js';
 
 export type UploadOutcome =
   | { kind: 'success'; status: number }
@@ -24,12 +30,22 @@ export type UploadOutcome =
   | { kind: 'permanent-failure'; status: number; body?: string }
   | { kind: 'network-error'; error: string };
 
+export type UploadEntryMetadata = CcSessionMetadata | RecordingMetadata;
+export type UploadEntryEnvelope = CcSessionEnvelope | RecordingEnvelope;
+
+export interface UploadIdentity {
+  user_id: string;
+  machine_id: string;
+  /** Issue #146 F9 — propagated into envelope as audit-trail field. */
+  consented_at?: string | null;
+}
+
 export interface UploadInput {
-  metadata: CcSessionMetadata;
+  metadata: UploadEntryMetadata;
   payloadBytes: Buffer;
   endpoint: string;
   token: string;
-  identity: { user_id: string; machine_id: string };
+  identity: UploadIdentity;
 }
 
 export type FetchLike = (
@@ -43,17 +59,35 @@ export type FetchLike = (
 
 export interface UploadDeps {
   fetchFn?: FetchLike;
-  buildEnvelope?: (input: UploadInput) => CcSessionEnvelope;
+  buildEnvelope?: (input: UploadInput) => UploadEntryEnvelope;
 }
 
-const defaultBuildEnvelope = (input: UploadInput): CcSessionEnvelope =>
-  buildCcSessionEnvelope({
+const ROUTE_BY_KIND: Record<UploadEntryMetadata['kind'], string> = {
+  'cc-session': '/v1/cc-sessions',
+  recording: '/v1/recordings',
+};
+
+const defaultBuildEnvelope = (input: UploadInput): UploadEntryEnvelope => {
+  if (input.metadata.kind === 'recording') {
+    return buildRecordingEnvelope({
+      metadata: input.metadata,
+      payloadBytes: input.payloadBytes,
+      identity: input.identity,
+    });
+  }
+  return buildCcSessionEnvelope({
     metadata: input.metadata,
     payloadBytes: input.payloadBytes,
     identity: input.identity,
   });
+};
 
-export async function uploadCcSession(
+/**
+ * POST one queue entry to the matching upstream endpoint. Pre-F3 this was
+ * `uploadCcSession` (cc-session only); F3 widens it to dispatch on
+ * `metadata.kind` and handle recordings via /v1/recordings.
+ */
+export async function uploadEntry(
   input: UploadInput,
   deps: UploadDeps = {},
 ): Promise<UploadOutcome> {
@@ -64,7 +98,7 @@ export async function uploadCcSession(
   }
 
   const envelope = buildFn(input);
-  const url = stripTrailingSlash(input.endpoint) + '/v1/cc-sessions';
+  const url = stripTrailingSlash(input.endpoint) + ROUTE_BY_KIND[input.metadata.kind];
 
   let res: { status: number; text: () => Promise<string> };
   try {
@@ -86,6 +120,9 @@ export async function uploadCcSession(
 
   return classifyResponse(res.status, await safeReadBody(res));
 }
+
+/** @deprecated Pre-F3 alias retained for any external callers; new code should use uploadEntry. */
+export const uploadCcSession = uploadEntry;
 
 async function safeReadBody(res: { text: () => Promise<string> }): Promise<string | undefined> {
   try {

@@ -20,7 +20,7 @@ import {
   enforceCapacity,
   type QueueEntry,
 } from './queue.js';
-import { uploadCcSession, type UploadOutcome, type FetchLike } from './uploader.js';
+import { uploadEntry, type UploadOutcome, type FetchLike } from './uploader.js';
 import { shouldDeadLetter } from './backoff.js';
 
 export interface DaemonConfig {
@@ -28,6 +28,8 @@ export interface DaemonConfig {
   token: string;
   user_id: string;
   machine_id: string;
+  /** Issue #146 F9 — when first config persist happened. Null if pre-F9 config without backfill. */
+  consented_at?: string | null;
 }
 
 export interface PidFileContent {
@@ -123,7 +125,7 @@ export function releasePidLock(home: string = osHomedir()): void {
 export interface RunCycleDeps {
   fetchFn?: FetchLike;
   failures?: Map<string, number>;
-  uploader?: typeof uploadCcSession;
+  uploader?: typeof uploadEntry;
 }
 
 /**
@@ -140,7 +142,7 @@ export async function runUploadCycle(
   deps: RunCycleDeps = {},
 ): Promise<CycleSummary> {
   const failures = deps.failures ?? new Map<string, number>();
-  const uploader = deps.uploader ?? uploadCcSession;
+  const uploader = deps.uploader ?? uploadEntry;
   const entries = listPending(home);
   const outcomes: CyclePerEntryOutcome[] = [];
   let authFailed = false;
@@ -161,7 +163,7 @@ async function processEntry(
   entry: QueueEntry,
   config: DaemonConfig,
   failures: Map<string, number>,
-  uploader: typeof uploadCcSession,
+  uploader: typeof uploadEntry,
   fetchFn: FetchLike | undefined,
   home: string,
 ): Promise<CyclePerEntryOutcome> {
@@ -178,7 +180,11 @@ async function processEntry(
       payloadBytes: loaded.payloadBytes,
       endpoint: config.endpoint,
       token: config.token,
-      identity: { user_id: config.user_id, machine_id: config.machine_id },
+      identity: {
+        user_id: config.user_id,
+        machine_id: config.machine_id,
+        consented_at: config.consented_at ?? null,
+      },
     },
     { fetchFn },
   );

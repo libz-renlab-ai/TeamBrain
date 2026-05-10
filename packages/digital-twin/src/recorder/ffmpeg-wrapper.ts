@@ -5,11 +5,13 @@
  * Heavy DI: spawn, spawnSync, fs ops, ffmpeg-version detection, time, ulid,
  * homedir, platform — all injectable so tests don't need a real ffmpeg binary.
  *
- * NOTE on routing: as of PR-4, recordings are NOT pushed to the daemon's
- * pending/ queue. PR-3's daemon `loadEntry` only knows the cc-session schema
- * and would dead-letter any recording entry. Recordings instead live in
- * `~/.teamagent/digital-twin/queue/recording_temp/` until a follow-up PR wires
- * them into the daemon + uploads via `POST /v1/recordings`.
+ * NOTE on routing (issue #146 F3): recordings now write directly into
+ * `~/.teamagent/digital-twin/queue/pending/` alongside cc-sessions. The
+ * daemon's `loadEntry` (queue.ts) is kind-aware as of F3 and dispatches
+ * to `POST /v1/recordings` when `metadata.kind === 'recording'`. The
+ * pre-F3 `recording_temp/` holding directory is no longer the landing
+ * spot for new recordings; the path remains in `digitalTwinPaths` only
+ * to keep tooling that reads pre-F3 leftovers compatible.
  *
  * NOTE on Windows graceful stop: `process.kill(pid, 'SIGTERM')` on Windows
  * maps to `TerminateProcess`, which does not let ffmpeg flush its OGG
@@ -385,11 +387,15 @@ export async function stop(
     : 0;
 
   const paths = digitalTwinPaths(home);
-  mkdirSync(paths.recordingTempDir, { recursive: true });
+  // Issue #146 F3: land recordings directly in pending/ so the daemon
+  // picks them up alongside cc-sessions. mkdir is idempotent and the
+  // payload/metadata pair-write below ensures listPending only sees
+  // fully-written entries.
+  mkdirSync(paths.pendingDir, { recursive: true });
 
   const newId = ulidFn();
-  const payloadPath = join(paths.recordingTempDir, `${newId}.payload`);
-  const metadataPath = join(paths.recordingTempDir, `${newId}.json`);
+  const payloadPath = join(paths.pendingDir, `${newId}.payload`);
+  const metadataPath = join(paths.pendingDir, `${newId}.json`);
 
   let payloadSize = 0;
   try {
@@ -398,7 +404,7 @@ export async function stop(
     /* keep 0 */
   }
 
-  // Move OGG into recording_temp.
+  // Move OGG into pending/ so the daemon's listPending picks it up.
   try {
     renameSync(oggPath, payloadPath);
   } catch {
@@ -411,7 +417,7 @@ export async function stop(
       cleanupTempFiles(pidFile, startMetaFile);
       return {
         status: 'error',
-        error: `failed to move OGG into recording_temp: ${(copyErr as Error).message ?? String(copyErr)}`,
+        error: `failed to move OGG into pending/: ${(copyErr as Error).message ?? String(copyErr)}`,
       };
     }
   }
@@ -503,11 +509,12 @@ export function importRecording(
   }
 
   const paths = digitalTwinPaths(home);
-  mkdirSync(paths.recordingTempDir, { recursive: true });
+  // Issue #146 F3: imported recordings also land in pending/ for daemon pickup.
+  mkdirSync(paths.pendingDir, { recursive: true });
 
   const id = ulidFn();
-  const payloadPath = join(paths.recordingTempDir, `${id}.payload`);
-  const metadataPath = join(paths.recordingTempDir, `${id}.json`);
+  const payloadPath = join(paths.pendingDir, `${id}.payload`);
+  const metadataPath = join(paths.pendingDir, `${id}.json`);
 
   let payloadSize = 0;
   try {

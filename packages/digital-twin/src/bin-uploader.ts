@@ -50,6 +50,9 @@ export async function runDaemon(deps: DaemonRunDeps = {}): Promise<void> {
       token: cfg!.uploader.token!,
       user_id: cfg!.identity.user_id,
       machine_id: cfg!.identity.machine_id,
+      // Issue #146 F9: forward consented_at into every envelope so the
+      // server-side audit trail can answer "when did this user first agree".
+      consented_at: cfg!.consented_at ?? null,
     };
     const result = await mainLoop(daemonCfg, home);
     if (result.reason === 'auth-failed') {

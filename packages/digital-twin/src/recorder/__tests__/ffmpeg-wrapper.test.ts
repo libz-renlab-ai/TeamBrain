@@ -200,7 +200,7 @@ describe('stop()', () => {
     tmp = freshTmp();
   });
 
-  it('reads pid file, sends SIGTERM, polls for exit, moves OGG into recording_temp', () => {
+  it('reads pid file, sends SIGTERM, polls for exit, moves OGG into pending/ (issue #146 F3)', () => {
     const output = join(tmp, 'rec-stop');
     const oggPath = `${output}.ogg`;
     writeFileSync(`${output}.pid`, '5555', 'utf-8');
@@ -241,16 +241,17 @@ describe('stop()', () => {
       expect(killCalled.signal).toBe('SIGTERM');
       expect(aliveCalls).toBeGreaterThanOrEqual(2);
 
-      // OGG moved to recording_temp/<ulid>.payload, metadata next to it
-      const recordingTempDir = join(
+      // Issue #146 F3: OGG moves into pending/ (was recording_temp/) so
+      // the daemon's listPending picks it up alongside cc-sessions.
+      const pendingDir = join(
         home,
         '.teamagent',
         'digital-twin',
         'queue',
-        'recording_temp',
+        'pending',
       );
-      const payloadPath = join(recordingTempDir, '01ARZ3NDEKTSV4RRFFQ69G5FAV.payload');
-      const metadataPath = join(recordingTempDir, '01ARZ3NDEKTSV4RRFFQ69G5FAV.json');
+      const payloadPath = join(pendingDir, '01ARZ3NDEKTSV4RRFFQ69G5FAV.payload');
+      const metadataPath = join(pendingDir, '01ARZ3NDEKTSV4RRFFQ69G5FAV.json');
       expect(existsSync(payloadPath)).toBe(true);
       expect(existsSync(metadataPath)).toBe(true);
       expect(result.payloadPath).toBe(payloadPath);
@@ -364,7 +365,7 @@ describe('importRecording()', () => {
     tmp = freshTmp();
   });
 
-  it('runs ffmpeg synchronously with codec flags and moves the result into recording_temp', () => {
+  it('runs ffmpeg synchronously with codec flags and moves the result into pending/ (issue #146 F3)', () => {
     const inputPath = join(tmp, 'input.wav');
     writeFileSync(inputPath, Buffer.from('RIFFfake-wav'));
     const output = join(tmp, 'imported');
@@ -405,16 +406,16 @@ describe('importRecording()', () => {
     }
     expect(observed.args?.[observed.args!.length - 1]).toBe(`${output}.ogg`);
 
-    // moved into recording_temp
-    const recordingTempDir = join(
+    // Issue #146 F3: imported recordings land in pending/ (was recording_temp/).
+    const pendingDir = join(
       home,
       '.teamagent',
       'digital-twin',
       'queue',
-      'recording_temp',
+      'pending',
     );
-    const payloadPath = join(recordingTempDir, 'IMPORT-ULID.payload');
-    const metadataPath = join(recordingTempDir, 'IMPORT-ULID.json');
+    const payloadPath = join(pendingDir, 'IMPORT-ULID.payload');
+    const metadataPath = join(pendingDir, 'IMPORT-ULID.json');
     expect(existsSync(payloadPath)).toBe(true);
     expect(existsSync(metadataPath)).toBe(true);
 

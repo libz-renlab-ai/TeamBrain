@@ -1,15 +1,28 @@
 /**
  * Schema B: recording payload destined for `POST /v1/recordings`.
  *
- * The audio payload (an OGG container with Opus inside) is already a
- * compressed bitstream, so we only base64-encode it for the JSON envelope.
- * `payload_compression: 'none'` makes the no-gzip contract explicit.
+ * Wire shape (issue #146 F2 — aligned with mock-server.ts validation):
  *
- * NOTE: As of PR-4, recordings live in `~/.teamagent/digital-twin/queue/recording_temp/`
- * (NOT pending/). PR-3's daemon `loadEntry` only validates `cc-session` metadata,
- * so dropping recording entries into pending/ would dead-letter them. Routing
- * recordings into the daemon + uploading via `/v1/recordings` is a follow-up
- * after PR-5.
+ *   {
+ *     "schema_version": 1,
+ *     "envelope": { recording_id, user_id, machine_id, started_at, ... },
+ *     "audio": { "compression": "none", "codec": ..., "content": "<base64 OGG>" }
+ *   }
+ *
+ * Server reads `obj.envelope.recording_id` / `obj.envelope.user_id` and
+ * `obj.audio.content`. The pre-F2 flat shape (`{schema_version, id, ...,
+ * payload}`) parsed but lost the recording_id binding — server fell back
+ * to a randomized id and dropped the audio under user_id="unknown".
+ *
+ * The audio bitstream (OGG/Opus container) is already compressed, so we
+ * only base64-encode it for JSON. `audio.compression: 'none'` makes the
+ * no-gzip contract explicit.
+ *
+ * Note (issue #146 F3): recordings now route through the daemon's
+ * `pending/` queue alongside cc-sessions; the previous `recording_temp/`
+ * holding directory is no longer used. The daemon's `loadEntry` is
+ * kind-aware as of F3 and dispatches to `POST /v1/recordings` for
+ * `metadata.kind === 'recording'`.
  */
 
 export const RECORDING_CODEC_DEFAULTS = Object.freeze({
@@ -38,32 +51,49 @@ export interface RecordingMetadata {
   schema_version: 1;
 }
 
-export interface RecordingEnvelope {
-  schema_version: 1;
+/** Inner envelope block — what mock-server.ts reads under `obj.envelope` for /v1/recordings. */
+export interface RecordingEnvelopeBlock {
   id: string;
-  kind: 'recording';
+  /** Mirror of id — server validates this field on /v1/recordings. */
+  recording_id: string;
   user_id: string;
   machine_id: string;
   started_at: string;
   ended_at: string;
   duration_ms: number;
+  payload_size: number;
+  source: string;
+  host: { os: string; arch: string; hostname: string };
+  teamagent_version: string;
+  /** ISO timestamp first persisted into config (issue #146 F9 audit field). */
+  consented_at: string | null;
+}
+
+export interface RecordingAudioBlock {
+  compression: 'none';
   codec: 'opus';
   bitrate: number;
   sample_rate: number;
   channels: number;
   container: 'ogg';
-  payload_compression: 'none';
-  payload_size: number;
-  payload: string; // base64(OGG bytes)
-  source: string;
-  host: { os: string; arch: string; hostname: string };
-  teamagent_version: string;
+  content: string; // base64(OGG bytes)
+}
+
+export interface RecordingEnvelope {
+  schema_version: 1;
+  envelope: RecordingEnvelopeBlock;
+  audio: RecordingAudioBlock;
 }
 
 export interface BuildRecordingEnvelopeInput {
   metadata: RecordingMetadata;
   payloadBytes: Buffer;
-  identity: { user_id: string; machine_id: string };
+  identity: {
+    user_id: string;
+    machine_id: string;
+    /** Issue #146 F9 — audit-trail timestamp of first config persist. */
+    consented_at?: string | null;
+  };
 }
 
 export function buildRecordingEnvelope(
@@ -72,24 +102,29 @@ export function buildRecordingEnvelope(
   const payloadB64 = input.payloadBytes.toString('base64');
   return {
     schema_version: 1,
-    id: input.metadata.id,
-    kind: 'recording',
-    user_id: input.identity.user_id,
-    machine_id: input.identity.machine_id,
-    started_at: input.metadata.started_at,
-    ended_at: input.metadata.ended_at,
-    duration_ms: input.metadata.duration_ms,
-    codec: input.metadata.codec,
-    bitrate: input.metadata.bitrate,
-    sample_rate: input.metadata.sample_rate,
-    channels: input.metadata.channels,
-    container: input.metadata.container,
-    payload_compression: 'none',
-    payload_size: input.metadata.payload_size,
-    payload: payloadB64,
-    source: input.metadata.source,
-    host: input.metadata.host,
-    teamagent_version: input.metadata.teamagent_version,
+    envelope: {
+      id: input.metadata.id,
+      recording_id: input.metadata.id,
+      user_id: input.identity.user_id,
+      machine_id: input.identity.machine_id,
+      started_at: input.metadata.started_at,
+      ended_at: input.metadata.ended_at,
+      duration_ms: input.metadata.duration_ms,
+      payload_size: input.metadata.payload_size,
+      source: input.metadata.source,
+      host: input.metadata.host,
+      teamagent_version: input.metadata.teamagent_version,
+      consented_at: input.identity.consented_at ?? null,
+    },
+    audio: {
+      compression: 'none',
+      codec: input.metadata.codec,
+      bitrate: input.metadata.bitrate,
+      sample_rate: input.metadata.sample_rate,
+      channels: input.metadata.channels,
+      container: input.metadata.container,
+      content: payloadB64,
+    },
   };
 }
 
