@@ -37,10 +37,31 @@
 1. **写 issue（手动，<50 字）** — 通过仓库唯一 issue template 提交，body 限 50 字以内。
 2. **跑 grill 并贴评论（手动）** — 在 web claude.ai 跑 `/grill-me` 或在 CC CLI 跑 `/grill-with-docs`，把输出整段贴回 issue 评论；comment 末尾必须以 `--- end grill ---` 结束（或保持评论 60 秒以上不再编辑）；最后给 issue 加 `grill-ready` label。
 3. **手动跑 driver（人手）** — maintainer 看到 `grill-ready` issue，在 Claude Code 里执行 `/fixed-flow-driver` skill 并传入 issue 编号；driver 在 `.codex/worktrees/issue-<N>/` 起 `feat/issue-<N>` 分支，按 grill 评论实现。
-4. **/review 循环（driver 内部自动）** — driver 跑 `/review` skill，发现 finding 就更新 `docs/plans/<date>-pr-<N>-fix-plan.md` 并修；**循环至 PASS 或人手贴 `needs-human` label**。
-5. **开 PR + squash-merge（driver 内部自动）** — `gh pr create`（**普通 PR，非 draft**）→ `gh pr merge <N> --squash --auto`（**仅 squash**），merge 后清理 worktree、写 `report.md`。
+4. **/review 循环（driver 内部自动 — never ends）** — driver 跑 `/review` skill，发现 finding 就更新 `docs/plans/<date>-pr-<N>-fix-plan.md` 并修；**`/review` loop never ends — 只有 PASS 能终止 driver**；`needs-human` label 不再退出 driver，仅作 informational signal。
+5. **开 PR + squash-merge（driver 内部自动 — keep trying until it failed）** — `gh pr create`（**普通 PR，非 draft**）→ `gh pr merge <N> --squash --auto`（**仅 squash**）；如果 squash-merge 失败 → rebase 重试 → rebase 再失败也不 bail，**keep trying until it failed**（详见 §冲突恢复）；merge 成功后清理 worktree、写 `report.md`。
 
 「人手」贯穿 step 1-3：reporter 写 issue + 贴 grill，maintainer 看到后**主动**调起 driver。**禁止任何 watcher / 守护进程 / 后台轮询 / 自动 dispatch**——driver 只能由人在 Claude Code 会话里显式启动。
+
+## Dispatch policy — only grilled-issues
+
+The FIXEDFLOW driver may **only** be dispatched on **grilled-issues** —
+issues that have a valid grill comment (per §grill 评论必须满足 below) AND
+the `grill-ready` label. The only type of dispatch that is allowed in
+TeamBrain is dispatch on **grilled-issues**, manually invoked by a maintainer
+in a Claude Code session.
+
+Allowed dispatch type:
+
+- ✅ **grilled-issues** — issue with valid grill comment + `grill-ready` label,
+  picked up by a human running `/fixed-flow-driver <N>` in Claude Code.
+
+Forbidden dispatch types (driver must refuse / refusal layer must reject):
+
+- ❌ blank issues / non-grill-template issues
+- ❌ issues with stale or missing grill comments (>24h without `grill-ready`)
+- ❌ retroactive AI-triage labels (see `docs/HOW-TO-CLAIM-ISSUE.md`)
+- ❌ watcher / cron / background poller / auto-dispatch of any kind
+- ❌ epic-style issues without an `epic` label and named coordinator (see §Epic carve-out)
 
 ## Claim an issue — what happens (2-outcome contract)
 
@@ -124,11 +145,11 @@ driver 启动后会把 grill 评论解读为 step 3 的 plan；如果评论缺�
 
 driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skills/`）。
 
-- **调用方式**：仅由人在 Claude Code 会话里显式 `/fixed-flow-driver <issue-number>`；不存在任何机器自动 dispatch 路径。
-- **并发**：同一时刻只跑一个 issue（FIFO by issue number），避免 worktree 冲突；如果上一轮没收尾完，maintainer 不该并发再起新一轮。
-- **/review 循环安全网**：iteration 计数与累计 token 写到 `.fixedflow/iter-<N>.json`；driver 在第 10 / 25 / 50 / 100 轮发 PushNotification；每 10 轮在 issue 上贴一条 token-burn 摘要评论。
+- **调用方式**：仅由人在 Claude Code 会话里显式 `/fixed-flow-driver <issue-number>`；不存在任何机器自动 dispatch 路径。dispatch 类型只能是 grilled-issues（见 §Dispatch policy）。
+- **并发 — let the first go**：同一时刻只跑一个 issue worktree（FIFO by issue number）。如果 many workers hit one same worktree（多个 driver 撞 `.codex/worktrees/issue-<N>/`），**let the first go**：第一个 driver 拿到 worktree 锁继续干，后续 driver 检测到 `.codex/worktrees/issue-<N>/.lock` sentinel（含第一个 driver 的 session id）后立即礼让退出 —— **不抢、不强删、不 race**。锁文件由第一个 driver 在 worktree 创建后写入，merge 完成清理 worktree 时一并删除。
+- **/review 循环 — never ends**：`/review` loop 是无限循环；它 **never ends** until `/review` PASS。没有 max-iter cutoff、没有 token-budget kill、没有 needs-human 退出。driver 持续 finding → fix-plan → commit → 再 `/review`，永远不放弃，**until it passes**。iteration 计数与累计 token 写到 `.fixedflow/iter-<N>.json`；driver 在第 10 / 25 / 50 / 100 / 250 / 500 / ... 轮发 PushNotification；每 10 轮在 issue 上贴一条 token-burn 摘要评论作 informational signal，但 loop 不为此停。`needs-human` label 在 loop 中**仅作 informational**，不再触发退出（曾经是 escape hatch，现已废弃）。
 - **PR-PLAN 强制**：每一轮 /review fix 必须先写或更新 `docs/plans/<date>-pr-<N>-fix-plan.md`（task / outputs / judge harness 三段，参考 `docs/PR-PLAN.md`），不允许跳过。
-- **冲突恢复**：squash-merge 失败 → rebase 一次重试；再失败加 `needs-human` label，driver 退出该 issue 处理流。
+- **冲突恢复 — keep trying until it failed**：`gh pr merge --squash --auto` 失败 → `git rebase origin/main` → `--force-with-lease` push → 再次 `gh pr merge --squash --auto`。如果 squash-merge 失败后 rebase 再失败，driver **不再加 `needs-human` label 然后退出**；改为 **keep trying until it failed** —— 继续 fetch / rebase / push / retry merge，直到物理上跑不动为止（PR 被 upstream close、branch 被远端删、repo 权限被撤、或维护者 kill 进程）。每 5 次 retry 发一次 PushNotification；除非物理失败，永不放弃。
 - **Boris workflow 收尾**：merge 完成后写 `docs/plans/<date>-issue-<N>/research.md` + `report.md`，记录实际执行链路与偏差。
 
 ## bypass / escape hatch
@@ -137,8 +158,9 @@ driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skil
 |------|------|
 | dependabot / 安全补丁 PR（无对应 issue） | 仓库 admin 在 issue（如有）或 PR 上加 `bypass-fixed-flow` label |
 | 真·hotfix 必须 5 分钟内合 | 同上；并提示作者补一个 retro issue 走 FIXEDFLOW |
-| `/review` 死循环烧 token 太多 | 任何人加 `needs-human` label；driver 检查到该 label 立即退出该 issue |
+| `/review` 死循环烧 token 太多 | 不再触发退出 —— `/review` loop never ends until PASS。`needs-human` label 仅作 informational；要真停只能 kill 进程或关 PR |
 | maintainer 一时没看到 grill-ready issue | 没事——issue 留在队列里等下一次 maintainer 主动巡检（无 SLA） |
+| squash-merge 持续失败 | driver 不 bail；keep trying until it failed —— 反复 rebase/retry，直到物理上跑不动（PR closed / branch deleted / 进程被杀） |
 
 ## 与既有规则的关系
 
