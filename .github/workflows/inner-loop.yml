@@ -1,0 +1,35 @@
+name: Inner-loop tests
+
+# Triggered by `wip/**` push only.
+# Background: see docs/INNER-LOOP-TESTING.md and docs/adr/0011-inner-loop-on-ci.md.
+# PR-gate testing remains in ci.yml on master/main + pull_request — DO NOT merge them.
+
+on:
+  push:
+    branches:
+      - 'wip/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_TOKEN }}
+      ANTHROPIC_BASE_URL: https://api.minimaxi.com/anthropic
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: MiniMax-M2.7-highspeed
+      ANTHROPIC_DEFAULT_OPUS_MODEL: MiniMax-M2.7-highspeed
+      ANTHROPIC_DEFAULT_SONNET_MODEL: MiniMax-M2.7-highspeed
+      ANTHROPIC_MODEL: MiniMax-M2.7-highspeed
+      API_TIMEOUT_MS: "3000000"
+      CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: "1"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm verify

@@ -196,3 +196,23 @@ _Avoid_: "fix plan", "follow-up issue"
 - **"review"** — ADR-0007 之后 bare "review" 默认指 **`/review` skill**（本地 gate）；引用历史 cloud-reviewer 流程时请直接指 ADR-0007
 - **"纪律软 / soft discipline"** — CEO-mode summary 用语，描述 GitHub 层缺自动化；解决：这是 **negative-space platform layer**（deliberate），不是 discipline gap；CEO 文案此后须改用后者
 - **"PR-PLAN scope"** — `docs/PR-PLAN.md` 当前 scope 是 post-PR；grilling 中有用户把 issue → PR-PLAN 视为 pre-PR 流程；解决：post-PR 为 canonical；pre-PR plans 走 `docs/HOWTO-PLAN-PR.md`，未来若要扩 PR-PLAN 到 pre-PR 须独立 ADR
+
+## Testing channels
+
+新增（ADR-0011，2026-05-10）。
+
+**Inner-loop testing**:
+工作进行中的全量测试套件运行通道；由 `wip/**` 分支推送触发 `.github/workflows/inner-loop.yml` 执行 `pnpm test` + `pnpm verify`。
+_Avoid_: developer-loop testing、quick-test、`pnpm test` 本地直跑（后者已被 ADR-0011 禁掉）
+
+**wip 分支**:
+临时分支命名空间 `wip/<topic>`，用于 inner-loop CI 触发；非 PR 分支，PR merge 后即可删除。
+_Avoid_: feature branch、scratch branch、dev branch（这些都是更宽语义）
+
+**Single-file targeted exception**:
+inner-loop testing 规则的本地例外：单文件运行（`pnpm vitest run path/to/x.test.ts` 或 `--testNamePattern` 过滤）允许本地，因 vitest 只起 1 worker 不进 scheduler-overload 区。
+_Avoid_: dev-mode test、quick local test、targeted vitest（无主语易混 PR-gate）
+
+**Scheduler-overload**:
+N 个并发 session 各自跑全套测试时 OS scheduler 队列饱和的现象；表现为 loadavg 飙升（>200）但 CPU 使用率不高（<20%），用户体感为"机器太热"但 thermal level 仍 "normal"。`toohot` 命令观测到的根因；不是 thermal throttle。
+_Avoid_: thermal throttle、CPU contention、heat（这三个都是症状层；机制层 canonical 是 scheduler-overload）

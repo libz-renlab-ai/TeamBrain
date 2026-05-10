@@ -73,6 +73,20 @@ pnpm teamagent <cmd>  # 跑 CLI（M0 可用：skeleton-demo）
 - **写 `CLAUDE.md` 时务必避开字面 HTML 注释 marker**：`injectBlockIntoDoc` 的 regex（`packages/core/src/compiler/markdown.ts:233`）会**匹配文件任意位置**的字面 marker（前缀 `&lt;!-- TEAMAGENT:START`、后缀 `--&gt;`），legacy compile 跑过时会把它视为真 marker 起点、重写到下一个 `END` marker 之间的所有内容。所以 prose 引用这两个 marker 时只用纯名 `TEAMAGENT:START` / `TEAMAGENT:END`，或用 HTML entity 形式 `&lt;!-- ... --&gt;`，不要写真实 HTML 注释字面值。
 - 单元测试锁这两条契约：`packages/cli/src/__tests__/compile.test.ts` 的 `no flags: writes skills and leaves CLAUDE.md untouched` 与 `--legacy-claude-md restores old behavior`。
 
+## 测试在哪里跑
+
+并行 ≥4 session 同时本地 `pnpm test` 会让 macOS scheduler 队列饱和（`toohot` 2026-05-10 实测 loadavg 274 / thermal normal —— **是 scheduler-overload 不是热墙**），所以全量测试已经搬到独立 CI workflow。详见 ADR-0011。
+
+| 跑什么 | 在哪跑 | 命令 |
+|---|---|---|
+| **全量** `pnpm test` / `pnpm verify` | CI on `wip/**` | `git push origin HEAD:wip/<name>` 触发 `.github/workflows/inner-loop.yml` |
+| **单文件 targeted** vitest | 本地（秒级允许） | `pnpm vitest run path/to/x.test.ts` |
+| **PR-gate 全套** | CI on PR / main | 现有 `ci.yml`，含 ubuntu + windows + typecheck，**不动** |
+
+- 操作手册：[`docs/INNER-LOOP-TESTING.md`](docs/INNER-LOOP-TESTING.md)
+- 决策与权衡：[`docs/adr/0011-inner-loop-on-ci.md`](docs/adr/0011-inner-loop-on-ci.md)
+- Repo secret：`MINIMAX_TOKEN`；YAML 内 `env: ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_TOKEN }}`。Token rotate 流程见 INNER-LOOP-TESTING.md。
+
 ## claudefast 约定
 
 - `claudefast` 不是 TeamAgent 命令；在本项目里它表示“用更便宜或更快的 Claude Code profile 跑非交互测试”的本地 wrapper/alias。
