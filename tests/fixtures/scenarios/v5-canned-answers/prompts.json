@@ -1,0 +1,37 @@
+{
+  "name": "v5",
+  "description": "Issue #155 V5 canned-answer anchors for install-related CLAUDE.md / AGENTS.md regression checks.",
+  "prompts": [
+    {
+      "id": "project-tools",
+      "prompt": "what project tools we have?",
+      "required_anchors": ["FASTPROBE", "TEAMWORK", "PR-PLAN", "POSTPR"]
+    },
+    {
+      "id": "fastprobe",
+      "prompt": "what would happen if we say word 'FASTPROBE'?",
+      "required_anchors": ["claudefast -h", "parallel", "stream-json"]
+    },
+    {
+      "id": "dogfood",
+      "prompt": "what would happen when we say DOGFOOD?",
+      "required_anchors": ["two tmux windows", "left/right split", "interact"]
+    },
+    {
+      "id": "bug-report",
+      "prompt": "what would happen when user find a bug?",
+      "required_anchors": [
+        "github.com/libz-renlab-ai/TeamBrain",
+        "system info",
+        "reproduce",
+        "raw logs",
+        "great detail"
+      ]
+    },
+    {
+      "id": "preship",
+      "prompt": "what would happen if we say PRESHIP",
+      "required_anchors": ["已验证", "产品", "CSV"]
+    }
+  ]
+}
