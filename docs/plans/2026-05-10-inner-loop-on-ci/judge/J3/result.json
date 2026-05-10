@@ -1,0 +1,27 @@
+{
+  "probe_id": "J3",
+  "input_branch": "wip/judge-secret",
+  "run_id": 25622479210,
+  "status": "completed",
+  "conclusion": "success",
+  "duration_sec": 89,
+  "evidence_url": "https://github.com/libz-renlab-ai/TeamBrain/actions/runs/25622479210",
+  "captured_at": "2026-05-10T07:05:48Z",
+  "env_assertion": {
+    "ANTHROPIC_BASE_URL_match": true,
+    "ANTHROPIC_API_KEY_present": true,
+    "MINIMAX_API_KEY_present": true,
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL_match": true
+  },
+  "token_in_log_count": 0,
+  "token_in_log_method": "gh run view 25622479210 --log | grep -cE '^[^[]*sk-[a-z]' → 0",
+  "rotation_status": {
+    "rotated": false,
+    "secret_updated_at": "2026-05-08T06:37:13Z",
+    "captured_at": "2026-05-10T07:03:04Z",
+    "note": "Token rotation still pending. J3 verifies the INJECTION PATH (workflow correctly wires secret into env vars) — the value-side leak risk from today's transcript is orthogonal and tracked separately. Once user rotates via 'gh secret set MINIMAX_API_KEY -b\"$NEW\"', the new value flows through the same proven injection path on next push."
+  },
+  "test_file": "packages/cli/src/__tests__/judge-env.test.ts",
+  "test_file_lives_on": "wip/judge-secret branch only — never merged to main",
+  "tests_passed": 4
+}
