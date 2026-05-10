@@ -1,0 +1,14 @@
+{
+  "probe_id": "J2",
+  "input_branch": "wip/judge-fail",
+  "run_id": 25622357460,
+  "status": "completed",
+  "conclusion": "failure",
+  "failed_test_count": 1,
+  "duration_sec": 87,
+  "evidence_url": "https://github.com/libz-renlab-ai/TeamBrain/actions/runs/25622357460",
+  "captured_at": "2026-05-10T06:59:20Z",
+  "fail_pattern_detected": "AssertionError: expected 1 to be 2 // Object.is equality",
+  "fail_location": "packages/cli/src/__tests__/init.test.ts:1289:17",
+  "note": "Deliberate failure injected via an 8-line block appended to init.test.ts on wip/judge-fail branch. Local branch deleted after capture; main work branch unchanged. Remote wip/judge-fail kept as evidence; will be deleted with the cleanup script in judge.md."
+}

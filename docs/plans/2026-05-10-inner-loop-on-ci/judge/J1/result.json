@@ -1,0 +1,18 @@
+{
+  "probe_id": "J1",
+  "form": "dogfood (informal J1)",
+  "input_branch": "wip/inner-loop-on-ci",
+  "run_id": 25622286918,
+  "status": "completed",
+  "conclusion": "success",
+  "duration_sec": 85,
+  "evidence_url": "https://github.com/libz-renlab-ai/TeamBrain/actions/runs/25622286918",
+  "captured_at": "2026-05-10T06:55:23Z",
+  "note": "Informal J1: the implementation commits (rename to MINIMAX_API_KEY) pushed to wip/inner-loop-on-ci dogfood inner-loop.yml itself. Outcome equivalent to literal wip/judge-pass (empty commit branch from main).",
+  "predecessor_dogfood": {
+    "run_id": 25622100341,
+    "duration_sec": 96,
+    "url": "https://github.com/libz-renlab-ai/TeamBrain/actions/runs/25622100341",
+    "form": "dogfood pre-rename (with MINIMAX_TOKEN reference)"
+  }
+}

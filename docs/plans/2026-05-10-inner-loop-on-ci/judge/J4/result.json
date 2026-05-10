@@ -1,0 +1,12 @@
+{
+  "probe_id": "J4",
+  "command": "pnpm exec vitest run packages/cli/src/__tests__/init.test.ts --reporter=basic",
+  "exit_code": 0,
+  "duration_sec": 4,
+  "vitest_internal_duration_sec": 2.32,
+  "test_count": 59,
+  "ran_files": ["packages/cli/src/__tests__/init.test.ts"],
+  "captured_at": "2026-05-10T06:57:05Z",
+  "note": "Single worker, no parallel pool, well within 10-second threshold. Confirms the single-file targeted local exception in ADR-0011 works as designed.",
+  "stdout_log": "docs/plans/2026-05-10-inner-loop-on-ci/judge/J4/stdout.log"
+}
