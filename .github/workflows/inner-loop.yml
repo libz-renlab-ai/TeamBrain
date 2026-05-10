@@ -9,6 +9,12 @@ on:
     branches:
       - 'wip/**'
 
+# Cancel in-progress runs on the same branch when a newer push lands —
+# inner loop wants the latest result, not a queue of stale ones.
+concurrency:
+  group: inner-loop-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
