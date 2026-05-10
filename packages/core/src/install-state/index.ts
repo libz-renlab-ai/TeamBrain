@@ -35,3 +35,5 @@ export {
 } from "./lifecycle.js";
 
 export { resolveProjectId } from "./project-id.js";
+
+export { checkpoint } from "./checkpoint.js";
