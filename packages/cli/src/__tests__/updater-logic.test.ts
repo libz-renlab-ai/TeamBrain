@@ -286,4 +286,104 @@ describe("runUpdater", () => {
     }
     expect(deps.log).toHaveBeenCalledWith(expect.stringContaining("fetch failed"));
   });
+
+  // Issue #245 — update-installed AttributionBus emit on success path
+  it("emits update-installed once after successful install + migrate", async () => {
+    const state = {
+      ...defaultUpdateState(),
+      last_installed_sha: "oldSha1234",
+      last_installed_version: "0.10.1",
+    };
+    const emitInstalled = vi.fn();
+    let nowCallCount = 0;
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchRemoteSha: vi.fn().mockResolvedValue(okResult("newShaABCDEFG")),
+      // 3 now() calls inside runUpdater on the install path:
+      //   1) state.last_check_ts upfront write
+      //   2) installStartMs just before runNpmInstall
+      //   3) installedAtMs after migrate (also reused by emit)
+      now: () => {
+        nowCallCount += 1;
+        if (nowCallCount === 1) return 1000;
+        if (nowCallCount === 2) return 2000; // install start
+        return 7500; // install end
+      },
+      emitInstalled,
+    });
+    await runUpdater(deps);
+    expect(emitInstalled).toHaveBeenCalledTimes(1);
+    const event = emitInstalled.mock.calls[0]?.[0];
+    expect(event).toMatchObject({
+      kind: "update-installed",
+      source: "update",
+      severity: "info",
+      // last_installed_version takes precedence over the sha
+      fromVer: "0.10.1",
+      // remoteSha truncated to first 7 chars
+      toVer: "newShaA",
+      // 7500 - 2000
+      durationMs: 5500,
+    });
+    expect(typeof event.timestamp).toBe("string");
+  });
+
+  it("falls back to short fromSha when last_installed_version is empty", async () => {
+    const state = {
+      ...defaultUpdateState(),
+      last_installed_sha: "abcdefghij",
+      last_installed_version: "",
+    };
+    const emitInstalled = vi.fn();
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchRemoteSha: vi.fn().mockResolvedValue(okResult("zzzzzzz1234")),
+      emitInstalled,
+    });
+    await runUpdater(deps);
+    expect(emitInstalled).toHaveBeenCalledTimes(1);
+    expect(emitInstalled.mock.calls[0]?.[0]).toMatchObject({
+      fromVer: "abcdefg",
+      toVer: "zzzzzzz",
+    });
+  });
+
+  it("does NOT emit update-installed when install fails", async () => {
+    const state = { ...defaultUpdateState(), last_installed_sha: "old" };
+    const emitInstalled = vi.fn();
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchRemoteSha: vi.fn().mockResolvedValue(okResult("new")),
+      runNpmInstall: vi.fn().mockResolvedValue({ ok: false, error: "boom" }),
+      emitInstalled,
+    });
+    await runUpdater(deps);
+    expect(emitInstalled).not.toHaveBeenCalled();
+  });
+
+  it("does NOT emit update-installed when remote sha matches local", async () => {
+    const state = { ...defaultUpdateState(), last_installed_sha: "same" };
+    const emitInstalled = vi.fn();
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchRemoteSha: vi.fn().mockResolvedValue(okResult("same")),
+      emitInstalled,
+    });
+    await runUpdater(deps);
+    expect(emitInstalled).not.toHaveBeenCalled();
+  });
+
+  it("emit failure is logged but does not throw", async () => {
+    const state = { ...defaultUpdateState(), last_installed_sha: "old" };
+    const emitInstalled = vi.fn().mockImplementation(() => {
+      throw new Error("eventLog full");
+    });
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchRemoteSha: vi.fn().mockResolvedValue(okResult("new")),
+      emitInstalled,
+    });
+    await expect(runUpdater(deps)).resolves.toBeUndefined();
+    expect(deps.log).toHaveBeenCalledWith(expect.stringContaining("emitInstalled failed"));
+  });
 });

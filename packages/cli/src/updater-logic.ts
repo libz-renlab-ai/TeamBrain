@@ -1,7 +1,9 @@
 import {
   type UpdateState,
   type PendingBanner,
+  makeUpdateInstalledEvent,
 } from "@teamagent/core";
+import type { UpdateInstalledEvent } from "@teamagent/types";
 import type { FetchShaResult } from "./github-api.js";
 
 export interface UpdaterDeps {
@@ -18,6 +20,12 @@ export interface UpdaterDeps {
   now(): number;
   acquireLock(): boolean;
   releaseLock(): void;
+  /**
+   * Issue #245 — fired once after a successful npm install + migrate, with
+   * elapsed time spanning both. Optional so existing tests stay green
+   * without injecting an emit stub.
+   */
+  emitInstalled?: (event: UpdateInstalledEvent) => void;
 }
 
 export async function runUpdater(deps: UpdaterDeps): Promise<void> {
@@ -87,6 +95,10 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
 
     deps.log(`update available: ${state.last_installed_sha || "(none)"} -> ${remoteSha}`);
     const backupDir = deps.backupCurrentInstall(state.last_installed_sha);
+    // Issue #245: track elapsed time across install + migrate so the
+    // emitted update-installed event carries a real durationMs (CEO
+    // 关心装机率, 但同样关心 install 是否在退化变慢)。
+    const installStartMs = deps.now();
 
     const installRes = await deps.runNpmInstall();
     if (!installRes.ok) {
@@ -111,11 +123,12 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
     }
 
     const fromSha = state.last_installed_sha;
-    const banner: PendingBanner = { from: fromSha, to: remoteSha, at: deps.now(), shown: false };
+    const installedAtMs = deps.now();
+    const banner: PendingBanner = { from: fromSha, to: remoteSha, at: installedAtMs, shown: false };
     const success: UpdateState = {
       ...state,
       last_installed_sha: remoteSha,
-      installed_at: deps.now(),
+      installed_at: installedAtMs,
       consecutive_install_failures: 0,
       last_install_error: null,
       pending_banner: banner,
@@ -123,6 +136,24 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
     deps.writeState(success);
     deps.pruneOldBackups();
     deps.log(`updated to ${remoteSha}`);
+    // Issue #245: emit AFTER persist so events.db only carries fully-
+    // committed installs. fromVer/toVer fall back to short SHA when the
+    // tracked version string isn't populated yet (last_installed_version
+    // can lag behind sha rotation by one SessionStart).
+    if (deps.emitInstalled) {
+      try {
+        deps.emitInstalled(
+          makeUpdateInstalledEvent({
+            fromVer: state.last_installed_version || fromSha.slice(0, 7) || "(none)",
+            toVer: remoteSha.slice(0, 7),
+            durationMs: installedAtMs - installStartMs,
+            nowMs: installedAtMs,
+          }),
+        );
+      } catch (err) {
+        deps.log(`emitInstalled failed: ${(err as Error).message}`);
+      }
+    }
   } finally {
     deps.releaseLock();
   }

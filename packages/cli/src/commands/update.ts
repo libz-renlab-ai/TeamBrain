@@ -7,10 +7,16 @@ import {
   defaultUpdateState,
   nextSnooze,
   parseUpdateState,
+  makeUpdateSnoozedEvent,
+  makeUpdateNeverSetEvent,
   type UpdateState,
 } from "@teamagent/core";
 import type { FetchShaFailure } from "../github-api.js";
 import { withUpdateStateLock } from "../lib/update-state-lock.js";
+import {
+  emitUpgradeEventSync,
+  type EmitUpgradeOptions,
+} from "../lib/upgrade-event-emitter.js";
 
 /**
  * Resolve a GitHub token for authenticated API calls.
@@ -101,10 +107,14 @@ export async function runUpdateCommand(sub: UpdateSubcommand, args: string[] = [
  * Reads `state.snooze_level`, calls `nextSnooze` to compute the new
  * `snooze_until_ts`, persists. Returns a one-line confirmation telling
  * the user how long the banner will stay silent.
+ *
+ * Issue #245: also emit `update-snoozed` to AttributionBus + events.db
+ * so the snooze 转化率 telemetry has a row per snooze action.
  */
-function snoozeCmd(): UpdateRunResult {
+function snoozeCmd(emitOpts: EmitUpgradeOptions = {}): UpdateRunResult {
   const s = readState();
-  const result = nextSnooze(s.snooze_level, Date.now());
+  const nowMs = Date.now();
+  const result = nextSnooze(s.snooze_level, nowMs);
   writeState({
     ...s,
     snooze_level: result.snooze_level,
@@ -113,7 +123,18 @@ function snoozeCmd(): UpdateRunResult {
     // stops re-firing across SessionStarts (until a new version's banner lands).
     prompt_dismissed_for_to: s.pending_banner?.to ?? "",
   });
-  const hours = Math.round((result.snooze_until_ts - Date.now()) / (60 * 60 * 1000));
+  emitUpgradeEventSync(
+    makeUpdateSnoozedEvent({
+      level: result.snooze_level,
+      untilTs: result.snooze_until_ts,
+      nowMs,
+    }),
+    {
+      eventsDbPath: path.join(home(), "events.db"),
+      ...emitOpts,
+    },
+  );
+  const hours = Math.round((result.snooze_until_ts - nowMs) / (60 * 60 * 1000));
   const human =
     hours >= 24 ? `${Math.round(hours / 24)} 天` : `${hours} 小时`;
   return {
@@ -130,9 +151,13 @@ function snoozeCmd(): UpdateRunResult {
  * banner). Does NOT touch the auto-update.disabled marker — auto-update
  * itself stays enabled (user can still run `teamagent update --now`),
  * only the SessionStart prompt is silenced.
+ *
+ * Issue #245: emit `update-never-set` so the permanent-opt-out conversion
+ * shows up in 装机率 telemetry.
  */
-function neverCmd(): UpdateRunResult {
+function neverCmd(emitOpts: EmitUpgradeOptions = {}): UpdateRunResult {
   const s = readState();
+  const nowMs = Date.now();
   writeState({
     ...s,
     never_prompt: true,
@@ -141,6 +166,13 @@ function neverCmd(): UpdateRunResult {
     // re-fire (a brand new pending_banner.to will fire fresh).
     prompt_dismissed_for_to: s.pending_banner?.to ?? "",
   });
+  emitUpgradeEventSync(
+    makeUpdateNeverSetEvent({ nowMs }),
+    {
+      eventsDbPath: path.join(home(), "events.db"),
+      ...emitOpts,
+    },
+  );
   return {
     ok: true,
     output:

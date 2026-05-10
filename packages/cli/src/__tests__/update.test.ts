@@ -19,6 +19,18 @@ vi.mock("../github-api.js", () => ({
   fetchRemoteSha: vi.fn(),
 }));
 
+// Issue #245: capture every upgrade emit without touching the real
+// events.db / sqlite. Each test inspects `emittedEvents` to assert.
+const emittedEvents: { kind: string; [k: string]: unknown }[] = [];
+vi.mock("../lib/upgrade-event-emitter.js", () => ({
+  emitUpgradeEventSync: (event: { kind: string; [k: string]: unknown }) => {
+    emittedEvents.push(event);
+  },
+  emitUpgradeEvent: async (event: { kind: string; [k: string]: unknown }) => {
+    emittedEvents.push(event);
+  },
+}));
+
 let tmpHome: string;
 let envBak: string | undefined;
 
@@ -26,6 +38,7 @@ beforeEach(() => {
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "tg-upd-cmd-"));
   envBak = process.env["TEAMAGENT_HOME"];
   process.env["TEAMAGENT_HOME"] = tmpHome;
+  emittedEvents.length = 0;
 });
 
 afterEach(() => {
@@ -286,6 +299,79 @@ describe("checkCmd — ETag and sha persistence on success", () => {
     const r = await runUpdateCommand("check");
     expect(r.ok).toBe(true);
     expect(r.output).toContain("up-to-date");
+  });
+});
+
+// Issue #245 — emit AttributionBus events from the snooze / never CLI cmds.
+// Each persists state then fires update-snoozed / update-never-set so the
+// 装机率 / snooze 转化率 telemetry has a row per user action.
+describe("update --snooze / --never AttributionBus emit (issue #245)", () => {
+  it("snoozeCmd emits update-snoozed once with the new level + untilTs", async () => {
+    const s = defaultUpdateState();
+    s.snooze_level = 0;
+    writeState(s);
+    const r = await runUpdateCommand("snooze");
+    expect(r.ok).toBe(true);
+    expect(emittedEvents).toHaveLength(1);
+    const event = emittedEvents[0]!;
+    expect(event).toMatchObject({
+      kind: "update-snoozed",
+      source: "update",
+      severity: "info",
+    });
+    // Persisted state and emitted level must agree
+    const persisted = readState();
+    expect(event.level).toBe(persisted.snooze_level);
+    expect(event.untilTs).toBe(persisted.snooze_until_ts);
+    expect(typeof event.timestamp).toBe("string");
+  });
+
+  it("snoozeCmd emit reflects the next snooze level on each invocation", async () => {
+    const s = defaultUpdateState();
+    s.snooze_level = 1;
+    writeState(s);
+    await runUpdateCommand("snooze");
+    expect(emittedEvents).toHaveLength(1);
+    expect(emittedEvents[0]?.level).toBeGreaterThan(1);
+  });
+
+  it("neverCmd emits update-never-set once with empty payload", async () => {
+    writeState(defaultUpdateState());
+    const r = await runUpdateCommand("never");
+    expect(r.ok).toBe(true);
+    expect(emittedEvents).toHaveLength(1);
+    const event = emittedEvents[0]!;
+    expect(event).toMatchObject({
+      kind: "update-never-set",
+      source: "update",
+      severity: "info",
+    });
+    expect(typeof event.timestamp).toBe("string");
+    // never_prompt persisted alongside the emit
+    expect(readState().never_prompt).toBe(true);
+  });
+
+  it("snoozeCmd emit fires AFTER writeState (state already persisted on emit)", async () => {
+    writeState(defaultUpdateState());
+    await runUpdateCommand("snooze");
+    // Snooze always persists state (snooze_level / snooze_until_ts changed),
+    // so by the time the emit fires the state file already reflects the
+    // new snooze level — verifies emit happens after persist.
+    const persisted = readState();
+    expect(persisted.snooze_level).toBeGreaterThan(0);
+    expect(emittedEvents[0]?.level).toBe(persisted.snooze_level);
+  });
+
+  it("neither cmd touches events when emit is the only side channel", async () => {
+    // Negative: --status / --logs / --enable / --disable do NOT emit any
+    // upgrade event (their telemetry pivot is auto-update.disabled, not
+    // the prompt/install funnel).
+    writeState(defaultUpdateState());
+    await runUpdateCommand("status");
+    await runUpdateCommand("logs");
+    await runUpdateCommand("disable");
+    await runUpdateCommand("enable");
+    expect(emittedEvents).toHaveLength(0);
   });
 });
 

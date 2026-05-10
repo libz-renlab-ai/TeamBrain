@@ -54,6 +54,7 @@ import { fetchRemoteSha } from "./github-api.js";
 import { resolveGithubToken } from "./commands/update.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
 import { withUpdateStateLock } from "./lib/update-state-lock.js";
+import { emitUpgradeEventSync } from "./lib/upgrade-event-emitter.js";
 
 function teamagentHome(): string {
   return process.env["TEAMAGENT_HOME"] ?? path.join(os.homedir(), ".teamagent");
@@ -334,6 +335,15 @@ async function main(): Promise<void> {
         now: () => Date.now(),
         acquireLock,
         releaseLock,
+        // Issue #245: tap install completion into AttributionBus +
+        // events.db so the 装机率/转化率 telemetry has a row per real
+        // install. Best-effort — emitUpgradeEventSync swallows IO
+        // failures, and updater-logic wraps the call in try/catch.
+        emitInstalled: (event) => {
+          emitUpgradeEventSync(event, {
+            eventsDbPath: path.join(teamagentHome(), "events.db"),
+          });
+        },
       });
       log("updater exit");
       return undefined;
