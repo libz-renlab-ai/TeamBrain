@@ -12,6 +12,7 @@ import {
   shouldPromptUpgrade,
   parseChangelog,
   renderUpgradePrompt,
+  makeUpdatePromptShownEvent,
   type UpdateState,
 } from "@teamagent/core";
 import { loadBundledChangelog } from "./changelog-loader.js";
@@ -19,6 +20,10 @@ import { rotateIfTooLarge } from "./log-rotate.js";
 import { findTeamagentRoot } from "./lib/walk-up.js";
 import { hasProjectMarker } from "./lib/project-markers.js";
 import { withUpdateStateLock } from "./lib/update-state-lock.js";
+import {
+  emitUpgradeEventSync,
+  type EmitUpgradeOptions,
+} from "./lib/upgrade-event-emitter.js";
 
 export const DEFAULT_DEBOUNCE_HOURS = 24;
 
@@ -276,6 +281,7 @@ export function maybeShowUpgradePrompt(
   stderr: (s: string) => void = (s) => process.stderr.write(s),
   now: () => number = () => Date.now(),
   loadChangelog: () => string = loadBundledChangelog,
+  emitOpts: EmitUpgradeOptions = {},
 ): void {
   const state = readUpdateState();
   const decision = shouldPromptUpgrade({
@@ -317,6 +323,21 @@ export function maybeShowUpgradePrompt(
       snoozeLevel: state.snooze_level,
     }),
   );
+  // Issue #245: emit AttributionBus event + persist to events.db so the
+  //装机率/snooze 转化率 telemetry has a row per banner impression. Done
+  // AFTER the stderr write so a faulty event log cannot mask the banner.
+  // Best-effort: emitUpgradeEventSync swallows IO failures.
+  try {
+    emitUpgradeEventSync(
+      makeUpdatePromptShownEvent({
+        fromVer: fromVersion,
+        toVer: toVersion,
+        snoozeLevel: state.snooze_level,
+        nowMs: now(),
+      }),
+      emitOpts,
+    );
+  } catch { /* never block banner on telemetry */ }
   // No state mutation: the prompt re-fires every SessionStart until the user
   // picks --now (clears snooze, runs updater) / --snooze (advances level) /
   // --never (sets never_prompt=true). That's the soft-force.

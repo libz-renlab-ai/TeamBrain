@@ -253,4 +253,53 @@ describe("maybeShowUpgradePrompt", () => {
     maybeShowUpgradePrompt((s) => { captured += s; }, () => 1000, loadFixtureChangelog);
     expect(captured).toContain("teamagent update --now");
   });
+
+  // Issue #245 — AttributionBus emit + events.db persistence
+  it("emits update-prompt-shown to bus AND event log when banner shows", () => {
+    writeUpdateState({
+      ...defaultUpdateState(),
+      last_installed_version: "0.10.1",
+      pending_banner: { from: "old", to: "newSHA", at: 0, shown: false },
+      snooze_level: 2,
+    });
+    const emitted: { kind: string; fromVer: string; toVer: string; snoozeLevel: number }[] = [];
+    const persisted: { id: string; kind: string; payload: Record<string, unknown> }[] = [];
+    const bus = {
+      emit(e: { kind: string; fromVer?: string; toVer?: string; snoozeLevel?: number }) {
+        emitted.push({
+          kind: e.kind,
+          fromVer: e.fromVer ?? "",
+          toVer: e.toVer ?? "",
+          snoozeLevel: e.snoozeLevel ?? -1,
+        });
+      },
+      subscribe: () => () => undefined,
+      drain: () => [],
+    };
+    const eventLog = {
+      append(row: { id: string; kind: string; payload: Record<string, unknown> }) {
+        persisted.push(row);
+      },
+    };
+    let captured = "";
+    maybeShowUpgradePrompt(
+      (s) => { captured += s; },
+      () => 12345,
+      loadFixtureChangelog,
+      { bus, eventLog, randSuffix: () => "fix" },
+    );
+    expect(captured).toContain("teamagent update --now");
+    // bus emit
+    expect(emitted).toEqual([
+      { kind: "update-prompt-shown", fromVer: "0.10.1", toVer: "0.10.5", snoozeLevel: 2 },
+    ]);
+    // events.db persist
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.kind).toBe("update-prompt-shown");
+    expect(persisted[0]?.payload).toEqual({
+      fromVer: "0.10.1",
+      toVer: "0.10.5",
+      snoozeLevel: 2,
+    });
+  });
 });
