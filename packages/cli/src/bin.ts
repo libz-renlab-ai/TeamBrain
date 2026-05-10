@@ -46,6 +46,10 @@ import {
 import { executeStats } from "./commands/stats.js";
 import { executeDemoHook, parseDemoHookArgs } from "./commands/demo-hook.js";
 import { installHook, uninstallHook } from "./commands/install-hook.js";
+import {
+  parseInstallArgs,
+  renderInstallPreviewOutput,
+} from "./commands/install-manifest.js";
 import { installUserHook, uninstallUserHook } from "./commands/install-user-hook.js";
 import { executeAnalyze, parseAnalyzeArgs } from "./commands/analyze.js";
 import { executeReview, parseReviewArgs } from "./commands/review.js";
@@ -512,6 +516,22 @@ async function main(): Promise<void> {
       process.stdout.write(renderInitResult(result));
       if (!result.ok) process.exit(1);
       return;
+    }
+    case "install": {
+      // Issue #155 / Order 1 — only --preview is implemented in this slice.
+      // Without --preview the install command must remain unimplemented in
+      // this PR (Order 3 fills in the real install behaviour). To preserve
+      // the pre-PR baseline (which had no `case "install"`) we replicate the
+      // default branch's "unknown command" behaviour exactly.
+      const installArgs = parseInstallArgs(rest);
+      if (installArgs.preview) {
+        process.stdout.write(renderInstallPreviewOutput());
+        return;
+      }
+      // Fall through to the same exit-1 + stderr message the default branch
+      // emits, so non-`--preview` invocations are byte-identical to baseline.
+      process.stderr.write(`未知命令: ${command}\n`);
+      process.exit(1);
     }
     case "disable": {
       const r = disable();
