@@ -173,6 +173,24 @@ _Avoid_: "soft discipline"（错把 deliberate 缺席当成 gap）
 POSTPR loop 在 open PR 内发现 issue 时写的 plan；三段式（task / expected outputs / third-party judge harness）；走 TEAMWORK 执行；落在 `docs/plans/<date>-pr-<n>-fix-plan.md`。
 _Avoid_: "fix plan", "follow-up issue"
 
+### Install manifest sections（issue #155 「一鸭到位」manifest 的 canonical 段名；resolved in grill 2026-05-10）
+
+**`[config]`**:
+manifest 第 1 段。描述 install 写到 user-level 的所有配置文件。包含 `~/.claude/settings.json` 中被 teamagent tag 标记的 hook / statusline block + `~/.teamagent/{global.db, manifest.json, sessions/, .warmup-state.json, locks/}` 全部 user-level state。
+_Avoid_: hooks（仅一类）, settings（仅一文件）
+
+**`[skills]`**:
+manifest 第 2 段。**仅**指 `<project>/.claude/skills/<id>/SKILL.md`（init.ts mirror 的 project-level skill 集合：`canary` / `design-html` / `design-shotgun` / `office-hours` / `plan-ceo-review` + `claim-to-merge`）。**user-level `~/.claude/skills/teamagent/<id>/SKILL.md`** 是 compile 的衍生输出，由 `[kb]` 源数据 派生，**不**单独在 manifest 列出。
+_Avoid_: 把 user-level compile 输出写进 [skills]（会让 manifest 跟 install 实际行为不一致）
+
+**`[kb]`**:
+manifest 第 3 段。描述 install 写到 project-level 知识库的全部文件。包含 `<project>/.teamagent/{knowledge.db, manifest.json, team/<author>/<rule_id>.json, locks/}` —— M5 viral sync 写到项目内的全部内容。
+_Avoid_: 仅 knowledge.db（会漏 manifest.json + team/ + locks/）, seed-packs（那是源数据，不是 install 产物）
+
+**`permission prompt`**:
+V1 指标「install 全程恰好 1 次授权」计数的对象。仅指 Claude Code 在 PreToolUse hook 返回 `permissionDecision: "ask"` 时拉起的侧边 UI 弹窗。**不**含 OS 层 sudo / `release/install.sh` 自己的 `y/N` / TeamAgent 自身的 confirm dialog。
+_Avoid_: prompt（与 LLM prompt 撞名）, confirmation（语义太宽）, dialog（语义太宽）
+
 ## Relationships
 
 - 一条 **personal** 规则经 **two gates** 通过后晋升为 **team**；不通过则永停 **L1**

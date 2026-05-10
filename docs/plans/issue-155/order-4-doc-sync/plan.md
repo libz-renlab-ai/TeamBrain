@@ -25,8 +25,7 @@ preview cmd  → resume state → install merge → rewrite README/INSTALL  → 
  FIRST)         after 1)       after 1+2)      land AFTER 1+3 merge
 ```
 
-> 呷呷~！鸭鸭说：以前装 TeamAgent 要爬 4 级台阶，现在只要踩 1 步"先预览、再安装"就上来了！
-> 老台阶不删，缩进角落给开发小伙伴用，外面的文档整整齐齐改成新路~
+> 呷呷~！鸭鸭说：以前装 TeamAgent 要爬 4 级台阶，现在 README 只露两条入口——顶部一键 `bash <(curl ...)` 给普通用户、AI 引导段给会跑 `pnpm` 的开发者；老台阶不删，缩到 Appendix 给贡献者用。`--preview` 命令是 AI / power user 的内部工具，不进 README 用户面文案 (>ω<)
 
 ---
 
@@ -36,30 +35,52 @@ preview cmd  → resume state → install merge → rewrite README/INSTALL  → 
 
 ### 做什么（In-scope）
 
-重写所有**面向用户**的安装文档，使推荐路径变为：
+重写所有**面向用户**的安装文档，使 README 只露**两条入口**：
 
-1. **预览命令**（`teamagent preview`，来自 Order 1）
-2. **一键安装**（`sh /tmp/teambrain-install.sh`，来自 Order 3 合并后的单步命令）
+1. **Path 1 — Quickstart（curl|bash）**：`README.md` 顶部已经存在的
+   `bash <(curl ...)` 一键安装段落 **保持不变**（不在本 PR 改动范围内）。
+2. **Path 2 — AI guidance（`pnpm teamagent install`）**：在 README
+   新增 "AI guidance" 段，告诉会跑 `pnpm` 的开发者直接执行
+   `pnpm teamagent install`（来自 Order 3 合并后的单步命令）。
+
+**重要**：`pnpm teamagent install --preview`（来自 Order 1）虽然作为
+真正的 CLI flag 出货，但是**不**在 README 用户面文案中暴露——它是
+AI / power-user 内部工具（grill round 2 决策 M2 + M3）。
 
 具体涉及的文档：
 
 | 文件 | 当前状态 | 变更方向 |
 |------|----------|----------|
-| `README.md` | "快速安装" 区块混合了 curl-pipe 和 4-step clone 流程 | 顶部改为 `Quick start (preview → install)`；4-step 移至 Appendix |
-| `INSTALL.md` | 面向贡献者的 YAML 步骤说明（`step-1` pnpm install → `step-4` pnpm teamagent init） | 加 Dev/Contributor Fallback 标题包裹原 4 步；顶部插入 "普通用户推荐：preview → install" 导航提示 |
+| `README.md` | 顶部 `bash <(curl ...)` 一键安装段 + 中段 4-step clone 流程混合 | 顶部 curl quickstart 段不动；新增"AI guidance"小节，写 `pnpm teamagent install`；4-step 移至 Appendix |
+| `INSTALL.md` | 面向贡献者的 YAML 步骤说明（`step-1` pnpm install → `step-4` pnpm teamagent init） | 加 Dev/Contributor Fallback 标题包裹原 4 步；顶部插入 "普通用户推荐：用 README 顶部的 curl quickstart 或 `pnpm teamagent install`" 导航提示 |
 | `docs/specs/2026-05-07-issue85-non-technical-onboarding-report.md` | 描述 INSTALL.md 为"非技术用户 onboarding 单一来源" | 在 INSTALL.md 内部结构说明更新后，此 report 只做文字引用，不删记录 |
-| `release/install.sh` 相关文档引用 | README 中多处 curl 链接 | 保留链接不变；只更新描述文案，使之与"预览 → 安装"心智对齐 |
+| `release/install.sh` 相关文档引用 | README 中多处 curl 链接 | 保留链接不变；只更新描述文案，与"两条入口"心智对齐 |
 
 **依赖说明（landing order 约束）：**
-- Order 4 **必须在 Order 1（preview 命令）和 Order 3（install 单步合并）都合并之后才能落**。
-- 原因：新 README 顶部会引用 `teamagent preview` 命令和单步 `sh /tmp/teambrain-install.sh` 命令。如果这两个命令不存在，新文档描述的是不存在的东西，会让用户失去信任。
+- Order 4 **必须在 Order 3（install 单步合并）合并之后才能落**。Order 1
+  （`--preview` flag）的存在并不影响本 PR：本 PR 不在 README 用户面文案中
+  写 `--preview`，所以即使 Order 1 尚未合并也不会出现"文档描述不存在的
+  命令"问题。
+- 原因：新 README AI guidance 段会引用单步 `pnpm teamagent install` 命令。
+  如果该命令不存在，新文档描述的是不存在的东西，会让用户失去信任。
 
 ### 怎么做
 
-1. 在 `README.md` 顶部"快速安装"区块插入 Quick start 标题和 2 步流程（preview → install）。
-2. 把原有的 `# 5–10 分钟上手` 4-step clone 流程移到 `README.md` 末尾 `## Dev / contributor fallback` Appendix，保留原文不改。
-3. 在 `INSTALL.md` 头部加一段"普通用户推荐"导航提示（2行），指向 preview → install 路径；然后把现有的 step-1 ~ step-4 YAML 用 `## Dev / contributor fallback (legacy 4-step)` H2 标题包裹。
-4. 检查 `CLAUDE.md` 所有 canned-answer 锚点（见 § 3 V5 保护列表），确认变更后每个锚点在更新后的文档中仍然可搜索到（不删减命令名称）。
+1. **保留 `README.md` 顶部已有的 `bash <(curl ...)` quickstart 段不动**
+   （这是 Path 1，本 PR 不修改它）。
+2. 在 README 中段新增 "## AI guidance — `pnpm teamagent install`" 小节
+   （这是 Path 2），告诉会跑 `pnpm` 的开发者用单步合并后的安装命令。
+3. 把原有的 `# 5–10 分钟上手` 4-step clone 流程移到 `README.md` 末尾
+   `## Dev / contributor fallback` Appendix，保留原文不改。
+4. 在 `INSTALL.md` 头部加一段"普通用户推荐"导航提示（2行），指向
+   "用 README 顶部的 curl quickstart 或 `pnpm teamagent install`" 两条入口；
+   然后把现有的 step-1 ~ step-4 YAML 用 `## Dev / contributor fallback
+   (legacy 4-step)` H2 标题包裹。
+5. **不要在 README 用户面文案中写 `--preview`**——`pnpm teamagent install
+   --preview` 是 Order 1 的真实 CLI flag，但仅供 AI / power-user 内部使用
+   （grill round 2 决策 M2）。
+6. 检查 `CLAUDE.md` 所有 canned-answer 锚点（见 § 3 V5 保护列表），确认
+   变更后每个锚点在更新后的文档中仍然可搜索到（不删减命令名称）。
 
 ### 不做什么（Anti-goals）
 
@@ -85,14 +106,13 @@ preview cmd  → resume state → install merge → rewrite README/INSTALL  → 
 
 ```
 BEFORE:
-  ### 快速安装          ← curl | sh (single-line)
+  ### 快速安装          ← curl | sh (single-line, Path 1, UNCHANGED)
   ## 5–10 分钟上手      ← 4-step: clone → pnpm install → pnpm build → teamagent init
 
 AFTER:
-  ## Quick start（推荐：预览 → 安装）    ← NEW: teamagent preview, then sh /tmp/install.sh
-  ### 快速安装                           ← existing curl | sh stays for reference
-  (moved to bottom)
-  ## Dev / contributor fallback（贡献者旧流程）  ← 原 4-step, verbatim, under appendix heading
+  ### 快速安装                                         ← Path 1: existing bash <(curl ...) — UNCHANGED, NOT edited in this PR
+  ## AI guidance — pnpm teamagent install              ← NEW Path 2: single-step install (no --preview shown to users)
+  ## Dev / contributor fallback（贡献者旧流程）         ← 原 4-step, verbatim, moved to appendix
 ```
 
 ### INSTALL.md 前后结构对比
@@ -106,7 +126,7 @@ BEFORE:
 AFTER:
   ---frontmatter---
   # INSTALL.md — TeamAgent 安装指南
-  ## 普通用户（推荐路径）      ← NEW 2-line nav: preview → install
+  ## 普通用户（推荐路径）      ← NEW 2-line nav: README 顶部 curl quickstart 或 pnpm teamagent install
   ## Dev / contributor fallback (legacy 4-step)   ← step-1~4 verbatim, unchanged
 ```
 

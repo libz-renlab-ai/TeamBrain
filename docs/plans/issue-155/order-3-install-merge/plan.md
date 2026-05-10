@@ -26,11 +26,11 @@
 ║  Order 1 (preview)                │  ← manifest reprint (double-safety)     ║
 ║  Order 2 (resume-state) ──────────┘  ← resume notebook consumed here        ║
 ║                                                                              ║
-║  This order: 4-step → 1 command, resume, auto-health-check, skip flag       ║
+║  This order: 4-step → 1 command, resume, auto-health-check                  ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
 
-> 呷呷~ 鸭鸭这单把四步安装捏成一步，接上续命本子、装完自检、还加了跳过120MB大模型的开关，是整条链路的主心骨！(>ω<)
+> 呷呷~ 鸭鸭这单把四步安装捏成一步，接上续命本子、装完自检，是整条链路的主心骨！向量模型 ~120 MB 不再当成可跳过的前台 step，而是 ADR-0001（2026-05-09 修订）规定的后台 detached 热身进程，主进程 ~3s 返回，鸭鸭随时可以 kill / rm 把它停掉 (>ω<)
 
 ---
 
@@ -54,9 +54,11 @@ Collapse the existing **4-step install flow** into a single end-to-end command
 4. **Appends an auto health-check** at the end: after successful install, runs
    `pnpm teamagent doctor` (or the equivalent health-check subcommand) and
    embeds the result in the final output.
-5. **Exposes `--skip-vector-model`** flag that skips the 120 MB vector model
-   download (decision 8: only the vector model is skippable; all other payloads
-   are mandatory).
+5. **Spawns the vector model warmup as a detached background process** (per
+   ADR-0001 revised 2026-05-09). The Stage-1 install path returns in ~3s
+   without blocking on the ~120 MB download. The warmup process can be stopped
+   at any time via `kill <pid>` or `rm` of the in-progress files; no foreground
+   `--skip-*` flag is exposed because there is no main-process semantic to gate.
 
 ### How
 
@@ -76,8 +78,10 @@ Collapse the existing **4-step install flow** into a single end-to-end command
    conditional dependency section below).
 6. After all steps complete, call the health-check command and capture its JSON
    output into the final result.
-7. Add `--skip-vector-model` boolean flag; gate the vector model download step
-   behind `if (!skipVectorModel)`.
+7. Spawn the vector-model warmup as a detached child process (per ADR-0001
+   2026-05-09): the parent install returns once the warmup is launched and
+   does NOT block on download completion. Document the pid file (or process
+   lookup recipe) so users can `kill` / `rm` to abort.
 
 ### Conditional dependency strategy
 
@@ -101,8 +105,10 @@ description must explicitly state which stubs are active.
   `install-user-hook`) remain callable individually.
 - Do NOT change which payloads are written (same files, same destinations).
 - Do NOT add new permission checks beyond the single consolidated gate.
-- Do NOT make the `--skip-vector-model` flag skip anything other than the 120 MB
-  vector model download.
+- Do NOT add any foreground vector-model skip flag. Per ADR-0001 (revised
+  2026-05-09) the vector model lives in a detached background warmup
+  process; there is no main-process semantic to gate with a skip flag.
+  To abort, the user kills the warmup pid or `rm`s the in-progress files.
 - Do NOT update INSTALL.md or README (that is order 4).
 - Do NOT add CI jobs for V1/V3/V4 validation (those are orders 5 and 6).
 - Do NOT implement lenient-mode performance (V4 ≤ +20% slowdown) — that is
@@ -116,7 +122,7 @@ description must explicitly state which stubs are active.
 
 | Path | Description |
 |------|-------------|
-| `packages/cli/src/commands/install.ts` | New orchestrator: `runInstall(opts)`, manifest reprint, single prompt, resume wiring, health-check tail, `--skip-vector-model` flag |
+| `packages/cli/src/commands/install.ts` | New orchestrator: `runInstall(opts)`, manifest reprint, single prompt, resume wiring, health-check tail, detached vector-model warmup spawn (per ADR-0001 2026-05-09) |
 | `packages/cli/src/__tests__/install-merge.test.ts` | Unit + integration tests (see test list below) |
 
 ### Files edited
@@ -131,32 +137,38 @@ description must explicitly state which stubs are active.
 ```
 $ pnpm teamagent install
 [config]   ~/.teamagent/config.json  (~1 KB write)
-[skills]   ~/.claude/skills/teamagent/  (N skill files)
-[kb]       .teamagent/kb/  (project knowledge base)
-[download] vector model: ~120 MB  (skip with --skip-vector-model)
-[refusal]  Pressing No leaves no half-state; use --skip-vector-model to opt out
-           of the 120 MB download permanently.
+[skills]   <project>/.claude/skills/  (project-level skills: canary, design-html, design-shotgun, office-hours, plan-ceo-review, claim-to-merge)
+[kb]       .teamagent/kb/  (project knowledge base; user-level ~/.claude/skills/teamagent/<id>/SKILL.md is the compile output downstream of [kb], not listed here)
+[download] vector model: ~120 MB  (downloaded in background after install; can be stopped any time via kill or rm)
+[refusal]  Pressing No leaves no half-state; the vector-model background warmup
+           can be killed or removed at any time.
 
 Install TeamAgent hooks and knowledge base? (Y/n)
-▶ [1/4] Installing hooks... ✓
-▶ [2/4] Installing plugins... ✓
-▶ [3/4] Installing user hook... ✓
-▶ [4/4] Downloading vector model... ✓  (or SKIPPED with --skip-vector-model)
+▶ [1/3] Installing hooks... ✓
+▶ [2/3] Installing plugins... ✓
+▶ [3/3] Installing user hook... ✓
+▶ Spawning vector-model warmup in background (pid <N>; ~3s for parent to return)
 
 ✓ Install complete.
 
 Auto health check:
-{"status":"ok","hooks":true,"kb":true,"model":true}
+{"status":"ok","hooks":true,"kb":true,"model":"warmup-pending"}
 ```
 
 **Key invariants (reviewer must verify):**
 
 - In strict mode: exactly **1 permission prompt** fired (V1).
 - Manifest (all 5 sections) printed **before** the prompt.
-- `--skip-vector-model`: step [4/4] is skipped; all others proceed.
-- `Ctrl-C` mid-install then rerun: command prints `Resuming from step [N/4]...`
-  and continues from the interrupted step (V3).
-- Auto health-check output appears at the end of every successful run.
+- Vector-model warmup is spawned as a detached background process; the
+  parent install command returns in ~3s without blocking on the ~120 MB
+  download. There is no foreground skip flag for the vector model
+  (per ADR-0001 2026-05-09).
+- `Ctrl-C` mid-install then rerun: command prints `Resuming from step [N/3]...`
+  and continues from the interrupted step (V3). The vector-model warmup
+  is independent of the foreground checkpoint sequence.
+- Auto health-check output appears at the end of every successful run; the
+  `model` field reports `"warmup-pending"` while the background warmup is
+  still in progress and `true` once it has finished.
 
 ### Tests (reviewer-checkable)
 
@@ -166,13 +178,17 @@ Auto health check:
    exactly once per full install run.
 2. **Unit: manifest sections printed before prompt** — assert `renderInstallManifest`
    output appears in stdout before `confirmPrompt` is invoked.
-3. **Unit: `--skip-vector-model` skips only step [4/4]** — mock each install
-   sub-step; assert steps 1–3 are called and step 4 is NOT called when flag set.
+3. **Unit: vector-model warmup is spawned detached, parent does not wait** —
+   mock the warmup spawner; assert the parent install function returns
+   without `await`-ing the warmup promise and that the spawn was invoked
+   with detached/`unref()` semantics.
 4. **Unit: resume from checkpoint** — mock `installState.checkpoint` to throw
    at step 2; call `runInstall` again; assert it resumes from step 2 (steps 1
    NOT re-run).
 5. **Integration: health-check tail** — run full install in test env; assert
-   stdout ends with a line matching `/"status":"ok"/`.
+   stdout ends with a line matching `/"status":"ok"/` and that `model` field
+   is either `true` (warmup already finished) or `"warmup-pending"` (warmup
+   still running).
 6. **Integration: exit code 0 on success, 1 on refusal** — assert exit 0 when
    user confirms, exit 1 when user denies.
 
@@ -188,7 +204,7 @@ Auto health check:
 ### PR artefacts
 
 - Normal PR (not draft) opened against `main`.
-- Commit message: `feat(issue-155): collapse 4-step install into 1 command with resume, health-check, skip flag (order 3/6)`
+- Commit message: `feat(issue-155): collapse 4-step install into 1 command with resume, health-check, detached vector-model warmup (order 3/6)`
 - `/export` file at `.fastprobe/order-3-install-merge/export.txt` attached to
   PR description.
 - Explicit statement in PR body: which order-1/order-2 stubs are active (if any).
@@ -206,7 +222,7 @@ Auto health check:
 **Step 1 — claudefast probe**
 
 ```bash
-claudefast -p "Run: pnpm teamagent install --help in /Users/m1/projects/TeamBrain/.claude/worktrees/newissue. Capture full stdout. Output ONLY strict JSON: {\"has_skip_vector_model_flag\": true|false, \"has_install_command\": true|false, \"flags\": [...]}"
+claudefast -p "Run: pnpm teamagent install --help in /Users/m1/projects/TeamBrain/.claude/worktrees/newissue. Capture full stdout. Output ONLY strict JSON: {\"has_install_command\": true|false, \"flags\": [...], \"forbidden_flag_names_absent\": true|false}. Per ADR-0001 (2026-05-09) any vector-model skip flag (whether named for the vector model or for the model alone) must NOT appear; the vector model is a detached background warmup with no main-process semantic to gate."
 ```
 
 **Step 2 — codex exec probe (same command)**
@@ -214,7 +230,7 @@ claudefast -p "Run: pnpm teamagent install --help in /Users/m1/projects/TeamBrai
 ```bash
 codex exec --skip-git-repo-check -s read-only \
   "cd /Users/m1/projects/TeamBrain/.claude/worktrees/newissue && pnpm teamagent install --help 2>&1" | \
-  jq -S '{"has_skip_vector_model_flag": true, "has_install_command": true, "flags": [...]}'
+  jq -S '{"has_install_command": true, "flags": [...], "forbidden_flag_names_absent": true}'
 ```
 
 Hard-match: `jq -S . step1.json > a.json && jq -S . step2.json > b.json && diff -u a.json b.json`
@@ -225,7 +241,7 @@ Hard-match: `jq -S . step1.json > a.json && jq -S . step2.json > b.json && diff 
 tmux new-session -s order3-install \; \
   send-keys "claudefast" Enter
 # In the session:
-# prompt: "run pnpm teamagent install --skip-vector-model and verify: 1 prompt, 5 manifest sections, health-check at end"
+# prompt: "run pnpm teamagent install and verify: 1 prompt, 5 manifest sections, vector-model warmup spawned detached (parent returns ~3s), health-check at end"
 # then: /export .fastprobe/order-3-install-merge/export.txt
 ```
 
@@ -243,9 +259,15 @@ RUN_ID=$(date +%s)
 EVIDENCE=".judge/${RUN_ID}"
 mkdir -p "${EVIDENCE}"
 
-# V1: count prompts in a mocked strict-mode run
+# V1a: count terminal readline confirmPrompt() calls in a mocked strict-mode run.
+#   - V1a measures TeamAgent's INTERNAL confirmPrompt() — fires once when run
+#     interactively in a terminal. TEAMAGENT_TEST_COUNT_PROMPTS=1 instructs
+#     the harness to count those calls (via a test-only counter shim) so the
+#     number ends up in stdout for grep.
+#   - V1b (the Claude Code path) is measured by order-5's strict-permission
+#     shim, NOT by this env var. Do not conflate the two metrics.
 PROMPT_COUNT=0
-TEAMAGENT_TEST_COUNT_PROMPTS=1 pnpm teamagent install --skip-vector-model \
+TEAMAGENT_TEST_COUNT_PROMPTS=1 pnpm teamagent install \
   --non-interactive \
   > "${EVIDENCE}/v1_stdout.txt" 2>"${EVIDENCE}/v1_stderr.txt" || true
 echo $? > "${EVIDENCE}/v1_exit.txt"
@@ -270,12 +292,14 @@ jq -n \
   --arg evidence_dir "${EVIDENCE}" \
   --arg stdout_path "${EVIDENCE}/v1_stdout.txt" \
   '{
-    "v1_prompt_count_strict_mode": $prompt_count,
+    "v1a_terminal_prompt_count": $prompt_count,
+    "v1a_metric_note": "TeamAgent internal confirmPrompt() count via TEAMAGENT_TEST_COUNT_PROMPTS=1; V1b (Claude Code path) is owned by order-5",
     "v2_manifest_before_prompt": $manifest_before_prompt,
     "v3_resume_result": $resume,
     "auto_health_check_present": $health_check_present,
     "sections_emitted": ["[config]","[skills]","[kb]","[download]","[refusal]"],
-    "skip_vector_model_flag_exists": true,
+    "vector_model_warmup_detached": true,
+    "skip_vector_model_flag_absent": true,
     "evidence_dir": $evidence_dir,
     "stdout_path": $stdout_path
   }' > "${EVIDENCE}/judge.json"
@@ -287,12 +311,14 @@ echo "Evidence written to ${EVIDENCE}/judge.json"
 
 ```json
 {
-  "v1_prompt_count_strict_mode": 1,
+  "v1a_terminal_prompt_count": 1,
+  "v1a_metric_note": "TeamAgent internal confirmPrompt() count via TEAMAGENT_TEST_COUNT_PROMPTS=1; V1b (Claude Code path) is owned by order-5",
   "v2_manifest_before_prompt": true,
   "v3_resume_result": "resumed-from-checkpoint" | "manual-attestation-required",
   "auto_health_check_present": true,
   "sections_emitted": ["[config]", "[skills]", "[kb]", "[download]", "[refusal]"],
-  "skip_vector_model_flag_exists": true,
+  "vector_model_warmup_detached": true,
+  "skip_vector_model_flag_absent": true,
   "evidence_dir": ".judge/<run_id>/",
   "stdout_path": ".judge/<run_id>/v1_stdout.txt"
 }
@@ -300,22 +326,32 @@ echo "Evidence written to ${EVIDENCE}/judge.json"
 
 **Pass conditions:**
 
-- `v1_prompt_count_strict_mode == 1` (V1: single prompt)
+- `v1a_terminal_prompt_count == 1` (V1a: TeamAgent's terminal-mode
+  confirmPrompt fires exactly once)
 - `v2_manifest_before_prompt == true` (manifest appears before prompt)
 - `v3_resume_result` is `"resumed-from-checkpoint"` OR documented manual
   attestation is attached to the PR
 - `auto_health_check_present == true` (the install command's tail health-check ran;
   this is NOT V4 — V4 metrics (timing ≤+20% + UX-noise) are owned by Order 5)
 - `sections_emitted` contains all 5 headers
-- `skip_vector_model_flag_exists == true`
+- `vector_model_warmup_detached == true` (per ADR-0001 2026-05-09, the
+  vector model is downloaded by a detached background process; the parent
+  install does not block on it)
+- `skip_vector_model_flag_absent == true` (no foreground skip flag exists
+  for the vector model; there is no main-process semantic to gate)
 
 **READ (third-party judge — NOT the author)**
 
 ```bash
 claudefast -p "Read .judge/<run_id>/judge.json and .judge/<run_id>/v1_stdout.txt.
-Verify: (a) v1_prompt_count_strict_mode == 1; (b) v2_manifest_before_prompt is true;
-(c) auto_health_check_present is true (note: this is the install tail health-check, NOT V4 — V4 metrics live in Order 5); (d) sections_emitted contains all 5 headers;
-(e) skip_vector_model_flag_exists is true.
+Verify: (a) v1a_terminal_prompt_count == 1 (TeamAgent's internal confirmPrompt
+fires exactly once in terminal mode; V1b for the Claude Code path is owned by
+order-5); (b) v2_manifest_before_prompt is true; (c) auto_health_check_present
+is true (note: this is the install tail health-check, NOT V4 — V4 metrics live
+in Order 5); (d) sections_emitted contains all 5 headers; (e)
+vector_model_warmup_detached is true; (f) skip_vector_model_flag_absent is true
+(per ADR-0001 2026-05-09 the vector model is a detached background warmup with
+no foreground skip flag).
 Output ONE LINE of strict JSON: {\"pass\": true|false, \"failures\": [...], \"notes\": \"<=140 chars\"}"
 ```
 
@@ -341,10 +377,10 @@ claudefast -p "In the TeamBrain repo at /Users/m1/projects/TeamBrain/.claude/wor
 claudefast -p "In /Users/m1/projects/TeamBrain/.claude/worktrees/newissue/packages/cli/src/commands/, search for all calls to confirm(), readline, inquirer, or any interactive prompt function. List each call site with file name and line number. Which of these must survive (they are meaningful user gates) and which can be collapsed into the single manifest+confirm gate per issue #155 decision (1) and (2)? Output JSON: {\"prompt_call_sites\": [{\"file\": \"...\", \"line\": N, \"function\": \"...\", \"collapsible\": true|false}]}"
 ```
 
-### Probe 4.3 — What would `--skip-vector-model` need to gate?
+### Probe 4.3 — Where would the vector-model warmup be spawned (detached)?
 
 ```bash
-claudefast -p "In /Users/m1/projects/TeamBrain/.claude/worktrees/newissue/packages/cli/src/, search for all code paths that download, fetch, or install a vector model or embedding model (check install-plugins.ts, any 'model' or 'embed' references). List exact file paths and function names. Does a `--skip-model` or `--skip-vector-model` flag already exist anywhere? Output JSON: {\"vector_model_download_sites\": [{\"file\": \"...\", \"function\": \"...\", \"line\": N}], \"existing_skip_flag\": true|false, \"flag_name_if_exists\": \"...\"}"
+claudefast -p "In /Users/m1/projects/TeamBrain/.claude/worktrees/newissue/packages/cli/src/, search for all code paths that download, fetch, or install a vector model or embedding model (check install-plugins.ts, any 'model' or 'embed' references). List exact file paths and function names. Per ADR-0001 (revised 2026-05-09) the vector-model download must run in a detached background process spawned by `runInstall(opts)`; the parent install must not block on it and there must NOT be any foreground skip flag for the vector model (no main-process semantic to gate). Output JSON: {\"vector_model_download_sites\": [{\"file\": \"...\", \"function\": \"...\", \"line\": N}], \"any_existing_skip_flag\": true|false, \"existing_skip_flag_name\": \"...\", \"recommended_warmup_entry_point\": \"...\"}. If any vector-model skip flag exists today, the order-3 PR must remove it."
 ```
 
 ### Probe 4.4 — Is there an existing health-check command we can reuse?

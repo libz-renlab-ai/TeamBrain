@@ -35,16 +35,31 @@
 Add a **`--preview` flag** to the existing `pnpm teamagent install` command.
 When the flag is present the command:
 1. Collects the same metadata the real install would use (config write paths,
-   skill file list, project-KB size, model download size, refusal-path note).
+   skill file list, project-KB size, vector-model warmup size, refusal-path
+   note).
 2. Renders those as a **5-section manifest** to stdout:
    - `[config]`  — directories / files that would be written for user config
-   - `[skills]`  — skill library files that would be installed
+   - `[skills]`  — `<project>/.claude/skills/<id>/SKILL.md` (project-level
+                    skill set: `canary`, `design-html`, `design-shotgun`,
+                    `office-hours`, `plan-ceo-review`, `claim-to-merge`).
+                    User-level `~/.claude/skills/teamagent/<id>/SKILL.md`
+                    is the `compile` output downstream of `[kb]` and is
+                    NOT listed here (per `docs/CONTEXT.md` canonical defn).
    - `[kb]`      — project knowledge-base files that would be written
-   - `[download]` — MB that would be fetched (vector model + any packages)
-   - `[refusal]` — "Pressing No leaves no half-state; use `--skip-model` to
-                    opt out of the 120 MB vector model download permanently"
+   - `[download]` — vector model (~120 MB) downloaded in background after
+                    install; can be stopped any time via kill or rm
+                    (per ADR-0001 revised 2026-05-09: detached warmup
+                    process; Stage 1 install returns in ~3s)
+   - `[refusal]` — "Pressing No leaves no half-state; the vector-model
+                    background warmup can be killed or removed at any time"
 3. Exits 0.
 4. **Writes no files.  Triggers no permission prompts.**
+
+The `--preview` flag is intentionally NOT advertised in user-facing README
+(per grill round 2 decision M2 + M3). It ships as a real CLI flag for
+internal/AI/power-user use; README only shows two install paths
+(`bash <(curl ...)` quickstart at top + `pnpm teamagent install` in the AI
+guidance section).
 
 The `--preview` flag name is preferred over a dedicated `install-preview`
 subcommand or `--dry-run` because:
@@ -104,10 +119,10 @@ subcommand or `--dry-run` because:
 ```
 $ pnpm teamagent install --preview
 [config]   ~/.teamagent/config.json  (~1 KB write)
-[skills]   ~/.claude/skills/teamagent/  (N skill files)
-[kb]       .teamagent/kb/  (project knowledge base)
-[download] vector model: ~120 MB  (skip with --skip-model)
-[refusal]  Pressing No leaves no half-state; use --skip-model to opt out of the 120 MB download permanently.
+[skills]   <project>/.claude/skills/  (N project-level skill files: canary, design-html, design-shotgun, office-hours, plan-ceo-review, claim-to-merge)
+[kb]       .teamagent/kb/  (project knowledge base; user-level ~/.claude/skills/teamagent/<id>/SKILL.md is the compile output downstream of [kb], not listed here)
+[download] vector model: ~120 MB  (downloaded in background after install; can be stopped any time via kill or rm)
+[refusal]  Pressing No leaves no half-state; the vector-model background warmup can be killed or removed at any time.
 
 Exit code: 0
 ```
