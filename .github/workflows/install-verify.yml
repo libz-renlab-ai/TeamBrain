@@ -1,16 +1,8 @@
 # issue #155 Order 5: per-PR install verification (V1-V4)
 #
-# Tests the shell entry points (release/install.sh + scripts/bootstrap.sh) for
-# manifest sync (V2), idempotent re-run (V3), and timing budget (V4). V1 (1-prompt
-# under Claude Code strict permission mode) cannot be tested in CI without a
-# Claude Code container; that part is human-gated and verified at /review time.
-#
-# Triggers:
-#   - pull_request    (the V2/V3/V4 sub-tests are fast + dependency-free)
-#   - workflow_dispatch (manual debugging)
-#
-# Ships ENABLED in this PR because orders 1+3 land in the same PR (the deps
-# this workflow tests are present from PR-merge time).
+# Tests shell entry points plus the pnpm install command path without consuming
+# LLM/API quota. V1b strict-permission live Claude Code coverage stays dry-run
+# here; live capture belongs to the disabled V5 workflow.
 
 name: install-verify (V1-V4)
 
@@ -20,7 +12,10 @@ on:
       - "release/install.sh"
       - "scripts/bootstrap.sh"
       - "scripts/check-manifest-sync.sh"
+      - "scripts/ci-install-*.sh"
+      - "scripts/ci-strict-permission-shim.sh"
       - "docs/install-manifest.txt"
+      - "packages/**"
       - ".github/workflows/install-verify.yml"
   workflow_dispatch:
 
@@ -29,7 +24,7 @@ permissions:
 
 jobs:
   manifest-sync:
-    name: V2 — manifest byte-identical (install.sh embed == docs/install-manifest.txt)
+    name: V2 - manifest byte-identical
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -38,7 +33,7 @@ jobs:
         run: bash scripts/check-manifest-sync.sh
 
   preview-flag-smoke:
-    name: V2 — --preview prints 5 section markers
+    name: V2 - --preview prints 5 section markers
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -67,7 +62,7 @@ jobs:
           echo "OK: bootstrap.sh --preview emits all 5 sections"
 
   idempotent-rerun:
-    name: V3 — running --preview twice gives identical output (idempotency smoke)
+    name: V3 - preview output stable across reruns
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -89,7 +84,7 @@ jobs:
           [ "$run1" = "$run2" ] || { echo "install.sh --help drifted across runs"; exit 1; }
 
   timing-budget:
-    name: V4 — --preview wall time under budget (≤ 2s)
+    name: V4 - --preview wall time under budget
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -106,9 +101,29 @@ jobs:
             exit 1
           fi
 
-# Anti-goals (per Order 5 plan):
-# - Does NOT install teamagent or download tarballs (would consume CI minutes
-#   and require network reliability we don't depend on for smoke tests)
-# - Does NOT test V1 (Claude Code strict permission mode; not reproducible in CI;
-#   human-gated at /review time)
-# - Does NOT consume API quota (no claudefast probes; that's Order 6's job)
+  pnpm-install-judge:
+    name: V1-V4 - pnpm install judge JSON
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - name: Run install judge harness
+        run: bash scripts/ci-install-judge.sh --dry-run
+      - name: Upload judge evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-verify-judge
+          path: .judge/
+
+# Anti-goals:
+# - Does NOT consume API quota.
+# - Does NOT run live V5 canned-answer probes.
+# - Does NOT use claudefast in PR CI; V1b is represented by deterministic dry-run JSON.
