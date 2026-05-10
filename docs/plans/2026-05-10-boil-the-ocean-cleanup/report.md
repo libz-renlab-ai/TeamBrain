@@ -71,11 +71,42 @@ b1f2e41 docs(boil-the-ocean): plan, research, judge harness for cleanup PR
 - main push 触发 `landing-deploy.yml` 后观察一次 deploy；如挂，回滚 `upload-pages-artifact` 到 @v4。
 - `MINIMAX_API_KEY` token rotate（P0，PR 范围外，secret 操作）由用户手动执行。
 
+## §review-loop — /review 过程记录
+
+`/review` skill 跑了一轮。dispatch 了 1 个 adversarial general-purpose subagent + 1 个 distribution/CI-CD specialist subagent。
+
+### Subagent 报告整合
+
+| 来源 | severity | confidence | 内容 | verdict |
+|---|---|---|---|---|
+| adversarial | CRITICAL | 9 | `actions/upload-pages-artifact@v5` 不存在，max v3.0.1 | **FALSE** — `gh api repos/actions/upload-pages-artifact/tags` 实测最新 v5.0.0；agent 说错 |
+| adversarial | CRITICAL | 8 | `pnpm/action-setup@v5` 需要 explicit `version:` input | **FALSE** — packageManager 字段（`pnpm@9.15.9`）由 v5 action 默认读取；本 PR ci.yml ubuntu+windows 已绿，证伪 |
+| adversarial | CRITICAL | 9 | 6 处 doc 描述删掉的 workflow 仍是 live（POSTPR / PR-PLAN / HOWTO-PLAN-PR / README / features/INDEX / features/claude-code-action） | **TRUE** — fix-up commit `a3cb647` 已修 |
+| adversarial | INFO | 6 | J5 runner.md `等 ~10 秒` 与 CI runner 启动 30-90s 不对齐，会污染 sample | **FALSE 但 wording 模糊** — 本地 loadavg 与 CI runner CPU 无因果关系；fix-up commit 同步把 §2.3 wording 改清楚（10s 是等本地 push 退出，不是同步 CI runner 高峰） |
+| adversarial | INFO | 5 | github-script@v8 在 v5-fixture-replay.yml 内 `if: false` 没跑过 | **TRUE 但低风险**——文件本来 disabled，等启用前用 workflow_dispatch 验证即可 |
+| specialist | INFO | 9 | `landing-deploy.yml` 的 upload-pages-artifact @v3→@v5 跨 2 大版本，PR 内未触发 | **接受为 post-merge 风险**——v5 tag 真实存在；deploy-pages@v5 release notes 说 "Update Node.js version to 24.x" |
+| specialist | INFO | 9 | `release-branch.yml` 仅在 push to main 时触发，PR 内未跑过 | **同上**——风险有界；如 break，回滚单文件 |
+| specialist | INFO | 8 | claudefast-anchors / nightly-llm-smoke / install-canned-answer-check / v5-fixture-replay 仅 schedule/dispatch 触发 | **接受为 post-merge 风险**——不在 PR 触发面 |
+| specialist | INFO | 10 | `secrets.CLAUDE_CODE_OAUTH_TOKEN` 删除两个 workflow 后变成 orphaned secret | **post-merge 手动清理**——repo admin 在 GitHub UI 删 secret |
+| specialist | INFO | 7 | 所有 actions 用 moving major tag (`@v5`/`@v8`)，未 SHA-pin | **接受**——项目惯例如此；supply-chain 强化属于另一议题，不是 deadline 范围 |
+
+### `/review` 处理决策
+
+- **TRUE-CRITICAL（dangling docs）→ fix-up commit `a3cb647`**：6 个文件 52 inserts / 36 deletes。改动全是 prose tense + table row 注释，无 source / config 改动。
+- **TRUE-INFO（J5 runner wording）→ 同 commit `a3cb647`**：1 line wording fix。
+- **FALSE-CRITICAL（v5 不存在 / pnpm 需 version）→ 不动**：commit message 留下证据（`gh api` 实测 + ci.yml ubuntu+windows 已绿）。
+- **post-merge INFO → 不动**：accepted risk，写在本 §和 plan.md §2.4 风险表里；merge 后跟踪 release-branch.yml + landing-deploy.yml 第一轮 push 的 run。
+
+### CI 二次验证
+
+`a3cb647` 推到 wip/boil-the-ocean-cleanup 后 inner-loop.yml 再跑一遍证明 doc 改动不破坏 build。
+
 ## §post-merge — 待 squash-merge 后追加
 
 待落地：
 - merge commit SHA
 - 实际 squash 时间
-- /review 输出与 P1/P2 处理记录
-- merge 后 main push 的 ci.yml + landing-deploy.yml run 状态（如触发）
+- /review 第二轮（如有）verdict
+- merge 后 main push 的 ci.yml + landing-deploy.yml + release-branch.yml run 状态（landing-deploy 本 PR 触发了路径，会跑）
 - worktree cleanup 命令实际执行结果
+- repo admin 删 orphaned `CLAUDE_CODE_OAUTH_TOKEN` secret 的状态
