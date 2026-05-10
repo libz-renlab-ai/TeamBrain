@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { installHook, uninstallHook } from "../commands/install-hook.js";
+import { installHook, uninstallHook, stageDaemonBinaryToUser } from "../commands/install-hook.js";
 
 function mkTmp(): { cwd: string; cleanup: () => void } {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "install-hook-"));
@@ -1403,6 +1403,117 @@ describe("auditOrphanShellHooks (B+C scope, 2026-05-09)", () => {
     const { auditOrphanShellHooks } = await import("../commands/install-hook.js");
     // Malformed file is treated as "no references" → the .sh shows as orphan.
     expect(auditOrphanShellHooks(tmp.cwd)).toEqual(["lonely.sh"]);
+  });
+});
+
+// Issue #146 install-hook TODO — bin-uploader.cjs staging via install-hook.
+describe("daemon binary staging (issue #146 install-hook TODO)", () => {
+  let tmp: ReturnType<typeof mkTmp>;
+  let fakeHome: string;
+  // The staged daemon source can be any file; we use a fake .cjs sentinel
+  // so existsSync passes and copyFileSync round-trips bytes we can verify.
+  let fakeDaemonSrc: string;
+
+  beforeEach(() => {
+    tmp = mkTmp();
+    fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "iht-home-"));
+    fakeDaemonSrc = path.join(fakeHome, "fake-bin-uploader.cjs");
+    fs.writeFileSync(fakeDaemonSrc, "// fake bin-uploader.cjs v1\n");
+  });
+
+  afterEach(() => {
+    tmp.cleanup();
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  });
+
+  it("stageDaemonBinaryToUser copies bin-uploader.cjs to <home>/.teamagent/digital-twin/", () => {
+    const result = stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
+    expect(result.staged).toBe(true);
+    expect(result.destPath).toBe(
+      path.join(fakeHome, ".teamagent", "digital-twin", "bin-uploader.cjs"),
+    );
+    expect(fs.existsSync(result.destPath)).toBe(true);
+    expect(fs.readFileSync(result.destPath, "utf-8")).toBe(
+      "// fake bin-uploader.cjs v1\n",
+    );
+  });
+
+  it("stageDaemonBinaryToUser returns staged=false when source missing (best-effort)", () => {
+    const result = stageDaemonBinaryToUser(
+      path.join(fakeHome, "nonexistent.cjs"),
+      fakeHome,
+    );
+    expect(result.staged).toBe(false);
+    expect(result.reason).toContain("source missing");
+    // Dest path is reported even on failure so callers can log it.
+    expect(result.destPath).toBe(
+      path.join(fakeHome, ".teamagent", "digital-twin", "bin-uploader.cjs"),
+    );
+    // No file created on failure.
+    expect(fs.existsSync(result.destPath)).toBe(false);
+  });
+
+  it("stageDaemonBinaryToUser is idempotent (skip-if-newer)", () => {
+    const r1 = stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
+    expect(r1.staged).toBe(true);
+    const mtime1 = fs.statSync(r1.destPath).mtimeMs;
+    // Second call: skip-if-newer should NOT touch the file.
+    const r2 = stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
+    expect(r2.staged).toBe(true);
+    expect(r2.reason).toMatch(/up-to-date/);
+    const mtime2 = fs.statSync(r2.destPath).mtimeMs;
+    expect(mtime2).toBe(mtime1);
+  });
+
+  it("stageDaemonBinaryToUser overwrites stale destination (newer source wins)", () => {
+    // First install: write v1 to dest.
+    stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
+    const dest = path.join(fakeHome, ".teamagent", "digital-twin", "bin-uploader.cjs");
+
+    // Force the dest to look stale: replace its bytes + bump mtime backwards.
+    const past = new Date(Date.now() - 60_000);
+    fs.utimesSync(dest, past, past);
+
+    // Bump the source mtime forward + change content to v2.
+    fs.writeFileSync(fakeDaemonSrc, "// fake bin-uploader.cjs v2\n");
+    const future = new Date(Date.now() + 5_000);
+    fs.utimesSync(fakeDaemonSrc, future, future);
+
+    const r = stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
+    expect(r.staged).toBe(true);
+    expect(r.reason).toBeUndefined(); // not the up-to-date path
+    expect(fs.readFileSync(dest, "utf-8")).toBe("// fake bin-uploader.cjs v2\n");
+  });
+
+  it("installHook stages daemon binary into <home>/.teamagent/digital-twin/ (full integration)", () => {
+    const r = installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      daemonBinaryEntry: fakeDaemonSrc,
+      // userLevel:true is the default; daemon staging happens unconditionally.
+    });
+    expect(r.daemonBinary.staged).toBe(true);
+    expect(r.daemonBinary.destPath).toBe(
+      path.join(fakeHome, ".teamagent", "digital-twin", "bin-uploader.cjs"),
+    );
+    expect(fs.existsSync(r.daemonBinary.destPath)).toBe(true);
+    expect(fs.readFileSync(r.daemonBinary.destPath, "utf-8")).toBe(
+      "// fake bin-uploader.cjs v1\n",
+    );
+  });
+
+  it("installHook reports staged=false when daemonBinaryEntry source missing (no throw)", () => {
+    const r = installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      homeDir: fakeHome,
+      daemonBinaryEntry: path.join(fakeHome, "missing-bin-uploader.cjs"),
+    });
+    // installHook itself succeeds — daemon staging is best-effort.
+    expect(r.daemonBinary.staged).toBe(false);
+    expect(r.daemonBinary.reason).toContain("source missing");
+    expect(fs.existsSync(r.daemonBinary.destPath)).toBe(false);
   });
 });
 

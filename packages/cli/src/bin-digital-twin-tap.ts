@@ -103,12 +103,16 @@ export interface ResolveDaemonBinDeps {
  *     `monorepoDist` so this tick still spawns the daemon. Next tick may
  *     succeed if the failure was transient.
  *
- * Staleness caveat: self-install runs only on first hit. Once `userInstalled`
- * exists, the monorepo bundle is never re-checked, so changes to
- * `bin-uploader.cjs` shipped via `git pull` are NOT picked up automatically.
- * To force an upgrade, delete `~/.teamagent/digital-twin/bin-uploader.cjs`
- * and let the next Stop hook re-install. (TODO: extend `install-hook` to
- * manage the daemon binary alongside `bin-digital-twin-tap.cjs`.)
+ * Staleness story (issue #146 install-hook TODO, resolved): this runtime
+ * self-install runs only on first hit; once `userInstalled` exists the
+ * monorepo bundle is not re-checked here. The canonical upgrade path is
+ * now `teamagent install-hook`, which stages `bin-uploader.cjs` into the
+ * same `<userInstalled>` location alongside the hook bundles via
+ * `stageDaemonBinaryToUser`. This `resolveDaemonBin` self-install is kept
+ * as a safety net for fresh installs that haven't run install-hook yet
+ * (and for dev worktrees where `pnpm --filter @teamagent/digital-twin
+ * build` is run after `teamagent install-hook`), not as the primary
+ * upgrade mechanism.
  */
 export function resolveDaemonBin(
   home: string,
