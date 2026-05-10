@@ -20,20 +20,10 @@
  *   [kb]       project knowledge base files
  *   [download] vector model (~120 MB) — detached background warmup per
  *              ADR-0001 revised 2026-05-09; Stage-1 install returns ~3s.
- *              Note text references `--skip-vector-model` because that is
- *              the canonical skip-flag name pinned by issue-155 INDEX §3b
- *              row Δ1 (ADR-0001 may make the foreground flag a no-op or
- *              remove it entirely; Order 3 is the slice that decides).
+ *              Order 3 finalized this as a detached background warmup with no
+ *              foreground skip flag.
  *   [refusal]  refusal contract — pressing No leaves no half-state
  */
-
-/**
- * Cross-slice contract: this is the canonical skip-flag name for the vector
- * model warmup, pinned by `docs/plans/issue-155/INDEX.md` §3b row Δ1.
- * Order 1 only references this name in manifest text; the actual
- * `--skip-vector-model` flag implementation belongs to Order 3.
- */
-export const SKIP_VECTOR_MODEL_FLAG = "--skip-vector-model";
 
 /**
  * Default project-level skill ids (from CLAUDE.md "Gstack skills 与 brain
@@ -135,7 +125,7 @@ export function renderInstallManifest(
       lines: [
         `vector model: ~${modelMb} MB  (downloaded in background after install; can be stopped any time via kill or rm)`,
         "  detached warmup per ADR-0001 (revised 2026-05-09); Stage-1 install returns ~3s.",
-        `  the foreground ${SKIP_VECTOR_MODEL_FLAG} flag is reserved for Order 3; Order 1 does not implement it.`,
+        "  no foreground skip flag is exposed; abort by killing the warmup pid or removing in-progress files.",
       ],
     },
     refusal: {
@@ -187,6 +177,9 @@ export function renderInstallPreviewOutput(
  */
 export interface InstallArgs {
   preview: boolean;
+  yes: boolean;
+  nonInteractive: boolean;
+  help: boolean;
 }
 
 /**
@@ -197,5 +190,8 @@ export interface InstallArgs {
 export function parseInstallArgs(argv: readonly string[]): InstallArgs {
   return {
     preview: argv.includes("--preview"),
+    yes: argv.includes("--yes") || argv.includes("-y"),
+    nonInteractive: argv.includes("--non-interactive"),
+    help: argv.includes("--help") || argv.includes("-h"),
   };
 }

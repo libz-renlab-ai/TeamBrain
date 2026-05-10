@@ -9,8 +9,8 @@
  *      (regex /\[config\].*\[skills\].*\[kb\].*\[download\].*\[refusal\]/s).
  *   4. Integration: install --preview writes nothing.
  *
- * Cross-slice contract: the `[download]` section must reference
- * `--skip-vector-model` (NOT `--skip-model`), per INDEX.md §3b row Δ1.
+ * Cross-slice contract after Order 3: the `[download]` section must expose no
+ * foreground vector-model skip flag. The warmup is detached.
  */
 import { describe, it, expect, vi } from "vitest";
 import { spawnSync } from "node:child_process";
@@ -21,7 +21,6 @@ import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_PROJECT_SKILLS,
-  SKIP_VECTOR_MODEL_FLAG,
   formatInstallManifest,
   parseInstallArgs,
   renderInstallManifest,
@@ -83,12 +82,10 @@ describe("renderInstallManifest", () => {
     expect(skillsBlock).toContain("NOT listed here");
   });
 
-  it("references the canonical --skip-vector-model flag (INDEX.md §3b Δ1) and NOT --skip-model", () => {
+  it("does not expose any foreground vector-model skip flag", () => {
     const m = renderInstallManifest();
     const downloadBlock = [m.download.header, ...m.download.lines].join("\n");
-    expect(SKIP_VECTOR_MODEL_FLAG).toBe("--skip-vector-model");
-    expect(downloadBlock).toContain("--skip-vector-model");
-    // Negative: must not silently drift back to the short name.
+    expect(downloadBlock).not.toContain("--skip-vector-model");
     expect(downloadBlock).not.toMatch(/--skip-model(?!-)/);
   });
 
@@ -143,13 +140,13 @@ describe("formatInstallManifest", () => {
 
 describe("parseInstallArgs", () => {
   it("returns preview=false when --preview is absent", () => {
-    expect(parseInstallArgs([])).toEqual({ preview: false });
-    expect(parseInstallArgs(["--something-else"])).toEqual({ preview: false });
+    expect(parseInstallArgs([])).toMatchObject({ preview: false });
+    expect(parseInstallArgs(["--something-else"])).toMatchObject({ preview: false });
   });
   it("returns preview=true when --preview is present", () => {
-    expect(parseInstallArgs(["--preview"])).toEqual({ preview: true });
+    expect(parseInstallArgs(["--preview"])).toMatchObject({ preview: true });
     // Order does not matter.
-    expect(parseInstallArgs(["--foo", "--preview", "--bar"])).toEqual({ preview: true });
+    expect(parseInstallArgs(["--foo", "--preview", "--bar"])).toMatchObject({ preview: true });
   });
 });
 
@@ -218,15 +215,13 @@ describe("integration: pnpm teamagent install --preview", () => {
   );
 
   it.skipIf(SKIP_SUBPROCESS)(
-    "without --preview, exits non-zero (preserves pre-PR baseline)",
+    "install --help advertises install without a vector skip flag",
     () => {
-      const result = spawnTeamagent(["install"]);
+      const result = spawnTeamagent(["install", "--help"]);
       expect(result.error).toBeUndefined();
-      // Pre-PR baseline: `install` was an unknown command → exit 1, stderr
-      // line "未知命令: install". Order 3 will replace this with real install
-      // behaviour; Order 1 must NOT touch the non-preview path.
-      expect(result.status).toBe(1);
-      expect(result.stderr ?? "").toContain("未知命令");
+      expect(result.status).toBe(0);
+      expect(result.stdout ?? "").toContain("Usage: teamagent install");
+      expect(result.stdout ?? "").not.toMatch(/--skip-(vector-)?model/);
     },
   );
 });
