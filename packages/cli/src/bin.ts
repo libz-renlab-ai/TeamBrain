@@ -46,6 +46,14 @@ import {
 import { executeStats } from "./commands/stats.js";
 import { executeDemoHook, parseDemoHookArgs } from "./commands/demo-hook.js";
 import { installHook, uninstallHook } from "./commands/install-hook.js";
+import {
+  parseInstallArgs,
+  renderInstallPreviewOutput,
+} from "./commands/install-manifest.js";
+import {
+  renderInstallHelp,
+  runInstall,
+} from "./commands/install.js";
 import { installUserHook, uninstallUserHook } from "./commands/install-user-hook.js";
 import { executeAnalyze, parseAnalyzeArgs } from "./commands/analyze.js";
 import { executeReview, parseReviewArgs } from "./commands/review.js";
@@ -510,6 +518,21 @@ async function main(): Promise<void> {
       const opts = parseInitArgs(rest);
       const result = await executeInit({ ...opts, target: "codex" });
       process.stdout.write(renderInitResult(result));
+      if (!result.ok) process.exit(1);
+      return;
+    }
+    case "install": {
+      const installArgs = parseInstallArgs(rest);
+      if (installArgs.help) {
+        process.stdout.write(renderInstallHelp());
+        return;
+      }
+      if (installArgs.preview) {
+        process.stdout.write(renderInstallPreviewOutput());
+        return;
+      }
+      const result = await runInstall(installArgs);
+      process.stdout.write(result.output);
       if (!result.ok) process.exit(1);
       return;
     }

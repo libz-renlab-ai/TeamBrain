@@ -144,6 +144,23 @@ The `--force` flags are required because the squash-merge on remote means local 
 - Worktree remove second: the PR branch only becomes safely deletable after squash-merge on remote.
 - `git pull --ff-only` last: cheapest, and only valuable after 1 and 2 have settled.
 
+## Squash repo: PRs must base against main
+
+Squash merge is this repo's only allowed merge style (above). That has a **chain consequence** that is not obvious until it bites: a stacked PR — a PR whose `baseRefName` is another open PR's branch instead of `main` — is incompatible with squash. When the parent PR is squash-merged, its branch is deleted; the child PR is left with a base that points nowhere, and squash-merging the child lands its commits on the dead base branch, NOT on `main`. The work appears merged but `git log main` does not contain it.
+
+**Rule**: every PR's `baseRefName` MUST be `main` (or whatever this repo's default branch is named). Stacked PRs are forbidden in this repo.
+
+**Verifier** before opening a PR:
+
+```bash
+gh pr view <N> --json baseRefName | jq -r '.baseRefName'
+# expect: main
+```
+
+If a PR series cannot be expressed without stacking, ship the PRs **sequentially** instead: open PR-1 against `main`, wait for squash-merge, rebase the branch carrying PR-2 onto the new `main`, then open PR-2 against `main`, etc. Sequential is slower than stacked but is the only safe path under squash-only.
+
+**Incident reference**: 2026-05-09 issue #146 PR-2 / PR-3 / PR-4 (#166, #167, #176) shipped as stacked PRs (each based on the previous PR's branch). After all three squash-merged, none reached `main`; PR #197 had to cherry-pick the three squash commits onto `main` to actually land them. See issue #146 comment 7 timeline + commit `2e18ffb` for the cherry-pick re-land.
+
 ## Caveats
 
 - **CI vs `/review` are independent**: CI green doesn't mean `/review` PASS and vice-versa. Both must pass.
@@ -161,5 +178,6 @@ Per ADR-0007 the verification gate is the `claudefast -p "what should we do when
 - `docs/PR-PLAN.md` — the plan document written when this loop surfaces issues.
 - `docs/TEAMWORK.md` — N+1+(2N) parallel execution pattern used to fix at scale.
 - `docs/HOWTO-PLAN-PR.md` — the plan written **before** opening a PR.
+- `docs/POSTMORTEM.md` — multi-PR recap comment rules; references the squash-base-against-main caveat above as an incident.
 - `docs/CONTEXT.md` — glossary entries for **POSTPR loop**, **`/review` skill**, **PR-PLAN**, **Self-discipline-via-matcher**, **Negative-space platform layer**.
 - `docs/adr/0007-local-review-skill-as-review-gate.md` — decision record establishing `/review` as the canonical post-PR gate.

@@ -1,0 +1,124 @@
+# issue #155 Order 6: V5 — main-only canned-answer probes against post-install binary
+#
+# After issue #155 install changes (orders 1+3+4) merge to main, this workflow
+# verifies that the post-install Claude Code session still emits all required
+# canned-answer anchors (FASTPROBE / TEAMWORK / PR-PLAN / POSTPR / etc).
+#
+# Triggers:
+#   - workflow_dispatch (initial state; manual trigger for verification)
+#   - push to main      (DISABLED in this PR — uncomment after orders 1+3+4
+#                        bake on main for at least 1 week and we trust the
+#                        new install path doesn't regress canned answers)
+#
+# API quota: ~$0.015 per run (5 short -p probes × ~$0.003 each).
+# Job timeout: 8 minutes (per-probe timeout 120s).
+#
+# Failure mode: opens a P1 issue with the failing anchors + commit SHA + run
+# URL; does NOT auto-revert (human reviews first).
+
+name: install-canned-answer-check (V5)
+
+on:
+  workflow_dispatch:
+  # ⚠ ENABLE THIS BLOCK in a 1-line follow-up commit AFTER orders 1+3+4 are
+  # merged to main and have baked for ~1 week without canned-answer regression.
+  # The "ships disabled" pattern is intentional per Order 6 plan.
+  #
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "release/install.sh"
+  #     - "scripts/bootstrap.sh"
+  #     - "docs/install-manifest.txt"
+  #     - "INSTALL.md"
+  #     - "README.md"
+
+permissions:
+  contents: read
+  issues: write    # for failure-path P1 issue creation
+
+jobs:
+  canned-answer-probes:
+    name: V5 — canned-answer probes against fresh install
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check secret
+        id: has_key
+        run: |
+          if [ -z "${{ secrets.MINIMAX_API_KEY }}" ]; then
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::MINIMAX_API_KEY not set; skipping V5 canned-answer probes"
+          else
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.has_key.outputs.has_key == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.has_key.outputs.has_key == 'true'
+        with:
+          node-version: 22
+
+      - name: Install Claude Code CLI
+        if: steps.has_key.outputs.has_key == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install teamagent via release/install.sh (post-#155 enhanced path)
+        if: steps.has_key.outputs.has_key == 'true'
+        run: |
+          # NOTE: TEAMAGENT_VERSION env var (consumed by install.sh) defaults to a
+          # release tag like v0.9.4, not a commit SHA. Leaving it unset lets
+          # install.sh use its baked-in default (the latest published release).
+          # If we want to test pre-release main HEAD, fall through to the source
+          # build path below.
+          #
+          # Use --auto to bypass the safe-mode review prompt; --skip-init
+          # because we don't have a project to init in CI; we just want the
+          # binary installed for canned-answer probing.
+          curl -fsSL "https://raw.githubusercontent.com/${{ github.repository }}/release/install.sh" -o /tmp/install.sh
+          bash /tmp/install.sh --auto --skip-init || {
+            echo "::warning::install.sh failed; running canned-answer probes against installed-from-source binary instead"
+            pnpm install
+            pnpm build
+          }
+
+      - name: Run canned-answer probes
+        if: steps.has_key.outputs.has_key == 'true'
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.MINIMAX_BASE_URL }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.MINIMAX_API_KEY }}
+        run: |
+          # Reuse existing claudefast-ci.sh harness (per Order 6 plan)
+          if [ -x scripts/claudefast-ci.sh ]; then
+            bash scripts/claudefast-ci.sh --post-install-v5
+          else
+            echo "::warning::scripts/claudefast-ci.sh not found; V5 probes skipped"
+          fi
+
+      - name: Open P1 issue on regression
+        if: failure() && steps.has_key.outputs.has_key == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const failingAnchors = process.env.FAILING_ANCHORS || '<see workflow logs>';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[P1] canned-answer regression on main after issue-155 install changes: ${failingAnchors}`,
+              labels: ['P1', 'install-regression'],
+              body: `Canned-answer V5 probes failed after recent main push.\n\n` +
+                    `Commit: ${context.sha}\n` +
+                    `Workflow run: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\n` +
+                    `Failing anchors: ${failingAnchors}\n\n` +
+                    `See Order 6 plan: docs/plans/issue-155/order-6-ci-v5/plan.md\n` +
+                    `Auto-revert is NOT performed; please review and decide manually.`
+            });
+
+# Anti-goals (per Order 6 plan):
+# - Does NOT run on pull_request (avoids burning API quota on every PR)
+# - Does NOT auto-revert main (too risky; human reviews the P1 issue)
+# - Does NOT duplicate V1-V4 (those are Order 5's job, npm-only, no API cost)
+# - Ships DISABLED until orders 1+3+4 (this PR + a baking period) prove the
+#   install path doesn't regress canned answers

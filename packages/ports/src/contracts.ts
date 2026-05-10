@@ -18,3 +18,7 @@ export { runBootstrapPortContract } from "./_archived/__tests__/bootstrap-port-c
 export { runSecretScanPortContract } from "./__tests__/secret-scan-port-contract.js";
 export { runScopeClassifierPortContract } from "./__tests__/scope-classifier-port-contract.js";
 export { runTeamRuleStorePortContract } from "./_archived/__tests__/team-rule-store-port-contract.js";
+export {
+  runInstallStateStoreContract,
+  InMemoryInstallStateStore,
+} from "./__tests__/install-state-store-contract.js";

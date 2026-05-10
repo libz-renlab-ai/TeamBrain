@@ -1,0 +1,29 @@
+# 5-section install manifest — canonical source of truth
+# ========================================================
+# 引用方:
+#   - release/install.sh  (远程 curl|bash, 必须 embed 同份内容为 heredoc)
+#   - scripts/bootstrap.sh (本地 cloned repo, 运行时 cat 此文件)
+#   - INSTALL.md           (人读的 prose 版本, 段名必须出现)
+#   - CI snapshot test     (锁 install.sh embed == 此文件 == bootstrap.sh cat 结果)
+#
+# 修改本文件 = 修改 install 行为契约。同步 install.sh embed + INSTALL.md prose。
+# 详见 docs/CONTEXT.md "5-section manifest" 词条 + issue #155 grill Q6 (B 选项).
+
+[config]
+  ~/.teamagent/                 # 用户级配置目录 (~10 KB)
+  ~/.claude/settings.json       # Claude Code hook 注册项
+
+[skills]
+  ~/.claude/skills/teamagent/   # 项目 skill 文件 (66 个文件)
+
+[kb]
+  <project>/.teamagent/         # 项目级 knowledge base (per-project)
+
+[download]
+  vector model                  # ~120 MB; 可用 --skip-vector-model opt-out
+  embedder daemon native        # ~80 MB; ONNX runtime, 与向量模型同捆绑
+
+[refusal]
+  按 No 不会留半残。install.sh / bootstrap.sh 在拒绝时干净退出;
+  重跑 = 自动续 (底层幂等, 不需要 notebook; 详见 ADR-0011)。
+  --skip-vector-model 让你永久跳过 120 MB 向量模型下载。

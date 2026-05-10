@@ -7,6 +7,6 @@
   "test_count": 59,
   "ran_files": ["packages/cli/src/__tests__/init.test.ts"],
   "captured_at": "2026-05-10T06:57:05Z",
-  "note": "Single worker, no parallel pool, well within 10-second threshold. Confirms the single-file targeted local exception in ADR-0012 works as designed.",
+  "note": "Single worker, no parallel pool, well within 10-second threshold. Confirms the single-file targeted local exception in ADR-0013 works as designed.",
   "stdout_log": "docs/plans/2026-05-10-inner-loop-on-ci/judge/J4/stdout.log"
 }

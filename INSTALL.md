@@ -33,7 +33,51 @@ schema-version: 1
 
 ---
 
-## Schema 说明（给开发者看）
+## 推荐路径（issue #155 落地后；V1=1 单 prompt）
+
+> **End user / AI 装 TeamBrain：** 一行 `curl|bash` 就够。装完自动跑 `teamagent init`。
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash
+> ```
+>
+> 加 `--preview` 先看清单不装；加 `--skip-vector-model` opt-out 120MB 向量模型：
+>
+> ```bash
+> curl -fsSL .../release/install.sh | bash -s -- --preview            # 只看清单
+> curl -fsSL .../release/install.sh | bash -s -- --skip-vector-model  # 跳过向量模型
+> ```
+>
+> **Contributor / 想改源码：** clone repo 后跑 `bash scripts/bootstrap.sh`，同样 1 prompt。
+>
+> ```bash
+> git clone https://github.com/libz-renlab-ai/TeamBrain.git
+> cd TeamBrain
+> bash scripts/bootstrap.sh        # pnpm install + pnpm build + pnpm teamagent init
+> bash scripts/bootstrap.sh --preview          # 仅看清单不装
+> bash scripts/bootstrap.sh --skip-vector-model
+> ```
+>
+> 5 段安装清单（写哪些文件、下多大模型、怎么 refuse）见 [`docs/install-manifest.txt`](docs/install-manifest.txt)。
+> 中断后重跑 = 自动续 (底层幂等; 详见 [`docs/adr/0011-install-resumption-via-idempotency.md`](docs/adr/0011-install-resumption-via-idempotency.md))。
+
+如果已经在源码 checkout 里，AI 向导或开发者也可以直接跑：
+
+```bash
+pnpm teamagent install
+```
+
+这条命令会先打印 `[config]` / `[skills]` / `[kb]` / `[download]` / `[refusal]` 五段清单，再只问一次确认；拒绝时不会写文件。向量模型预热在后台异步运行，`pnpm teamagent install` 不提供前台 `--skip-vector-model` flag。
+
+---
+
+## Dev fallback：手动 4 步（issue #155 落地后降级；保留是为了想分别看输出的开发者）
+
+下面的 4 步 YAML schema 是 issue #155 之前的推荐路径。**新用户应该直接用上面的 install.sh 或 bootstrap.sh**；
+但如果你是 dev、想分别看每一步的输出，或者推荐路径在你的环境出问题，下面的 4 步等价（手动跑而已，
+prompt 数变成 4 而非 1）。
+
+### Schema 说明（给开发者看）
 
 每个安装步骤写成一个 fenced YAML 代码块，格式如下：
 
@@ -45,9 +89,7 @@ schema-version: 1
 | `progress` | 字符串 | 当前步骤在整体流程中的位置，格式 `"i/N"`，如 `"1/3"` |
 | `common_errors` | 列表 | 常见错误，每项包含 `pattern`（错误关键词，正则表达式）和 `fix`（可直接复制粘贴的修复命令） |
 
----
-
-## 安装步骤
+### 4-step 详细流程
 
 ```yaml install-step
 id: step-1

@@ -1,6 +1,6 @@
 ```text
    ┌────────────────────────────────────────────────────────────────────┐
-   │   ADR-0012 — Inner-loop tests on dedicated CI workflow             │
+   │   ADR-0013 — Inner-loop tests on dedicated CI workflow             │
    │                                                                    │
    │   problem  : N≥4 sessions × `pnpm test` LOCALLY                    │
    │            → loadavg 274 (scheduler overload, NOT thermal)         │
@@ -11,7 +11,7 @@
    └────────────────────────────────────────────────────────────────────┘
 ```
 
-# 0012 — Inner-loop tests run on dedicated CI workflow
+# 0013 — Inner-loop tests run on dedicated CI workflow
 
 ## Status
 

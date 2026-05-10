@@ -1,7 +1,7 @@
 name: Inner-loop tests
 
 # Triggered by `wip/**` push only.
-# Background: see docs/INNER-LOOP-TESTING.md and docs/adr/0012-inner-loop-on-ci.md.
+# Background: see docs/INNER-LOOP-TESTING.md and docs/adr/0013-inner-loop-on-ci.md.
 # PR-gate testing remains in ci.yml on master/main + pull_request — DO NOT merge them.
 
 on:

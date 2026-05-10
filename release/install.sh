@@ -14,6 +14,9 @@ ARCHIVE_FALLBACK_URL="https://github.com/libz-renlab-ai/TeamBrain/archive/refs/h
 SAFE_MODE=1
 DRY_RUN=0
 AUTO_MODE=0
+PREVIEW_MODE=0
+SKIP_VECTOR_MODEL=0
+SKIP_INIT=0
 
 # ── Argument parsing ─────────────────────────────────────────────────────────
 for arg in "$@"; do
@@ -23,16 +26,66 @@ for arg in "$@"; do
     --dry-run)     DRY_RUN=1 ;;
     --verify)      DRY_RUN=1 ;;   # alias
     --no-run)      DRY_RUN=1 ;;   # alias
+    --preview)     PREVIEW_MODE=1 ;;   # issue #155 Q6: print 5-section manifest, exit 0
+    --skip-vector-model) SKIP_VECTOR_MODEL=1 ;;  # issue #155 Q5/Q6: opt-out of 120MB vector model load
+    --skip-init)   SKIP_INIT=1 ;;   # issue #155 Q2 escape hatch: don't auto-run teamagent init
     --help|-h)
-      printf 'usage: install.sh [--safe] [--auto] [--dry-run|--verify|--no-run]\n'
-      printf '  --safe     (default) download, show script, prompt y/N before exec\n'
-      printf '  --auto     skip review prompt (equivalent to pipe-to-sh mode)\n'
-      printf '  --dry-run  echo plan only, do not install\n'
+      printf 'usage: install.sh [--safe] [--auto] [--dry-run|--verify|--no-run] [--preview] [--skip-vector-model] [--skip-init]\n'
+      printf '  --safe              (default) download, show script, prompt y/N before exec\n'
+      printf '  --auto              skip review prompt (equivalent to pipe-to-sh mode)\n'
+      printf '  --dry-run           echo plan only, do not install\n'
+      printf '  --preview           print 5-section install manifest, exit 0 (no install, no network)\n'
+      printf '  --skip-vector-model opt-out of the 120MB vector model load (writes ~/.teamagent/.skip-vector-model marker)\n'
+      printf '  --skip-init         install binary but do NOT auto-run `teamagent init` (issue #155 Q2 escape hatch)\n'
       exit 0
       ;;
     *) printf 'unknown flag: %s\n' "$arg" >&2; exit 1 ;;
   esac
 done
+
+# ── 5-section manifest (issue #155 Q6=B; canonical source = docs/install-manifest.txt) ─
+# CI snapshot test (`scripts/check-manifest-sync.sh`) verifies this heredoc is byte-identical
+# to docs/install-manifest.txt content (modulo header comments). DO NOT edit one without
+# the other.
+_print_manifest() {
+  cat <<'MANIFEST_EOF'
+# 5-section install manifest — canonical source of truth
+# ========================================================
+# 引用方:
+#   - release/install.sh  (远程 curl|bash, 必须 embed 同份内容为 heredoc)
+#   - scripts/bootstrap.sh (本地 cloned repo, 运行时 cat 此文件)
+#   - INSTALL.md           (人读的 prose 版本, 段名必须出现)
+#   - CI snapshot test     (锁 install.sh embed == 此文件 == bootstrap.sh cat 结果)
+#
+# 修改本文件 = 修改 install 行为契约。同步 install.sh embed + INSTALL.md prose。
+# 详见 docs/CONTEXT.md "5-section manifest" 词条 + issue #155 grill Q6 (B 选项).
+
+[config]
+  ~/.teamagent/                 # 用户级配置目录 (~10 KB)
+  ~/.claude/settings.json       # Claude Code hook 注册项
+
+[skills]
+  ~/.claude/skills/teamagent/   # 项目 skill 文件 (66 个文件)
+
+[kb]
+  <project>/.teamagent/         # 项目级 knowledge base (per-project)
+
+[download]
+  vector model                  # ~120 MB; 可用 --skip-vector-model opt-out
+  embedder daemon native        # ~80 MB; ONNX runtime, 与向量模型同捆绑
+
+[refusal]
+  按 No 不会留半残。install.sh / bootstrap.sh 在拒绝时干净退出;
+  重跑 = 自动续 (底层幂等, 不需要 notebook; 详见 ADR-0011)。
+  --skip-vector-model 让你永久跳过 120 MB 向量模型下载。
+MANIFEST_EOF
+}
+
+# ── Preview gate (issue #155 Q6: --preview prints manifest and exits without network) ───
+if [ "$PREVIEW_MODE" -eq 1 ]; then
+  _print_manifest
+  exit 0
+fi
 
 # ── Dry-run gate ─────────────────────────────────────────────────────────────
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -205,6 +258,11 @@ fi
 # user's terminal (homebrew/rustup pattern). When no terminal is available
 # (CI, docker exec, etc.), abort with clear guidance to use --auto.
 if [ "$SAFE_MODE" -eq 1 ] && [ "$AUTO_MODE" -eq 0 ]; then
+  # issue #155 decision 5: print manifest BEFORE the user-facing prompt so user
+  # knows what they are about to authorize. Manifest content is embedded in
+  # _print_manifest() above; CI snapshot test ensures it matches docs/install-manifest.txt.
+  printf '\n[install] ---- install manifest (what will be written / downloaded) ----\n'
+  _print_manifest
   printf '\n[install] ---- install.sh contents (review before executing) ----\n'
   cat "$TMPDIR_INSTALL/install.sh"
   printf '\n[install] ---- end of script ----\n\n'
@@ -365,4 +423,33 @@ if ! command -v teamagent >/dev/null 2>&1; then
 fi
 
 printf '\n[install] teamagent %s installed successfully.\n' "$TEAMAGENT_VERSION"
-printf '[install] Run: teamagent init\n'
+
+# issue #155 Q5/Q6: write skip-vector-model marker if requested
+if [ "$SKIP_VECTOR_MODEL" -eq 1 ]; then
+  mkdir -p "$HOME/.teamagent"
+  printf 'created by install.sh --skip-vector-model on %s\n' "$(_iso_now_log)" > "$HOME/.teamagent/.skip-vector-model"
+  printf '[install] skip-vector-model marker written to %s/.teamagent/.skip-vector-model\n' "$HOME"
+  printf '[install] (intent recorded for future use; current daemon does not yet read this marker — see issue #155 follow-up)\n'
+fi
+
+# issue #155 Q2: auto-run `teamagent init` to achieve V1=1 (single-prompt install).
+# Skipped on --skip-init (escape hatch for advanced users / CI scenarios where init runs separately).
+if [ "$SKIP_INIT" -eq 1 ]; then
+  printf '[install] --skip-init given; skipping `teamagent init`. Run it manually: teamagent init\n'
+else
+  printf '\n[install] Running teamagent init (issue #155 V1=1 single-prompt flow)...\n'
+  if [ "$SKIP_VECTOR_MODEL" -eq 1 ]; then
+    TEAMAGENT_SKIP_VECTOR_MODEL=1 "$BIN_DIR/teamagent" init || {
+      printf '[install] WARNING: `teamagent init` failed; binary is installed but hooks/skills may not be registered.\n' >&2
+      printf '[install] Re-run manually with: teamagent init\n' >&2
+      exit 1
+    }
+  else
+    "$BIN_DIR/teamagent" init || {
+      printf '[install] WARNING: `teamagent init` failed; binary is installed but hooks/skills may not be registered.\n' >&2
+      printf '[install] Re-run manually with: teamagent init\n' >&2
+      exit 1
+    }
+  fi
+  printf '[install] teamagent init completed successfully.\n'
+fi

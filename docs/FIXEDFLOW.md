@@ -84,6 +84,20 @@
 新用户 onboarding 第 3 步在 Windows Git Bash 下卡住，错误见复现命令。
 ```
 
+## Epic / multi-PR carve-out
+
+「Epic」issue = 一个 issue 需要拆为 ≥ 2 个 child PR 才能完成 ship。这是上一节「body ≤ 50 字 + 禁实现方案」的**唯一合法例外**，必须**同时**满足：
+
+1. **创建时点贴 label**：issue 创建当下由 maintainer / repo admin 手动贴 `epic` 或 `ready-for-human` label（不接受 AI-triage retroactive labeling，见 `docs/HOW-TO-CLAIM-ISSUE.md` "ready-for-human label" 段）。
+2. **指名 coordinator**：issue body 必须明确写出 coordinator 的 GitHub username（通常 ≠ reporter）；coordinator 是 step 3+ 的人手判断中枢。
+3. **PR 拆分映射**：issue body 列出 PR-1 / PR-2 / ... 的边界（每条 ≤ 1 行），让 child PR 的 reviewer 能比对实际 PR 是否对应 epic 拆分。
+
+**Coordinator ack 规则**：每个 child PR 在 `gh pr create` 之前必须先在 issue 评论里 ping coordinator 拿一次显式 ack（"我打算开 PR-2 实现 X" → coordinator 回 "go ahead" → 然后才开 worktree / branch / PR）。无 ack 直接 ship 的 child PR 视为越权 — 但越权判定基于**当时已存在的 epic label + coordinator 字段**，不基于事后追认（见 `docs/POSTMORTEM.md` hard rule #6）。
+
+**Child PR 仍走 squash-only + base against main**：FIXEDFLOW 的 squash-only 与 `docs/POSTPR.md` "Squash repo: PRs must base against main" 规则在 epic 路径下**不松绑**。Stacked PR 在 epic 内同样禁止；child PR 必须 sequential ship（PR-1 squash-merge → 等 main 更新 → 在新 main 上开 PR-2）。
+
+**实证 / 反例**：issue #146 是 epic 但**未在创建时点贴 label / 未指名 coordinator** 即开放给 contributor self-claim；5 个 child PR ship 完成后 AI-triage 才补 `ready-for-human` label。该路径**不构成本节定义的 epic carve-out**（缺创建时点 label + coordinator 字段），retroactive 操作无约束效力。详细复盘见 `docs/POSTMORTEM.md`。
+
 ## grill 评论必须满足
 
 - comment 作者 = issue 作者本人。
@@ -133,6 +147,8 @@ driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skil
 - `docs/POSTPR.md` — FIXEDFLOW step 4 / 5 即 POSTPR 循环的程序化版本。
 - `docs/feature-verification.md` — FIXEDFLOW 自身的 feature-verification 由 `docs/plans/2026-05-09-fixed-flow/judge.md` 承担。
 - `docs/HOW-TO-ISSUE.md` — 已归档；FIXEDFLOW 取代之。
+- `docs/POSTMORTEM.md` — multi-PR recap comment 规则；epic 类 issue 的复盘叙事约束在那里（含 hard rule #6 role bypass + #7 A/B/C schema）。
+- `docs/HOW-TO-CLAIM-ISSUE.md` — `ready-for-human` label 语义 + AI-triage retroactive ban；epic carve-out 引用。
 
 ## 验证（语义 probe，不写 canned-answer block）
 

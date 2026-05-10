@@ -130,6 +130,28 @@ _Avoid_: snapshot, recording, capture, sample（前三者与早期 ad-hoc 录像
 (a) byte-level event diff（毫秒、每 commit、`pnpm test` 也跑）；(b) sequence + DB-state-after diff（秒级、每 PR）；(c) LLM-judge expected-decisions 对照（分钟级、temperature=0、dual-consensus、PR-blocking）。三层走 α-strict gate：任一 FAIL 即阻 PR；唯一逃生口是 `<fixture>/judge-overrides.jsonl` append-only 人审记录。详 ADR-0010。
 _Avoid_: layer / level / stage（与 L1/L2/L3 storage layer 撞名；tier 是 canonical 词）；裸 `tier` 也避免——calibration `Tier`（rule maturity 6 档）≠ replay tier（verification 三层），写时用 `replay tier` / `verification tier` 显式区分。
 
+### Install paths（3-path taxonomy；TeamBrain 如何抵达用户机器）
+
+**Path A (`release/install.sh`)**:
+end-user 一行 `curl|bash` 安装器；下载 pinned tarball 到 `~/.local/lib/teamagent/`、symlink `~/.local/bin/teamagent`、结束语打印 `Run: teamagent init`（v0.9.4 起**不**自动 init）。
+_Avoid_: "the npm path", "production install"
+
+**Path B (`scripts/bootstrap.sh`, post-#155)**:
+contributor / from-source 安装路径；cloned repo 内顺跑一行 `bash scripts/bootstrap.sh`，脚本内部串跑 `pnpm install && pnpm build && pnpm teamagent init` 完成 V1=1。脚本本身 NEW (issue #155 创建)；INSTALL.md 4 步保留为 dev fallback appendix（手动分步看输出时用）。git clone 不计入 V1 prompt 数（视为源码获取动作而非安装动作）。
+_Avoid_: "the dev install"（撞名 fallback）, "the 4-step install"（指 legacy fallback，不是新 Path B）
+
+**4-step install (legacy)**:
+INSTALL.md 内列的 `pnpm install` → `pnpm build` → `pnpm teamagent skeleton-demo` → `pnpm teamagent init`，issue #155 落地后**降级为 dev fallback appendix**。仍可单步跑（dev 想分别看输出时用），但不再是推荐路径；推荐路径 = `bash scripts/bootstrap.sh`。step 1+2 是 pnpm 框架命令（`teamagent` CLI 自身要 step 2 编译完才存在，chicken-and-egg），bootstrap.sh 通过 shell 串行规避此问题。
+_Avoid_: "the canonical install" (它已不再 canonical)
+
+**V1 (one-prompt acceptance criterion)**:
+issue #155 的 headline 验收度量：Claude Code 的严格权限模式下，装 TeamBrain 的 install 动作只触发 1 次 Bash permission prompt。**Path A 强化版**（`install.sh` auto-init）和 **Path B**（`bootstrap.sh`）都需达成 V1=1。**legacy 4-step** 自然违反 V1（4 prompts），但作为 fallback 不在 V1 度量范围内。git clone 不计入 prompt 数。
+_Avoid_: "strict-mode test", "the install prompt count"
+
+**5-section manifest**:
+弹窗前必须念给用户听的 5 段固定结构：`[config]` / `[skills]` / `[kb]` / `[download]` / `[refusal]`。canonical 源 = `docs/install-manifest.txt`（仓内单点真理）；`scripts/bootstrap.sh` 运行时 `cat` 它；`release/install.sh` 因为是远程下载脚本必须 embed 同份内容（heredoc）；CI snapshot test 锁三方字节一致（txt vs install.sh embed vs bootstrap.sh cat-target）。INSTALL.md prose 版本可独立行文，但 5 段段名必须出现。
+_Avoid_: "the install preview"（preview 是 `--preview` flag 的事，跟 manifest 是两回事）, "the dry-run output", "the section headers"
+
 ### Review & PR workflow（开 PR 到 merge 之间的 review 链；ADR-0007 设定 `/review` skill 为权威 gate）
 
 **POSTPR loop**:
@@ -151,6 +173,24 @@ _Avoid_: "soft discipline"（错把 deliberate 缺席当成 gap）
 POSTPR loop 在 open PR 内发现 issue 时写的 plan；三段式（task / expected outputs / third-party judge harness）；走 TEAMWORK 执行；落在 `docs/plans/<date>-pr-<n>-fix-plan.md`。
 _Avoid_: "fix plan", "follow-up issue"
 
+### Install manifest sections（issue #155 「一鸭到位」manifest 的 canonical 段名；resolved in grill 2026-05-10）
+
+**`[config]`**:
+manifest 第 1 段。描述 install 写到 user-level 的所有配置文件。包含 `~/.claude/settings.json` 中被 teamagent tag 标记的 hook / statusline block + `~/.teamagent/{global.db, manifest.json, sessions/, .warmup-state.json, locks/}` 全部 user-level state。
+_Avoid_: hooks（仅一类）, settings（仅一文件）
+
+**`[skills]`**:
+manifest 第 2 段。**仅**指 `<project>/.claude/skills/<id>/SKILL.md`（init.ts mirror 的 project-level skill 集合：`canary` / `design-html` / `design-shotgun` / `office-hours` / `plan-ceo-review` + `claim-to-merge`）。**user-level `~/.claude/skills/teamagent/<id>/SKILL.md`** 是 compile 的衍生输出，由 `[kb]` 源数据 派生，**不**单独在 manifest 列出。
+_Avoid_: 把 user-level compile 输出写进 [skills]（会让 manifest 跟 install 实际行为不一致）
+
+**`[kb]`**:
+manifest 第 3 段。描述 install 写到 project-level 知识库的全部文件。包含 `<project>/.teamagent/{knowledge.db, manifest.json, team/<author>/<rule_id>.json, locks/}` —— M5 viral sync 写到项目内的全部内容。
+_Avoid_: 仅 knowledge.db（会漏 manifest.json + team/ + locks/）, seed-packs（那是源数据，不是 install 产物）
+
+**`permission prompt`**:
+V1 指标「install 全程恰好 1 次授权」计数的对象。仅指 Claude Code 在 PreToolUse hook 返回 `permissionDecision: "ask"` 时拉起的侧边 UI 弹窗。**不**含 OS 层 sudo / `release/install.sh` 自己的 `y/N` / TeamAgent 自身的 confirm dialog。
+_Avoid_: prompt（与 LLM prompt 撞名）, confirmation（语义太宽）, dialog（语义太宽）
+
 ## Relationships
 
 - 一条 **personal** 规则经 **two gates** 通过后晋升为 **team**；不通过则永停 **L1**
@@ -165,6 +205,11 @@ _Avoid_: "fix plan", "follow-up issue"
 - 每条 **AttributionEvent** 携带可选 **Delivery mode** 标签描述意图；当前 **HookShell** 始终 exit 0 不读此字段，但 **Renderer** 可读它做 future 装饰；该字段是 audience+blocking 维度的 architectural future-proof（详见 ADR-0009）
 - **POSTPR loop** 终止 = **`/review` skill** PASS + CI green + 无 merge 冲突（ADR-0007）
 - **PR-PLAN** 在 **POSTPR loop** 命中 issue 时写；走 **TEAMWORK** 执行；不允许 follow-up issue 替代
+- **Path A** issue #155 落地后 = `install.sh` 末尾 auto-run `teamagent init`，curl|bash 单一 Bash 调用 ⇒ V1=1（end-user / AI 入口）
+- **Path B** issue #155 落地后 = `bash scripts/bootstrap.sh` 串跑 `pnpm install && pnpm build && pnpm teamagent init` ⇒ V1=1（contributor 源码入口）
+- **legacy 4-step install** 仍存在于 `INSTALL.md` 作 dev fallback appendix（dev 想分别看输出时手动跑），不在 V1 度量范围内
+- `release/install.sh` 走 binary tarball；`scripts/bootstrap.sh` 走 source 编译；两个入口都需要 issue #155 grill 出来的 5-section manifest + **重入幂等** (idempotency) 行为
+- **不引入 resume notebook**——install 全程靠底层工具天然幂等：`tar -xzf` 覆盖、`ln -sf` 替换、`pnpm` 缓存与续传、`curl -C -` 断点续传、`teamagent init` 子步骤"已注册则跳过"。CEO 鸭 decision 3 "断了能续" 通过幂等达成，不靠应用层小本本。详见 ADR-0011 (accepted)。
 - **Self-discipline-via-matcher** 是 enforcement primitive；**Negative-space platform layer** 是它在 GitHub 层的可观察后果，不是独立机制
 - **`/review` skill** 与 **Calibration subagent** 都是 host-agent 进程内 LLM 行为；TeamBrain core 仍然 LLM-free（与 ADR-0004 一致）
 
@@ -196,14 +241,18 @@ _Avoid_: "fix plan", "follow-up issue"
 - **"review"** — ADR-0007 之后 bare "review" 默认指 **`/review` skill**（本地 gate）；引用历史 cloud-reviewer 流程时请直接指 ADR-0007
 - **"纪律软 / soft discipline"** — CEO-mode summary 用语，描述 GitHub 层缺自动化；解决：这是 **negative-space platform layer**（deliberate），不是 discipline gap；CEO 文案此后须改用后者
 - **"PR-PLAN scope"** — `docs/PR-PLAN.md` 当前 scope 是 post-PR；grilling 中有用户把 issue → PR-PLAN 视为 pre-PR 流程；解决：post-PR 为 canonical；pre-PR plans 走 `docs/HOWTO-PLAN-PR.md`，未来若要扩 PR-PLAN 到 pre-PR 须独立 ADR
+- **"vector model 默认是否安装"** — issue #155 (2026-05-08) 写在 PR #227 (issue #164, MERGED 2026-05-09) **之前**，那时 vector deps 是 opt-in (`TEAMAGENT_INCLUDE_OPTIONAL=1`)；PR #227 之后 vector deps 进 `packages/teamagent/dependencies` default-installed + 加 embedder daemon；ADR-0001 已被 PR #227 同步更新 (Revised: 2026-05-09)。本 worktree (worktree-146) 在 b112b7e 落后于 main，本地 ADR-0001 文件仍是旧版，**别误判为 drift**。**Resolution**: 实施 issue #155 各 order 前必须 rebase/pull main 获取 ADR-0001 v2 + 新 deps；`--skip-vector-model` (Order 3) 在 v2 truth 下是从默认 opt-out，语义自洽
+- **"4-step install vs 4 sub-steps of init"** — issue #155 body 与多份 order plan 在 "4" 是 Path B 的 4 条 pnpm 命令、还是 `teamagent init` 内部的 4 个子步骤之间摇摆。**Resolution**: canonical "**4-step install**" = Path B 的 pnpm 4 步；init 内部的子步骤不另起数字
+- **"strict permission mode"** — issue #155 body 暗示这是 TeamBrain 可调的安装行为模式；实际是 **Claude Code 自己的 permission mode**，TeamBrain 完全无法影响。**Resolution**: 任何文档讨论 prompt 数时显式标 "Claude Code 的严格权限模式"，不简写
+- **"resume notebook (续命小本本)"** — Order 2 plan 设计了一个 `packages/core/src/install-state/` 模块作 per-project resume 状态机；CEO 鸭 decision 3 "断了能续" 也暗示需要这种小本本。grill 阶段发现 install 全程都已天然幂等 (tar/ln -sf/pnpm 缓存/curl -C -/init 步骤 skip-if-exists)，专门写小本本属过度设计。**Resolution**: 取消 Order 2，靠幂等达成 V3 验收；如未来出现非幂等步骤再回头加，独立 ADR 决议
 
 ## Testing channels
 
-新增（ADR-0012，2026-05-10）。
+新增（ADR-0013，2026-05-10）。
 
 **Inner-loop testing**:
 工作进行中的全量测试套件运行通道；由 `wip/**` 分支推送触发 `.github/workflows/inner-loop.yml` 执行 `pnpm test` + `pnpm verify`。
-_Avoid_: developer-loop testing、quick-test、`pnpm test` 本地直跑（后者已被 ADR-0012 禁掉）
+_Avoid_: developer-loop testing、quick-test、`pnpm test` 本地直跑（后者已被 ADR-0013 禁掉）
 
 **wip 分支**:
 临时分支命名空间 `wip/<topic>`，用于 inner-loop CI 触发；非 PR 分支，PR merge 后即可删除。

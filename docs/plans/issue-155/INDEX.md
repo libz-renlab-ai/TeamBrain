@@ -1,3 +1,32 @@
+> **AMENDMENT 2026-05-10 (issue #155 grill, worktree-146): 6-order → 5-order chain**
+>
+> 2026-05-10 grill session (Q1–Q7) 改写本 INDEX 与 6 张 plan 的 authoritative scope。
+> 主要决议:
+>
+> | Q | 决议 | 影响订单 |
+> |--:|------|---------|
+> | Q1 | "4 → 1 命令"在 INSTALL.md 4-step 上不可能 (chicken-and-egg with `pnpm build`); 走 Hybrid | Order 1, 3 |
+> | Q2 | Path C (AI 入口) = 增强 `release/install.sh` 末尾 auto-run `teamagent init` | Order 3 |
+> | Q3 | Path B 也只 1 步; 不创建 `pnpm teamagent install` 这条新 CLI | Order 1, 3 |
+> | Q4 | Path B 1 步 = 新建 `scripts/bootstrap.sh` 串跑 pnpm install + pnpm build + teamagent init; INSTALL.md 4-step 降级 dev fallback | Order 3, 4 |
+> | Q5 | 取消 Order 2; install 全程靠底层幂等 (tar/ln/pnpm/curl/skip-if-exists) 满足 V3 (per ADR-0011) | Order 2 |
+> | Q6 | 5-section manifest 源 = `docs/install-manifest.txt` (NEW); bootstrap.sh cat 它; install.sh embed; CI 锁三方一致 | Order 1, 4, 5 |
+> | Q7 | 收尾决定: 写 ADR-0011 + 改 6 plans + 建 manifest.txt + 更新 INDEX (本次更新) | INDEX |
+>
+> 新增/修改文件:
+> - `docs/adr/0011-install-resumption-via-idempotency.md` (NEW, proposed)
+> - `docs/install-manifest.txt` (NEW, canonical 5-section source)
+> - `docs/CONTEXT.md` (新增 Install paths section + 4 条 flagged ambiguity)
+> - 6 张 order plan 顶部 AMENDMENT/CANCELLED block (Order 2 = CANCELLED)
+>
+> **实施前必须**: rebase 本 worktree 到 main (worktree-146 在 b112b7e 比 main 落后,
+> 缺 PR #227 + ADR-0001 v2 + bin-embedder.ts daemon)。
+>
+> AMENDMENT 区块为 authoritative; 下方原 INDEX 内容保留作历史记录,字段如 "6-order"
+> 不再准确, 以本 AMENDMENT 为准。
+
+---
+
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  Issue #155 · 6-order fix-chain · TEAMWORK consolidated INDEX                ║

@@ -66,6 +66,15 @@ export interface InstallHookOptions {
   preCompactEntry?: string;
   /** 显式指定 digital-twin-tap Stop hook 入口绝对路径（user-level only） */
   digitalTwinEntry?: string;
+  /**
+   * Issue #146 install-hook TODO — 显式指定 digital-twin daemon 二进制
+   * `bin-uploader.cjs` 的源路径。Default: `<cliRoot>/../digital-twin/dist/
+   * bin-uploader.cjs` (monorepo 布局，与 `resolveDaemonBin` 一致)。install-hook
+   * 把它复制到 `<homeDir>/.teamagent/digital-twin/bin-uploader.cjs`，承担起
+   * 之前由 Stop hook 首次启动时 `resolveDaemonBin` self-install 兜底的 upgrade
+   * 路径。
+   */
+  daemonBinaryEntry?: string;
   /** 显式指定 user-level home（默认 os.homedir()）。测试用。 */
   homeDir?: string;
   /**
@@ -168,6 +177,23 @@ function defaultDigitalTwinEntry(): string {
 }
 
 /**
+ * Issue #146 install-hook TODO — default source path for `bin-uploader.cjs`
+ * (the digital-twin uploader daemon spawned by `bin-digital-twin-tap.cjs`).
+ *
+ * Path mirrors the monorepo fallback used by `resolveDaemonBin` in
+ * `bin-digital-twin-tap.ts`: cli package's `../digital-twin/dist/bin-uploader.cjs`.
+ * For npm-flat layouts where digital-twin is colocated with cli, callers
+ * pass `daemonBinaryEntry` through `InstallHookOptions`. The staging helper
+ * `stageDaemonBinaryToUser` is best-effort: if the source is missing (e.g.
+ * the digital-twin package wasn't built in this worktree), the install
+ * proceeds without the bundled binary and `resolveDaemonBin`'s runtime
+ * self-install path still serves as a safety net.
+ */
+function defaultDaemonBinaryEntry(): string {
+  return path.join(cliRoot(), "..", "digital-twin", "dist", "bin-uploader.cjs");
+}
+
+/**
  * 把 Windows 反斜杠路径转为正斜杠格式。
  * Git Bash 会吞掉路径里的反斜杠（视为转义），所以 hook command 必须用 /。
  * `C:\path\to\repo` → `C:/path/to/repo`
@@ -193,6 +219,79 @@ function toForwardSlash(p: string): string {
  * 3. copyFileSync the bundle (overwrite existing — fresh bundle on each install)
  * 4. return dest
  */
+/**
+ * Issue #146 install-hook TODO — stage `bin-uploader.cjs` to the
+ * user-level digital-twin location managed by `resolveDaemonBin`. Pattern
+ * mirrors `stageBundleToUserTeamagent` (skip-if-newer + atomic tmp+rename)
+ * but writes to `<homeDir>/.teamagent/digital-twin/bin-uploader.cjs`
+ * instead of `<homeDir>/.teamagent/hooks/<bundle>`.
+ *
+ * Best-effort:
+ * - Source missing (digital-twin not built in this worktree) → no-op,
+ *   returns staged=false with a reason. install-hook continues. The Stop
+ *   hook's `resolveDaemonBin` runtime self-install still picks up the
+ *   binary on first daemon spawn from the monorepo dist path.
+ * - Copy failure (Windows EBUSY, EPERM, EXDEV) → returns staged=false
+ *   with reason; same recovery story as source-missing.
+ *
+ * Returns a structured result so the caller (and tests) can assert on
+ * the outcome without having to inspect the filesystem.
+ */
+export interface DaemonStagingResult {
+  staged: boolean;
+  destPath: string;
+  reason?: string;
+}
+
+export function stageDaemonBinaryToUser(
+  srcDistPath: string,
+  homeDir: string,
+): DaemonStagingResult {
+  const dest = path.join(homeDir, ".teamagent", "digital-twin", "bin-uploader.cjs");
+  if (!fs.existsSync(srcDistPath)) {
+    return {
+      staged: false,
+      destPath: dest,
+      reason: `daemon binary source missing: ${srcDistPath} (build with pnpm --filter @teamagent/digital-twin build)`,
+    };
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+
+  // Skip-if-newer: same heuristic as stageBundleToUserTeamagent — avoids
+  // pointless I/O on every install AND avoids racing concurrent daemon
+  // processes that already loaded the staged binary.
+  try {
+    const srcStat = fs.statSync(srcDistPath);
+    const destStat = fs.statSync(dest);
+    if (srcStat.size === destStat.size && srcStat.mtimeMs <= destStat.mtimeMs) {
+      return { staged: true, destPath: dest, reason: "already up-to-date (skip-if-newer)" };
+    }
+  } catch {
+    // dest missing — fall through to the copy.
+  }
+
+  // Atomic copy via tmp + rename — protects against in-flight daemon
+  // process reading a half-written .cjs on Unix and against Windows EBUSY
+  // when the previous daemon's copy is still mapped.
+  const tmp = `${dest}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+  try {
+    fs.copyFileSync(srcDistPath, tmp);
+    fs.renameSync(tmp, dest);
+    return { staged: true, destPath: dest };
+  } catch (err) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      // best-effort cleanup
+    }
+    return {
+      staged: false,
+      destPath: dest,
+      reason: `daemon binary copy failed: ${(err as Error).message ?? String(err)}`,
+    };
+  }
+}
+
 function stageBundleToUserTeamagent(srcDistPath: string, homeDir: string): string {
   const dest = path.join(homeDir, ".teamagent", "hooks", path.basename(srcDistPath));
   fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -740,6 +839,16 @@ export function installHook(opts: InstallHookOptions = {}): {
   /** issue #104：本次 install 把哪一层用户 statusLine wrap 进了 chain；
    *  null = 用户原本就没有 statusLine，TeamBrain 独占 */
   statusLineMergedScope: "user" | "project" | null;
+  /**
+   * Issue #146 install-hook TODO — outcome of staging `bin-uploader.cjs`
+   * into `<homeDir>/.teamagent/digital-twin/`. Best-effort: when staging
+   * fails (source missing / copy error), `staged=false` and `reason`
+   * explains why, but installHook itself does NOT throw — the Stop hook's
+   * runtime `resolveDaemonBin` self-install path still serves as a safety
+   * net so first-time installs without a built digital-twin/dist still
+   * upload eventually.
+   */
+  daemonBinary: DaemonStagingResult;
 } {
   const cwd = opts.cwd ?? process.cwd();
   const settingsPath = path.join(cwd, ".claude", "settings.local.json");
@@ -883,6 +992,17 @@ export function installHook(opts: InstallHookOptions = {}): {
     });
   }
 
+  // Issue #146 install-hook TODO — stage the digital-twin daemon binary
+  // (`bin-uploader.cjs`) alongside the hook bundles. The Stop hook
+  // (`bin-digital-twin-tap.cjs`) spawns this daemon detached when a session
+  // ends; pre-F1 the binary was self-installed lazily at first daemon spawn,
+  // which meant `git pull` -> rebuild never picked up changes (you had to
+  // delete `~/.teamagent/digital-twin/bin-uploader.cjs` by hand). Folding
+  // staging into install-hook makes `teamagent install-hook` upgrade the
+  // daemon binary too, mirroring how the hook bundles are kept fresh.
+  const daemonBinaryEntry = opts.daemonBinaryEntry ?? defaultDaemonBinaryEntry();
+  const daemonBinary = stageDaemonBinaryToUser(daemonBinaryEntry, homeDir);
+
   return {
     settingsPath,
     hookEntry,
@@ -891,6 +1011,7 @@ export function installHook(opts: InstallHookOptions = {}): {
     postAlreadyInstalled,
     statusLineSkipped,
     statusLineMergedScope,
+    daemonBinary,
   };
 }
 
