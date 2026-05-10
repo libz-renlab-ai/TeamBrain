@@ -116,11 +116,19 @@
 
 ### §V3.RUN
 
+V3 区分两类 `.sh` 引用：(a) **anti-statement** (§0/§1 prose 里说 "NOT a .sh"、"禁 scripts/*.sh" — 这些是**遵守**规则的证据)；(b) **procedural step** (§2-§5 step body 让用户跑 `.sh` — 违规)。grep 必须只命中 (b)。
+
 1. `test -f docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md && echo "exists" > judge/V3/stdout.log || echo "missing" > judge/V3/stdout.log`
-2. `grep -cE '^##? +(N=?1|N=?2|N=?3|N=?4|n=?1|n=?2|n=?3|n=?4)\b' docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md >> judge/V3/stdout.log`（期望 ≥ 4）
-3. `grep -c 'toohot' docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md >> judge/V3/stdout.log`（期望 ≥ 4，每档至少一次）
-4. `grep -cE '\.sh\b|bash -c' docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md >> judge/V3/stdout.log`（期望 0：md playbook 不该走 fixed bash 脚本）
-5. `jq -r '.follow_up_for_full_curve' docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/loadavg-curve.json >> judge/V3/stdout.log`（期望含 `runner.md` 字符串）
+2. `grep -cE '^## [0-9]+ N=[1-4]\b' docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md >> judge/V3/stdout.log`（期望 ≥ 4，每档一节；runner.md section 头格式是 `## <num> N=<n> ...`）
+3. `grep -c 'toohot' docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md >> judge/V3/stdout.log`（期望 ≥ 4，每档至少一次提到）
+4. **总 `.sh` mentions（含 anti-statements）** — 用作 forensic 上下文，不是 pass 判据：`grep -cE '\.sh\b|bash -c' docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md >> judge/V3/stdout.log`
+5. **procedural-step `.sh` mentions** — 这才是 pass 判据。awk 切出 §2..§5 段（`/^## [2-5] /` 起到下个 `^## ` 止），在切片里 grep `.sh` / `bash -c`：
+   ```
+   awk '/^## [2-5] /,/^## [^2-5]/' docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md \
+     | grep -cE '\.sh\b|bash -c' >> judge/V3/stdout.log
+   ```
+   期望 0（procedure 不让用户跑 fixed bash）。
+6. `jq -r '.follow_up_for_full_curve' docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/loadavg-curve.json >> judge/V3/stdout.log`（期望含 `runner.md` 字符串）
 
 ### §V3.DUMP
 
@@ -132,7 +140,11 @@
   "runner_md_exists": true,
   "runner_md_section_count_for_n_1_to_4": 4,
   "runner_md_toohot_mention_count": <int>,
-  "runner_md_fixed_script_mention_count": 0,
+  "runner_md_total_sh_mention_count": <int>,
+  "runner_md_procedural_step_sh_mention_count": 0,
+  "runner_md_sh_mention_lines_with_classification": [
+    /* 每一处 .sh 的 line# + 文本 + classification (anti-statement | procedural-step) */
+  ],
   "loadavg_curve_follow_up_links_runner": true,
   "captured_at": "<iso8601>"
 }
@@ -142,9 +154,9 @@
 
 独立 `claudefast -p` 提示词：
 
-> Read `docs/plans/2026-05-10-boil-the-ocean-cleanup/judge/V3/result.json` AND `docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md`. Apply pass criterion: `runner_md_exists==true`, `runner_md_section_count_for_n_1_to_4>=4`, `runner_md_toohot_mention_count>=4`, `runner_md_fixed_script_mention_count==0`, `loadavg_curve_follow_up_links_runner==true`. Also confirm by reading `runner.md` directly that procedure is reproducible by a human in <30min and does not require a `.sh` to run. Output `V3: PASS|FAIL — <one-sentence reason>`.
+> Read `docs/plans/2026-05-10-boil-the-ocean-cleanup/judge/V3/result.json` AND `docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md`. Apply pass criterion: `runner_md_exists==true`, `runner_md_section_count_for_n_1_to_4>=4`, `runner_md_toohot_mention_count>=4`, `runner_md_procedural_step_sh_mention_count==0`, `loadavg_curve_follow_up_links_runner==true`. Then **read every line in `sh_mention_lines_with_classification` from runner.md directly** and confirm each is correctly classified as anti-statement (§0/§1 prose proving the rule) vs procedural-step (§2-§5 step body asking user to run a script). If any `.sh` appears in §2-§5 procedure, V3 FAILs regardless of total count. Output `V3: PASS|FAIL — <one-sentence reason>`.
 
-**Pass criterion**：5 个 JSON 字段满足 + claudefast 人工读 markdown 后确认 procedure 可复现。
+**Pass criterion**：5 个 JSON 字段满足 + claudefast 人工读 markdown 后确认每条 `.sh` 引用分类正确（§0/§1 anti-statement 不计违规；§2-§5 procedural-step 计违规）。
 
 ---
 
