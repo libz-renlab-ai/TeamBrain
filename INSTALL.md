@@ -61,6 +61,14 @@ schema-version: 1
 > 5 段安装清单（写哪些文件、下多大模型、怎么 refuse）见 [`docs/install-manifest.txt`](docs/install-manifest.txt)。
 > 中断后重跑 = 自动续 (底层幂等; 详见 [`docs/adr/0011-install-resumption-via-idempotency.md`](docs/adr/0011-install-resumption-via-idempotency.md))。
 
+如果已经在源码 checkout 里，AI 向导或开发者也可以直接跑：
+
+```bash
+pnpm teamagent install
+```
+
+这条命令会先打印 `[config]` / `[skills]` / `[kb]` / `[download]` / `[refusal]` 五段清单，再只问一次确认；拒绝时不会写文件。向量模型预热在后台异步运行，`pnpm teamagent install` 不提供前台 `--skip-vector-model` flag。
+
 ---
 
 ## Dev fallback：手动 4 步（issue #155 落地后降级；保留是为了想分别看输出的开发者）

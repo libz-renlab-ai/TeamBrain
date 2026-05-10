@@ -85,21 +85,13 @@ teamagent try
 
 ---
 
-## 5–10 分钟上手
+## AI guidance — `pnpm teamagent install`
 
 ```bash
-# 1. 装（一行 curl|bash：先校验 node ≥ 22 + npm/pnpm，再 npm install -g release tarball）
-curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash
-cd your-project                                          # 2. 进项目
-teamagent init                                           # 3. 初始化（注册 hook + 预热向量模型）
-# 如果同一个项目也要给 Codex 读取规则：
-teamagent init --target=both
-# → 重启 Claude Code，工作如常
-# → 系统每小时自动检查 GitHub 上有没有新版本，有就静默更新
-# → 它每次被你纠正，都会自动入库
+pnpm teamagent install
 ```
 
-> **`curl … | bash` 做了什么？** 校验 `node -v` ≥ 22 → 通过 SHA-256 双文件校验 + redirect domain guard 下载 release tarball → 解压到 `~/.local/lib/teamagent` 并把 `dist/bin.js` 软链到 `~/.local/bin/teamagent`。默认 `--safe` 模式会先打印脚本内容再 prompt y/N（输入 `--auto` 跳过）。失败时给确定的退出码（10 = node 缺失，11 = node 太老，20 = 包管理器都没有，30 = 安装失败）。脚本源码：[`release/install.sh`](./release/install.sh)，POSIX-sh 兼容版本（legacy）：[`release/install-legacy.sh`](./release/install-legacy.sh)。
+会跑 `pnpm` 的开发者和 AI coding agent 用这个单步入口：它会先打印 5 段安装清单，再用一次确认完成 hooks、团队插件、用户级 hook、后台向量模型 warmup，并在结尾跑 health check。
 
 <details>
 <summary>不能 curl 的环境（离线、Windows PowerShell、CI 容器）— 用 tarball URL 直装</summary>
@@ -404,6 +396,24 @@ packages/
 ```
 
 开发约定见 [`CLAUDE.md`](CLAUDE.md)：TDD、契约先于实现、Functional Core / Imperative Shell、AttributionBus 强制。
+
+---
+
+## Dev / contributor fallback（贡献者旧流程）
+
+```bash
+# 1. 装（一行 curl|bash：先校验 node ≥ 22 + npm/pnpm，再 npm install -g release tarball）
+curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash
+cd your-project                                          # 2. 进项目
+teamagent init                                           # 3. 初始化（注册 hook + 预热向量模型）
+# 如果同一个项目也要给 Codex 读取规则：
+teamagent init --target=both
+# → 重启 Claude Code，工作如常
+# → 系统每小时自动检查 GitHub 上有没有新版本，有就静默更新
+# → 它每次被你纠正，都会自动入库
+```
+
+> **`curl … | bash` 做了什么？** 校验 `node -v` ≥ 22 → 通过 SHA-256 双文件校验 + redirect domain guard 下载 release tarball → 解压到 `~/.local/lib/teamagent` 并把 `dist/bin.js` 软链到 `~/.local/bin/teamagent`。默认 `--safe` 模式会先打印脚本内容再 prompt y/N（输入 `--auto` 跳过）。失败时给确定的退出码（10 = node 缺失，11 = node 太老，20 = 包管理器都没有，30 = 安装失败）。脚本源码：[`release/install.sh`](./release/install.sh)，POSIX-sh 兼容版本（legacy）：[`release/install-legacy.sh`](./release/install-legacy.sh)。
 
 ---
 
