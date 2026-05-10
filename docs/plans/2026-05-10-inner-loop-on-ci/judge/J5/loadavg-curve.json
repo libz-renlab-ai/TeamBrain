@@ -41,5 +41,5 @@
     "The driver agent (this Claude Code session) cannot spawn additional Claude Code windows on the user's Mac; n=2/3/4 individual sampling requires the user to open windows manually.",
     "5m and 15m loadavg (10.57, 10.91) still carry residue from this morning's toohot incident — these will continue to decay over the next 15min."
   ],
-  "follow_up_for_full_curve": "Optional post-merge follow-up: capture n=1, n=2, n=3, n=4 individually for the full curve. Not required for this PR given the single sample dramatically clears the threshold."
+  "follow_up_for_full_curve": "Optional post-merge follow-up: capture n=1, n=2, n=3, n=4 individually for the full curve. Not required for this PR given the single sample dramatically clears the threshold. See docs/plans/2026-05-10-inner-loop-on-ci/judge/J5/runner.md for the manual capture playbook."
 }
