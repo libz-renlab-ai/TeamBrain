@@ -6,6 +6,8 @@ import {
   executeStats,
   renderStats,
   aggregateConfidenceMovements,
+  aggregateUpgradeEvents7d,
+  renderUpgradeEvents7d,
   findStuckInPromotion,
   renderStuckInPromotion,
 } from "../commands/stats.js";
@@ -473,5 +475,126 @@ describe("executeStats --override-signals", () => {
 
     // cleanup
     fs.rmSync(tmp.cwd, { recursive: true, force: true });
+  });
+});
+
+// Issue #245 — pure aggregation/render of upgrade events 7d 摘要
+describe("aggregateUpgradeEvents7d (pure)", () => {
+  function ev(kind: string, hoursAgo: number, now: Date): PersistedEvent {
+    return {
+      id: `${kind}-${hoursAgo}`,
+      kind: kind as PersistedEvent["kind"],
+      timestamp: new Date(now.getTime() - hoursAgo * 3600 * 1000).toISOString(),
+      schema_version: 1,
+      // unused for upgrade aggregation but required by PersistedEvent shape
+    } as unknown as PersistedEvent;
+  }
+
+  it("counts all 4 update-* kinds inside the window", () => {
+    const now = new Date("2026-05-10T00:00:00Z");
+    const events = [
+      ev("update-prompt-shown", 1, now),
+      ev("update-prompt-shown", 24, now),
+      ev("update-snoozed", 5, now),
+      ev("update-never-set", 12, now),
+      ev("update-installed", 48, now),
+    ];
+    const counts = aggregateUpgradeEvents7d(events, 7, now);
+    expect(counts).toEqual({
+      promptShown: 2,
+      snoozed: 1,
+      neverSet: 1,
+      installed: 1,
+      total: 5,
+    });
+  });
+
+  it("excludes events outside the window", () => {
+    const now = new Date("2026-05-10T00:00:00Z");
+    const events = [
+      ev("update-prompt-shown", 1, now),
+      // 200 hours ago > 7 days (168h)
+      ev("update-snoozed", 200, now),
+    ];
+    const counts = aggregateUpgradeEvents7d(events, 7, now);
+    expect(counts).toEqual({
+      promptShown: 1,
+      snoozed: 0,
+      neverSet: 0,
+      installed: 0,
+      total: 1,
+    });
+  });
+
+  it("ignores non-upgrade kinds", () => {
+    const now = new Date("2026-05-10T00:00:00Z");
+    const events = [
+      ev("calibrator.adjusted", 1, now),
+      ev("ai.override.complied", 1, now),
+      ev("update-prompt-shown", 1, now),
+    ];
+    expect(aggregateUpgradeEvents7d(events, 7, now).total).toBe(1);
+  });
+
+  it("handles unparseable timestamps without crashing", () => {
+    const now = new Date("2026-05-10T00:00:00Z");
+    const bad: PersistedEvent = {
+      id: "bad", kind: "update-prompt-shown" as PersistedEvent["kind"],
+      timestamp: "not-a-date", schema_version: 1,
+    } as unknown as PersistedEvent;
+    expect(() => aggregateUpgradeEvents7d([bad], 7, now)).not.toThrow();
+    expect(aggregateUpgradeEvents7d([bad], 7, now).total).toBe(0);
+  });
+
+  it("returns all-zero counts on empty input", () => {
+    const now = new Date("2026-05-10T00:00:00Z");
+    expect(aggregateUpgradeEvents7d([], 7, now)).toEqual({
+      promptShown: 0, snoozed: 0, neverSet: 0, installed: 0, total: 0,
+    });
+  });
+});
+
+describe("renderUpgradeEvents7d (pure)", () => {
+  it("returns empty string when total is 0", () => {
+    expect(renderUpgradeEvents7d({ promptShown: 0, snoozed: 0, neverSet: 0, installed: 0, total: 0 }, 7)).toBe("");
+  });
+
+  it("renders all 4 buckets with the 升级 header", () => {
+    const out = renderUpgradeEvents7d(
+      { promptShown: 3, snoozed: 1, neverSet: 0, installed: 1, total: 5 },
+      7,
+    );
+    expect(out).toContain("升级事件");
+    expect(out).toContain("最近 7 天");
+    expect(out).toContain("共 5 条");
+    expect(out).toContain("update-prompt-shown");
+    expect(out).toContain("3");
+    expect(out).toContain("update-snoozed");
+    expect(out).toContain("update-never-set");
+    expect(out).toContain("update-installed");
+  });
+});
+
+describe("renderStats integrates upgrade counts (issue #245)", () => {
+  it("appends 升级事件 段落 when total > 0", () => {
+    const upgradeCounts = { promptShown: 2, snoozed: 1, neverSet: 0, installed: 1, total: 4 };
+    const out = renderStats(
+      { personal: [], team: [], global: [] },
+      [],
+      7,
+      upgradeCounts,
+    );
+    expect(out).toContain("升级事件");
+    expect(out).toContain("共 4 条");
+  });
+
+  it("hides 升级事件 段落 when total is 0", () => {
+    const out = renderStats(
+      { personal: [], team: [], global: [] },
+      [],
+      7,
+      { promptShown: 0, snoozed: 0, neverSet: 0, installed: 0, total: 0 },
+    );
+    expect(out).not.toContain("升级事件");
   });
 });

@@ -36,6 +36,19 @@ export interface ConfidenceMovement {
   archivedThisWindow: boolean;
 }
 
+/**
+ * Issue #245: 升级事件 7d 摘要。Counts each `update-*` kind in the recent
+ * window so the CEO sees prompt impressions / snooze drop-offs / installs
+ * conversion side-by-side. `total` is the sum across the 4 kinds.
+ */
+export interface UpgradeEventCounts {
+  promptShown: number;
+  snoozed: number;
+  neverSet: number;
+  installed: number;
+  total: number;
+}
+
 function resolvePaths(opts: StatsOptions) {
   const home = opts.homeDir ?? os.homedir();
   const cwd = opts.cwd ?? process.cwd();
@@ -93,18 +106,75 @@ export function aggregateConfidenceMovements(
   );
 }
 
+/**
+ * Issue #245: pure aggregation of `update-*` events in the trailing window.
+ * Reads kind from a flat list of `PersistedEvent`-like rows; tolerates
+ * events that don't carry an `update-*` kind by simply not matching.
+ */
+export function aggregateUpgradeEvents7d(
+  events: PersistedEvent[],
+  windowDays: number,
+  now: Date,
+): UpgradeEventCounts {
+  const cutoff = now.getTime() - windowDays * 24 * 3600 * 1000;
+  const counts: UpgradeEventCounts = {
+    promptShown: 0,
+    snoozed: 0,
+    neverSet: 0,
+    installed: 0,
+    total: 0,
+  };
+  for (const e of events) {
+    if (typeof e.kind !== "string" || !e.kind.startsWith("update-")) continue;
+    let ts = 0;
+    try {
+      ts = new Date(e.timestamp).getTime();
+    } catch {
+      continue;
+    }
+    if (!Number.isFinite(ts) || ts < cutoff) continue;
+    switch (e.kind) {
+      case "update-prompt-shown": counts.promptShown += 1; counts.total += 1; break;
+      case "update-snoozed":      counts.snoozed += 1;      counts.total += 1; break;
+      case "update-never-set":    counts.neverSet += 1;     counts.total += 1; break;
+      case "update-installed":    counts.installed += 1;    counts.total += 1; break;
+      default: /* unknown update-* kind: ignore */ break;
+    }
+  }
+  return counts;
+}
+
+/**
+ * Issue #245: render 升级事件 7d 摘要 段落。Returns "" when total === 0
+ * so an empty events.db doesn't pollute the report with a noisy header.
+ */
+export function renderUpgradeEvents7d(
+  counts: UpgradeEventCounts,
+  windowDays: number,
+): string {
+  if (counts.total === 0) return "";
+  const lines: string[] = [];
+  lines.push(`升级事件（最近 ${windowDays} 天，共 ${counts.total} 条）:`);
+  lines.push(`  banner 弹出 (update-prompt-shown):  ${counts.promptShown}`);
+  lines.push(`  snooze 推迟 (update-snoozed):       ${counts.snoozed}`);
+  lines.push(`  永久关闭 (update-never-set):        ${counts.neverSet}`);
+  lines.push(`  安装完成 (update-installed):        ${counts.installed}`);
+  return lines.join("\n") + "\n";
+}
+
 /** 纯函数：给定条目列表 + 校准变化，生成 stats 报告文本。 */
 export function renderStats(
   byScope: { personal: KnowledgeEntry[]; team: KnowledgeEntry[]; global: KnowledgeEntry[] },
   movements: ConfidenceMovement[] = [],
   windowDays = 7,
+  upgradeCounts: UpgradeEventCounts = { promptShown: 0, snoozed: 0, neverSet: 0, installed: 0, total: 0 },
 ): string {
   const all = [...byScope.personal, ...byScope.team, ...byScope.global];
   const active = all.filter((e) => e.status === "active");
   const archived = all.filter((e) => e.status === "archived");
 
   if (all.length === 0) {
-    return [
+    const emptyLines = [
       "📊 TeamAgent 知识库统计",
       "",
       "尚无知识条目。",
@@ -113,7 +183,15 @@ export function renderStats(
       "  pnpm teamagent pitfall            交互式录入",
       "  pnpm teamagent pitfall --non-interactive --trigger=... --wrong=... --correct=... --reason=...",
       "",
-    ].join("\n");
+    ];
+    // Issue #245: even in the "no knowledge yet" state, show 升级事件
+    // because a fresh user can already have prompt/snooze/install rows
+    // from SessionStart hooks before they record any rule.
+    const upgradeBlockEarly = renderUpgradeEvents7d(upgradeCounts, windowDays);
+    if (upgradeBlockEarly) {
+      emptyLines.push(upgradeBlockEarly.trimEnd(), "");
+    }
+    return emptyLines.join("\n");
   }
 
   const byCategory: Record<string, number> = { C: 0, E: 0, S: 0, K: 0 };
@@ -187,6 +265,15 @@ export function renderStats(
       );
       lines.push(`         ${trig.slice(0, 80)}`);
     }
+  }
+
+  // Issue #245: 升级事件 7d 摘要 — append after movements so the upgrade
+  // funnel sits below confidence movements (both share the 7d window
+  // semantics, which keeps the trailing-time-window section grouped).
+  const upgradeBlock = renderUpgradeEvents7d(upgradeCounts, windowDays);
+  if (upgradeBlock) {
+    lines.push("");
+    lines.push(upgradeBlock.trimEnd());
   }
 
   return lines.join("\n") + "\n";
@@ -372,6 +459,7 @@ export function executeStats(opts: StatsOptions = {}): string {
     // 损坏 → 视为空
   }
   const movements = aggregateConfidenceMovements(events, windowDays, now);
+  const upgradeCounts = aggregateUpgradeEvents7d(events, windowDays, now);
 
   let personal: KnowledgeEntry[] = [];
   let team: KnowledgeEntry[] = [];
@@ -401,5 +489,6 @@ export function executeStats(opts: StatsOptions = {}): string {
     { personal, team, global },
     movements,
     windowDays,
+    upgradeCounts,
   ));
 }
