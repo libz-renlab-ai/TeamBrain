@@ -1582,7 +1582,7 @@ export function renderInitResult(result: InitResult): string {
   // "❌ 安装未完成" footer with no visible reason. friendlyError() preserves
   // the full ancestor-path + --force-nested-init hint.
   const stepGroups: Array<{ icon: string; label: string; stepKeys: string[] }> = [
-    { icon: "🛡️ ", label: "前置守卫", stepKeys: ["nested-init-guard"] },
+    { icon: "🛡️", label: "前置守卫", stepKeys: ["nested-init-guard"] },
     { icon: "🔍", label: "检测项目环境", stepKeys: ["detect-stack"] },
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
     { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook", "audit-orphan-hooks"] },
