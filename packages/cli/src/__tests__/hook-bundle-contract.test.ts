@@ -192,52 +192,80 @@ describe("packages/cli hook bundle config", () => {
    * web-tree-sitter — the one that has bitten us — and is the right place
    * to extend whenever a new native external joins NATIVE_EXTERNAL.
    */
-  it.skipIf(!fs.existsSync(path.resolve(HERE, "..", "..", "dist", "bin-session-start.cjs")))(
-    "built bin-session-start.cjs has no TOP-LEVEL require() for native externals (must be lazy)",
-    () => {
-      const distDir = path.resolve(HERE, "..", "..", "dist");
-      const bins = fs
-        .readdirSync(distDir)
-        .filter((f) => f.startsWith("bin-") && f.endsWith(".cjs"));
-      expect(bins.length).toBeGreaterThan(0);
+  /**
+   * Issue #280: module names that MUST never appear as a top-level eager
+   * `var <ident> = require("<name>")` line in any hook bundle. The
+   * tree-sitter language packs share `web-tree-sitter`'s WASM-load
+   * pattern. `@xenova/transformers` and `onnxruntime-node` are added by
+   * issue #280 — they were not statically imported at the time of issue
+   * #131's original fix, but are large optional natives that any future
+   * caller might inadvertently top-level-import; locking them down now
+   * costs nothing and prevents the issue #280 failure mode from creeping
+   * back in via a different transitive entry.
+   *
+   * Add to this list when a new native external joins NATIVE_EXTERNAL in
+   * `packages/teamagent/tsup.config.ts` and could plausibly be statically
+   * imported from a hot bundle path.
+   */
+  const LAZY_REQUIRED_NATIVES = [
+    "web-tree-sitter",
+    "tree-sitter-typescript",
+    "tree-sitter-python",
+    "onnxruntime-node",
+  ];
 
-      // Module names that must NEVER appear as a top-level eager
-      // `var <ident> = require("<name>")` line in any hook bundle. The
-      // tree-sitter language packs share `web-tree-sitter`'s WASM-load
-      // pattern (only referenced via `require.resolve(...wasm)` strings
-      // in ast-context.ts), so they're zero-impact additions today and
-      // cheap insurance against a future static import.
-      // Add to this list when a new native external joins NATIVE_EXTERNAL
-      // and could plausibly be statically imported from a hot bundle path.
-      const LAZY_REQUIRED_NATIVES = [
-        "web-tree-sitter",
-        "tree-sitter-typescript",
-        "tree-sitter-python",
-      ];
-
-      for (const bin of bins) {
-        const text = fs.readFileSync(path.join(distDir, bin), "utf-8");
-        for (const dep of LAZY_REQUIRED_NATIVES) {
-          // Top-level eager form esbuild emits for static `import x from "dep"`
-          // when "dep" is in `external`: a `var <ident> = require("dep")` at
-          // the start of a line (multiline mode `m`). The dynamic-import
-          // shape — `Promise.resolve().then(() => __toESM(require("dep")))` —
-          // is fine because the require fires only when the .then callback
-          // runs, i.e. when the consumer actually invokes the matcher.
-          const escaped = dep.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&");
-          const topLevel = new RegExp(
-            `^var\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*=\\s*require\\(["']${escaped}["']\\)`,
-            "m",
-          );
-          expect(
-            topLevel.test(text),
-            `dist/${bin} contains top-level require("${dep}") — must be lazy via dynamic import to keep ` +
-              `~/.teamagent/hooks/${bin} loadable outside node_modules. Convert the offending ` +
-              `static import in packages/core/src/matcher/legacy/ast-context.ts (or its caller) to ` +
-              `\`await import("${dep}")\` inside the function that actually needs it.`,
-          ).toBe(false);
-        }
-      }
+  /**
+   * Issue #280: built dist locations to scan. Both the cli-local dist
+   * (`packages/cli/dist/`) and the teamagent dist (`packages/teamagent/dist/`,
+   * the one whose contents postinstall copies to `~/.teamagent/hooks/`)
+   * must obey the lazy-require contract. The teamagent dist was the
+   * actual surface area of issue #280 — the cli dist was already
+   * covered by issue #131 but had no analog for the staged bundle.
+   */
+  const DIST_DIRS = [
+    {
+      label: "packages/cli/dist",
+      dir: path.resolve(HERE, "..", "..", "dist"),
     },
-  );
+    {
+      label: "packages/teamagent/dist",
+      dir: path.resolve(HERE, "..", "..", "..", "teamagent", "dist"),
+    },
+  ];
+
+  for (const { label, dir } of DIST_DIRS) {
+    it.skipIf(!fs.existsSync(path.join(dir, "bin-session-start.cjs")))(
+      `${label} hook bundles have no TOP-LEVEL require() for native externals (must be lazy)`,
+      () => {
+        const bins = fs
+          .readdirSync(dir)
+          .filter((f) => f.startsWith("bin-") && f.endsWith(".cjs"));
+        expect(bins.length).toBeGreaterThan(0);
+
+        for (const bin of bins) {
+          const text = fs.readFileSync(path.join(dir, bin), "utf-8");
+          for (const dep of LAZY_REQUIRED_NATIVES) {
+            // Top-level eager form esbuild emits for static `import x from "dep"`
+            // when "dep" is in `external`: a `var <ident> = require("dep")` at
+            // the start of a line (multiline mode `m`). The dynamic-import
+            // shape — `Promise.resolve().then(() => __toESM(require("dep")))` —
+            // is fine because the require fires only when the .then callback
+            // runs, i.e. when the consumer actually invokes the matcher.
+            const escaped = dep.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&");
+            const topLevel = new RegExp(
+              `^var\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*=\\s*require\\(["']${escaped}["']\\)`,
+              "m",
+            );
+            expect(
+              topLevel.test(text),
+              `${label}/${bin} contains top-level require("${dep}") — must be lazy via dynamic import to keep ` +
+                `~/.teamagent/hooks/${bin} loadable outside node_modules. Convert the offending ` +
+                `static import in packages/core/src/matcher/legacy/ast-context.ts (or its caller) to ` +
+                `\`await import("${dep}")\` inside the function that actually needs it.`,
+            ).toBe(false);
+          }
+        }
+      },
+    );
+  }
 });
