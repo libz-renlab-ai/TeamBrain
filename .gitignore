@@ -87,7 +87,3 @@ docs/gstack-bin/.last-judge-prompt.txt
 
 # Judge harness evidence dirs (timestamped, regenerated per run; paired with docs/plans/<issue>/judge.md).
 .judge/
-# Re-allow stdout/stderr captures under docs/plans/**/evidence/ so PR-tracked judge
-# runs (e.g. Feature ① openable-and-usable, judge.md V1 RUN) can keep raw logs alongside
-# judge.json + tree dumps. Overrides line 4 (*.log) which would otherwise drop them.
-!docs/plans/**/evidence/**/*.log
