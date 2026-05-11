@@ -15,6 +15,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const SKILLS = [
+  "duck",
   "grill-me",
   "grill-via-web",
   "fixed-flow-driver",

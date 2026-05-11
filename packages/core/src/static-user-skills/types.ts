@@ -11,6 +11,7 @@
  * `node scripts/regen-static-user-skills.cjs` to refresh `content.ts`.
  */
 export const STATIC_USER_SKILLS = [
+  "duck",
   "grill-me",
   "grill-via-web",
   "fixed-flow-driver",
