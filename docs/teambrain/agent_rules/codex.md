@@ -96,14 +96,6 @@ Per AGENTS.md rule (atomic-commits-on-edit): after any `Edit` or `Write` tool ca
 
 Commit message format: `feat(teambrain): <what> [traps-read: ...]`
 
-### Worktree placement
-Per CLAUDE.md: all worktrees go under `.codex/worktrees/<task-name>` inside the repo.
-
-Forbidden locations:
-- Repo siblings: `../my-worktree`
-- `.worktrees/` at repo root
-- `.claude/worktrees/` (Claude-specific, not Codex)
-
 ### Git push rules
 - `git push --force` — forbidden, no exceptions.
 - `git push --force-with-lease` — allowed only on a branch you created in this task.

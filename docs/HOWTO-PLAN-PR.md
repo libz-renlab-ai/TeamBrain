@@ -99,10 +99,6 @@ Code-flavoured PRs follow the **Boris workflow**:
 TODOs / `// FIXME(plan-id)` markers in the code where the plan calls for it,
 so reviewers can map diff hunks back to plan sections.
 
-Worktree convention (`CLAUDE.md`): create the working branch in
-`.codex/worktrees/<task-name>/` so the parent checkout stays clean. Don't
-nest worktrees inside `.claude/worktrees/` or alongside the repo.
-
 ## ② Expected outputs — list what reviewers will check off
 
 The expected-outputs section turns the plan into a checklist the PR can be

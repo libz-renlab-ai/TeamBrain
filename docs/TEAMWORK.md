@@ -64,8 +64,8 @@ The team is composed of three layers:
 
 **NEVER work in main.** The lead must verify the current branch is not `main`
 before spawning any agent. All worker edits land on a dedicated non-main branch
-or `.codex/worktrees/<task>` worktree. The `main` branch stays untouched until
-a PR is merged through the normal review process.
+or worktree. The `main` branch stays untouched until a PR is merged through
+the normal review process.
 
 ## Trigger
 
@@ -89,8 +89,7 @@ git branch --show-current
 ```
 
 The output must NOT be `main`. If it is `main`, the lead must stop and either
-create a new branch or set up a `.codex/worktrees/<task>` worktree before
-proceeding.
+create a new branch or set up a worktree before proceeding.
 
 ### Step 1 — Slice assignment
 

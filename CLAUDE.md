@@ -37,7 +37,6 @@
 - **commit message 格式**：`feat(m{N}): <...>` / `fix(m{N}): <...>` / `refactor(m{N}): <...>`，让 Milestone 产出在 git 历史中可溯。
 - **Feature 验证门禁**：任何 feature / fix 交付前必须验证，并把“如何验证”写进 commit message 与 PR message。两条路径：(1) `!claudefast -p` 跑 `{MODULE} --help` 出 canonical JSON 并对照 `snapshots/{MODULE}-help.canonical.json`；(2) tmux 跑 interactive `claudefast` 并提交 `/export <path>`，把 export 文件加入 PR contents。详见 `docs/feature-verification.md`。
 - **PR 必须是普通 PR，不要 draft PR**。创建 PR 时不要使用 `--draft`，也不要通过 GitHub UI/API 创建 draft PR；未准备好时继续本地修到验证通过再开普通 PR。
-- **worktree 位置**：新建 git worktree 必须放在仓库内的 `.codex/worktrees/` 目录下，不要放在仓库同级目录、`.worktrees/` 或 `.claude/worktrees/`。
 
 ## Project Skills
 
@@ -139,13 +138,6 @@ claude -p "Summarize latest changes in this repo" \
 ```
 
 `claude -p` / `claudefast -p` 必须接收 prompt：要么像上面一样把 prompt 放在 `-p` 后的 argv 里，要么从 stdin pipe 进去；不要只传 flags。
-
-## Agent 工作树
-
-- Codex / agent 专用 worktree 放在 `.codex/worktrees/<task-name>`，不要放到项目同级目录。
-- 每个 worktree 使用同名短分支，便于从 `git worktree list` 直接看任务归属。
-- 父 checkout 本地用 `.git/info/exclude` 忽略 `.codex/worktrees/`，避免嵌套 worktree 污染主工作区状态。
-- 背景说明见 `docs/notes/2026-04-28-codex-worktrees.md`。
 
 ## 已知限制 / workaround
 
