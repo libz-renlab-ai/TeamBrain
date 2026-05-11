@@ -12,6 +12,7 @@ import {
   parseDoctorArgs,
   backupFile,
   checkClaudeCode,
+  checkHookSpawn,
   checkTeamSharingStatus,
   pathContainsNodeModulesBin,
   checkSettingsJsonScope,
@@ -21,6 +22,8 @@ import {
   type ClaudeProbe,
   type ClaudeProbeResult,
   type CodexProbe,
+  type HookProbe,
+  type HookProbeResult,
   type McpProbe,
   type DoctorCheckResult,
   type DoctorResult,
@@ -785,5 +788,90 @@ describe("doctor --fix safety net (issue #172)", () => {
     expect(out).toContain(
       `还原: cp "/tmp/home/.teamagent/backups/CLAUDE.md.2026-05-09T16-22-34-000Z.bak" "/tmp/proj/CLAUDE.md"`,
     );
+  });
+});
+
+/**
+ * Issue #280 commit 1: `checkHookSpawn` warn-only contract.
+ * Probe is injectable so tests do not touch real child_process.
+ */
+describe("checkHookSpawn (issue #280)", () => {
+  function makeProbe(result: HookProbeResult): HookProbe {
+    return async () => result;
+  }
+
+  it("passes when the probe reports exit code 0", async () => {
+    const probe = makeProbe({ exitCode: 0, stderr: "", timedOut: false });
+    const out = await checkHookSpawn("/fake/bin-session-start.cjs", probe);
+    expect(out.name).toBe("hook-spawn");
+    expect(out.status).toBe("pass");
+    expect(out.detail).toContain("成功启动");
+    expect(out.detail).toContain("fast-exit 0");
+    expect(out.fix).toBeUndefined();
+  });
+
+  it("skips (warn) on non-zero exit and surfaces the last stderr line", async () => {
+    const stderr = [
+      "node:internal/modules/cjs/loader:1248",
+      "  throw err;",
+      "  ^",
+      "Error: Cannot find module 'web-tree-sitter'",
+    ].join("\n");
+    const probe = makeProbe({ exitCode: 1, stderr, timedOut: false });
+    const out = await checkHookSpawn("/fake/bin-session-start.cjs", probe);
+    expect(out.status).toBe("skip");
+    expect(out.detail).toContain("⚠️");
+    expect(out.detail).toContain("exit=1");
+    expect(out.detail).toContain("Cannot find module 'web-tree-sitter'");
+    expect(out.fix).toBeDefined();
+  });
+
+  it("skips (warn) when the probe reports a spawn error", async () => {
+    const probe = makeProbe({
+      exitCode: null,
+      stderr: "",
+      timedOut: false,
+      spawnError: "Error: ENOENT: no such file or directory, open '/missing/node'",
+    });
+    const out = await checkHookSpawn("/fake/bin-session-start.cjs", probe);
+    expect(out.status).toBe("skip");
+    expect(out.detail).toContain("⚠️");
+    expect(out.detail).toContain("启动失败");
+    expect(out.detail).toContain("ENOENT");
+    expect(out.fix).toContain("npm install -g teamagent");
+  });
+
+  it("skips (warn) when the probe times out", async () => {
+    const probe = makeProbe({ exitCode: null, stderr: "", timedOut: true });
+    const out = await checkHookSpawn("/fake/bin-session-start.cjs", probe);
+    expect(out.status).toBe("skip");
+    expect(out.detail).toContain("⚠️");
+    expect(out.detail).toContain("5s");
+    expect(out.detail).toContain("require/import");
+  });
+
+  it("truncates long stderr tails so doctor output stays readable", async () => {
+    const longLine = "a".repeat(2_000);
+    const probe = makeProbe({ exitCode: 1, stderr: longLine, timedOut: false });
+    const out = await checkHookSpawn("/fake/bin-session-start.cjs", probe);
+    expect(out.status).toBe("skip");
+    // Detail prefix + truncated stderr should be bounded.
+    expect(out.detail.length).toBeLessThan(600);
+  });
+
+  it("never flips allPassed in commit 1 (warn-only contract)", async () => {
+    // Spawn-error / timeout / non-zero must all report `skip`, never `fail`.
+    // This locks in the commit-1 vs commit-4 boundary: until the underlying
+    // bugs are fixed, doctor stays green on hook-spawn issues by design.
+    const variants: HookProbeResult[] = [
+      { exitCode: 1, stderr: "Error: ...", timedOut: false },
+      { exitCode: null, stderr: "", timedOut: false, spawnError: "EACCES" },
+      { exitCode: null, stderr: "", timedOut: true },
+    ];
+    for (const v of variants) {
+      const r = await checkHookSpawn("/x", makeProbe(v));
+      expect(r.status).not.toBe("fail");
+      expect(r.status).toBe("skip");
+    }
   });
 });
