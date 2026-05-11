@@ -47,6 +47,8 @@ packages/*/.cache/
 chaos-verify*.mjs
 # FASTPROBE timestamped scratch dirs (raw .result/.jsonl from claudefast probes; regenerated per run).
 .fastprobe/
+# General scratch dirs (live-capture transcripts, per-run probe outputs; see ADR-0012).
+.scratch/
 # FIXEDFLOW driver runtime state (machine-local; per-iter token/iter counters
 # written by the manually-invoked /fixed-flow-driver skill).
 # See docs/FIXEDFLOW.md "driver 行为细则".

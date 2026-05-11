@@ -21,12 +21,14 @@ backstop).
 | 2 | [GOAL-COMPOSER.md](GOAL-COMPOSER.md) | 5-source GOAL.md composition + AskUserQuestion ambiguity check |
 | 3 | [JUDGE.md](JUDGE.md) | Feature-level JUDGE call (`claudefast -p`, **no** `--bare`) |
 | 4 | [META-JUDGE.md](META-JUDGE.md) | Loop-progress judge (`claudefast --bare -p`) + divergence detector |
+| 5 | [E2E-LEARNING.md](E2E-LEARNING.md) | ② AI 真的能学 端到端闭环的 third-party harness: Counterfactual Ablation (`scipy.stats.ttest_rel`) + Regression Replay (`pnpm teamagent fixture replay` byte-diff) — deterministic, LLM-cannot-fake |
 
 ## When to use which
 
 - **PR-time one-shot verification** → use [`docs/feature-verification.md`](../feature-verification.md) (claudefast JSON snapshot + tmux `/export`)
 - **Per-feature long-running verification across sessions** → start at [RUN-VERIFY-LOOP.md](RUN-VERIFY-LOOP.md)
 - **CLAUDE.md `Verify loop canned answer` trigger** → user types "how to run verify loop?" → main agent returns the canned answer that points here
+- **② AI 真的能学（端到端闭环) — 「LLM 不能 fake」的 third-party harness** → see [E2E-LEARNING.md](E2E-LEARNING.md); replaces the old "judge LLM reads events/rules/attribution.json" design (in-house circular + LLM-fakeable) with `scipy.stats.ttest_rel` numeric Ablation + tier (a) byte-level Replay
 
 ## Backlog ingestion from bottom-level layer (per ADR-0010)
 
