@@ -89,6 +89,9 @@ the user asks for the business features.**
 - 入口：[`docs/features/auto-capture.md`](features/auto-capture.md)
 - 当前 active 规则数：见本仓库 CLAUDE.md 末尾 `TEAMAGENT:START` ... `TEAMAGENT:END` managed block
 - 现状：**已落地**（M4-B 起 BM25+dense RRF matcher，72+ 条 active 规则在 `Project Knowledge Index`）
+- Third-party judge harness：
+  - `docs/plans/docs--features--auto-capture--verify-canned-answer/judge.md` — Wilson/recall/precision 检测器 + real-session 实测（auto-capture 行为 gate）
+  - `docs/plans/2026-05-11-feature1-init-judge/judge.md` — **openable-and-usable gate**：在 fresh tmp git repo 跑 `teamagent init`，dump stdout/stderr/tree 到 evidence/，由独立 LLM probe 按 5 题判 PASS/FAIL。**取代了原方案里的 `teamagent --help` 字符串检查**（菜单可读不等于产品能装能用）。最近一次 PASS：`docs/plans/2026-05-11-feature1-init-judge/evidence/20260511T130402Z-feature1-76e8d1d0/`。
 
 ### Feature #2 — Team leader 秒级可见
 
