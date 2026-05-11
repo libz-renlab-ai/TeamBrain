@@ -12,7 +12,6 @@
  * (Stop hook) can log a one-line outcome without case analysis.
  */
 
-import { dirname } from 'node:path';
 import type { DigitalTwinConfig } from '../config.js';
 import { quotaProbeSettings } from '../config.js';
 import { digitalTwinPaths } from '../paths.js';
@@ -115,7 +114,14 @@ export function utcDateString(d: Date): string {
  * sanitized form, so the original transcript file is found.
  */
 export function projectDirFromTranscriptPath(transcriptPath: string): string {
-  return dirname(transcriptPath).split(/[/\\]/).filter(Boolean).pop() ?? '';
+  // Hand-split on both `/` and `\` so a Windows-style path resolves correctly
+  // on POSIX too. `path.dirname` is OS-aware: on Linux it ignores `\`, so
+  // `dirname("C:\\Users\\u\\.claude\\projects\\X\\sess.jsonl")` returns `.`
+  // and the project dir is lost. Structure is fixed:
+  // `<...>/projects/<sanitizedCwd>/<sessionId>.jsonl` — pick the second-to-last
+  // segment as the sanitized cwd.
+  const parts = transcriptPath.split(/[/\\]/).filter(Boolean);
+  return parts.length >= 2 ? parts[parts.length - 2]! : '';
 }
 
 /**
