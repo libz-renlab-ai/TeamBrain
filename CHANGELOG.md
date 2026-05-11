@@ -13,7 +13,23 @@ artifacts the user sees) do NOT need an entry.
 
 ## Unreleased
 
-(no pending entries)
+### Fixed
+
+- **`teamagent init` no longer silently fails when blocked by `nested-init-guard`**.
+  Previously, running `teamagent init` from a sub-directory of an already-initialized
+  project printed only `❌ 安装未完成 ... 运行 teamagent doctor` with no reason —
+  and `teamagent doctor` then sent the user back to `init`, a tight loop with no
+  way out. `renderInitResult` now lists `nested-init-guard` under a dedicated
+  `🛡️ 前置守卫` group so the user sees the ancestor path and the
+  `--force-nested-init` escape hatch, e.g.
+
+      🛡️  前置守卫...
+         ❌ 嵌套项目守卫: detected ancestor TeamAgent project at /Users/m1/projects;
+            refusing to create duplicate .teamagent/ in /Users/m1/projects/demo-repo —
+            cd to the project root or use --force-nested-init to override.
+
+  `friendlyError` now also passes the full detail through (was truncated at 120 chars
+  before, losing the path the user needs to act on).
 
 ## 0.11.0 — 2026-05-09
 

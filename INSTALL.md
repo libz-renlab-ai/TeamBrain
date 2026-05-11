@@ -169,6 +169,40 @@ common_errors:
 
 ---
 
+## Upgrade — 卡在 v0.10.x 的 `secure crypto unusable`
+
+如果跑 `teamagent --version` 或 `teamagent init` 直接炸：
+
+```
+Error: secure crypto unusable, insecure Math.random not allowed
+    at detectPrng (.../dist/bin.js:...)
+  source: 'ulid'
+```
+
+说明你装的是 **v0.10.x** — 这一版 `ulid` 被错误 bundle 进 ESM bin.js，Node 22
+上 tsup 的 `__require("crypto")` 拿不到真 `crypto`，ulid 拒绝降级到
+`Math.random` 就 throw 了。Issue #158 已修，落在 **v0.11.0**。
+
+升级两条路：
+
+1. **重跑 install.sh**（推荐 / end user）—— 自动拉 release 分支最新 build：
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash
+   ```
+2. **从源码 build 再 npm install -g**（contributor）—— clone 之后：
+   ```bash
+   cd TeamBrain
+   pnpm install && pnpm --filter teamagent build
+   npm install -g packages/teamagent       # 覆盖卡住的 v0.10.x
+   teamagent --version                       # → 0.11.0
+   ```
+
+升级后再跑 `teamagent init`，如果父目录已经有 `.teamagent/`，会看到清楚的
+`🛡️ 前置守卫: 嵌套项目守卫 ...` 报错；按提示 `cd` 到祖先项目，或加
+`--force-nested-init` 创建独立子项目。
+
+---
+
 ## 遇到没见过的报错？
 
 如果遇到上面 `common_errors` 里没有覆盖的错误，请：
