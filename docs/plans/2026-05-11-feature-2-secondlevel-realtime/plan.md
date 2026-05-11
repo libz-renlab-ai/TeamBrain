@@ -1,21 +1,3 @@
-```text
-   ┌──────────────────────────────────────────────────────────────────┐
-   │  Feature #2 — Second-Level Realtime Team Monitoring              │
-   │                                                                  │
-   │  teammate Claude Code session                  boss dashboard    │
-   │  ┌────────────────────────┐                  ┌────────────────┐  │
-   │  │  SessionStart   ───►   │                  │ 🟦 alice up    │  │
-   │  │  UserPromptSubmit ───► │ ── realtime ──►  │ 🟢 alice bash  │  │
-   │  │  PreToolUse     ───►   │   transport      │ 🟢 alice edit  │  │
-   │  │  Stop           ───►   │   (≤1s p50)      │ 🟦 alice done  │  │
-   │  │  SessionEnd     ───►   │                  │ 🔅 alice idle  │  │
-   │  └────────────────────────┘                  └────────────────┘  │
-   │                                                                  │
-   │  current state: M5 viral git-sync = hour/day grain — too slow    │
-   │  target:        end-to-end p50 ≤ 1s, p99 ≤ 3s                    │
-   └──────────────────────────────────────────────────────────────────┘
-```
-
 # Plan: Feature #2 — Second-level realtime team monitoring
 
 Owner: TBD (主 agent + maintainer)
@@ -66,22 +48,12 @@ Forward references:
 
 ### §1 代码 / 配置文件
 
-- [ ] `packages/digital-twin/src/realtime-server.ts` — 新增 receiver 端点
-      （SSE / WebSocket，按 Q2 决定）
-- [ ] `packages/digital-twin/src/realtime-client.ts` — fire-and-forget HTTP
-      POST 客户端；`postEvent(envelope, {timeoutMs:50})` 永不抛、永不阻塞
-- [ ] `packages/cli/src/bin-pre-tool-use.ts` — 新增 realtime push 调用
-      （flag `TEAMAGENT_REALTIME_PUSH=1` 开关；默认 off 直至 v1 GA）
-- [ ] `packages/cli/src/bin-user-prompt-submit.ts` — 同上
-- [ ] `packages/cli/src/bin-stop.ts` — 同上
-- [ ] `packages/cli/src/bin-session-start.ts` — 同上
-- [ ] `packages/cli/src/bin-session-end.ts` — 同上 + installer wire（当前
-      `bin-session-end.cjs` 源码已存在但 `installHook()` 未接，需补；
-      参见 `docs/features/hooks-status.md` § 7）
-- [ ] `packages/cli/src/commands/realtime-server.ts` — `teamagent realtime
-      serve` CLI 子命令，启动 receiver
-- [ ] `docs/kanban-user-boss/index.html` + `styles.css` — 接 SSE/WebSocket，
-      每秒刷新；保留原型样式
+- [ ] `packages/digital-twin/src/realtime-server.ts` — receiver streaming 端点（SSE / WebSocket，Q2 决定）
+- [ ] `packages/digital-twin/src/realtime-client.ts` — `postEvent(envelope, {timeoutMs:50})`，永不抛、永不阻塞
+- [ ] 5 个 hook bundle 接 realtime push：`bin-pre-tool-use.ts` / `bin-user-prompt-submit.ts` / `bin-stop.ts` / `bin-session-start.ts` / `bin-session-end.ts`
+- [ ] `bin-session-end.ts` 同步补 installer wire；现有源码已存在但 `installHook()` 未接
+- [ ] `packages/cli/src/commands/realtime-server.ts` — `teamagent realtime serve`
+- [ ] `docs/kanban-user-boss/index.html` + `styles.css` — 接 SSE/WebSocket，每秒刷新
 
 ### §2 envelope schema（5 channel 通用）
 
@@ -166,26 +138,10 @@ N+1+(2N)）或 `claudefast -p` 探针（`docs/FASTPROBE.md` 最多 8 路并行�
     index.html`，逐 channel 触发事件，screenshot 前后 diff，记录 DOM
     更新延迟
 
-- **§V2 DUMP**：写 canonical JSON 到 `.judge/2026-05-11-feature-2/judge.json`：
-
-  ```jsonc
-  {
-    "run_id": "<iso8601>",
-    "typecheck":      {"exit_code": 0, "stdout_path": "evidence/typecheck.txt"},
-    "tests":          {"exit_code": 0, "passed": 0, "failed": 0,
-                       "stdout_path": "evidence/vitest.txt"},
-    "latency":        {"p50_ms": 0, "p95_ms": 0, "p99_ms": 0, "samples": 500,
-                       "raw_path": "evidence/latency.ndjson"},
-    "hook_overhead":  {"p99_ms": 0, "samples": 500,
-                       "raw_path": "evidence/hook-wallclock.ndjson"},
-    "privacy":        {"secrets_injected": 10, "secrets_leaked": 0,
-                       "leaked_paths": []},
-    "dashboard_e2e":  {"dom_update_p99_ms": 0,
-                       "screenshots": ["evidence/before.png",
-                                       "evidence/after.png"]},
-    "evidence_dir":   ".judge/2026-05-11-feature-2/evidence/"
-  }
-  ```
+- **§V2 DUMP**：写 canonical JSON 到 `.judge/2026-05-11-feature-2/judge.json`，
+  必含 `run_id`、`typecheck.exit_code`、`tests.failed`、`latency.p50_ms/p99_ms`、
+  `hook_overhead.p99_ms`、`privacy.secrets_leaked`、`dashboard_e2e.dom_update_p99_ms`、
+  `evidence_dir`，并把 stdout / stderr / raw samples / screenshots 放入 evidence。
 
 - **§V3 READ**：另一只 `claudefast -p` 探针只读 raw `judge.json` + 必要
   evidence，输出 `pass | fail | uncertain + 下一步`。判定阈值：
@@ -220,24 +176,15 @@ N+1+(2N)）或 `claudefast -p` 探针（`docs/FASTPROBE.md` 最多 8 路并行�
 
 ## Milestones（拍板后填）
 
-- **M-F2-A**：receiver + envelope schema + 契约测试（mock 端 only）
-- **M-F2-B**：5 个 hook 接入 realtime client（fire-and-forget + flag）
-- **M-F2-C**：privacy gate（M5 闸门复用）+ idle 心跳
-- **M-F2-D**：看板接活数据 + DOM 渲染
-- **M-F2-E**：metric probe + judge harness + report.md
-
-每个 milestone = 1 个 PR，独立 squash-merge，路径见 `docs/COMMIT-FLOW.md`
-与 `docs/POSTPR.md`。
+M-F2-A receiver + schema + contract tests；M-F2-B 5 hook realtime client；
+M-F2-C privacy gate + idle heartbeat；M-F2-D live dashboard；M-F2-E metrics +
+judge harness + report.md。每个 milestone = 1 个普通 PR，独立 squash-merge。
 
 ---
 
 ## Risks
 
-- **延迟超 1s**：SSE + 公网链路 RTT 不可控；若 p99 > 3s，回退方案是
-  「秒级 polling」即 client 每 1s GET `/v1/realtime/state?since=<cursor>`。
-- **fire-and-forget 漏报**：hook 主路径不能等 ACK；高漏报率会让看板缺事件。
-  Mitigation：M5 git-sync 兜底，最终一致。
-- **secret 漏到 stream**：M5 闸门已 audit-tested，但 realtime 节奏更紧；
-  privacy probe 必须跑满 10 条注入用例。
-- **看板伪在线**：teammate 进程崩了，SessionEnd 没 fire；用 30s 心跳超时
-  推断置灰，不依赖 SessionEnd 单点。
+- **延迟超 1s**：若 SSE p99 > 3s，回退到每秒 GET `/v1/realtime/state?since=<cursor>`。
+- **fire-and-forget 漏报**：hook 不等 ACK；M5 git-sync 保留作最终一致兜底。
+- **secret 漏到 stream**：privacy probe 跑满 10 条注入用例，期望 0 泄漏。
+- **看板伪在线**：SessionEnd 可能丢；30s 心跳超时置灰。

@@ -1,34 +1,3 @@
-```text
-   ┌────────── Research sediment for plan.md ──────────┐
-   │                                                   │
-   │   Where data lives today  →  what's missing       │
-   │                                                   │
-   │   ┌─ Claude Code hooks (6+2) ─┐                   │
-   │   │  bin-pre-tool-use.cjs     │ project           │
-   │   │  bin-post-tool-use.cjs    │ project           │
-   │   │  bin-user-prompt-submit   │ project           │
-   │   │  bin-stop.cjs             │ project           │
-   │   │  bin-session-end.cjs ❗   │ source exists,    │
-   │   │  bin-pre-compact.cjs ❗   │ installer absent  │
-   │   │  bin-session-start.cjs    │ user-level only   │
-   │   │  bin-digital-twin-tap.cjs │ user-level Stop   │
-   │   └───────────────────────────┘                   │
-   │              │                                    │
-   │              ▼ (currently)                        │
-   │   ┌─ @teamagent/digital-twin ─┐                   │
-   │   │  tapSession(cwd,sid)       │ local queue      │
-   │   │  bin-uploader.ts           │ batch HTTP POST  │
-   │   │  bin-prod-server.ts        │ central receiver │
-   │   │  /v1/cc-sessions           │ batch endpoint   │
-   │   └────────────────────────────┘                  │
-   │              │                                    │
-   │              ▼ (cross-machine sync)               │
-   │   ┌─ M5 viral git-sync ─┐                         │
-   │   │  hour/day grain     │ 太慢 — Feature #2 不达标│
-   │   └─────────────────────┘                         │
-   └───────────────────────────────────────────────────┘
-```
-
 # Research: Feature #2 — Second-level realtime team monitoring
 
 Companion to [`plan.md`](./plan.md). Sediment of repo context gathered before
