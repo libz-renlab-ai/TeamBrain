@@ -1541,6 +1541,7 @@ export function parseInitArgs(argv: string[]): InitOptions {
     if (a === "--dry-run") opts.dryRun = true;
     else if (a === "--skip-import") opts.skipImport = true;
     else if (a === "--skip-hook") opts.skipHook = true;
+    else if (a === "--skip-seed") opts.skipSeed = true;
     else if (a === "--no-user-level-hook") opts.userLevelHook = false;
     else if (a === "--force-nested-init") opts.force = true;
     else if (a === "--skip-warmup") opts.skipWarmup = true;
@@ -1560,6 +1561,20 @@ export function parseInitArgs(argv: string[]): InitOptions {
       opts.pack = value;
     } else if (a.startsWith("--pack=")) {
       opts.pack = a.slice("--pack=".length);
+    } else if (a === "--cwd") {
+      const value = argv[++i];
+      if (!value) throw new Error("--cwd 需要 <path> 值");
+      opts.cwd = value;
+    } else if (a.startsWith("--cwd=")) {
+      opts.cwd = a.slice("--cwd=".length);
+    } else if (a === "--home") {
+      const value = argv[++i];
+      if (!value) throw new Error("--home 需要 <path> 值");
+      opts.homeDir = value;
+    } else if (a.startsWith("--home=")) {
+      opts.homeDir = a.slice("--home=".length);
+    } else if (a.startsWith("--")) {
+      process.stderr.write(`teamagent init: 忽略未知 flag ${a}\n`);
     }
   }
   return opts;

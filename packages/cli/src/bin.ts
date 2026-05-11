@@ -488,14 +488,17 @@ async function main(): Promise<void> {
     case "init": {
       if (rest.includes("--help") || rest.includes("-h")) {
         process.stdout.write(
-          "Usage: teamagent init [--dry-run] [--skip-import] [--skip-hook] [--install-plugins]\n" +
+          "Usage: teamagent init [--dry-run] [--skip-import] [--skip-hook] [--skip-seed]\n" +
+          "                      [--skip-warmup] [--install-plugins]\n" +
           "                      [--target=claude|codex|both] [--pack <all|name1,name2>]\n" +
           "                      [--no-user-level-hook] [--force-nested-init]\n" +
+          "                      [--cwd=<path>] [--home=<path>]\n" +
           "\n" +
           "Options:\n" +
           "  --dry-run              Preview what init would do without making changes\n" +
           "  --skip-import          Skip LLM-based rule import step\n" +
           "  --skip-hook            Skip hook registration\n" +
+          "  --skip-seed            Skip bundled seed-rule injection\n" +
           "  --skip-warmup          Skip embedding model warmup\n" +
           "  --install-plugins      Also install team plugins (playground/code-review/code-simplifier/...)\n" +
           "  --target=TARGET        claude (default), codex, or both\n" +
@@ -508,6 +511,12 @@ async function main(): Promise<void> {
           "  --force-nested-init    Issue #161 escape hatch: allow `init` to create a\n" +
           "                         child .teamagent/ even when an ancestor already has\n" +
           "                         one. Default refuses to avoid duplicate state.\n" +
+          "  --cwd=<path>           Override target project dir (default: process.cwd()).\n" +
+          "                         Required for third-party judge harnesses that land init\n" +
+          "                         on a sandbox without `cd` (Feature ① openable-and-usable).\n" +
+          "  --home=<path>          Override user home dir for state files / skills mirror\n" +
+          "                         (default: os.homedir()). Use together with --cwd to fully\n" +
+          "                         isolate a fresh-repo smoke run from existing TeamAgent state.\n" +
           "\n" +
           "Scaffolds TeamAgent config in the current project:\n" +
           "  - Creates .teamagent/ directory and initializes knowledge DB\n" +
