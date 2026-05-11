@@ -99,6 +99,22 @@ teammate 的 Claude Code session 在干什么：在 grilling 哪个 issue、卡�
 `/review` cycle、最近一条 correction moment 是什么。目标延迟 ≤ 1s
 （second-level realtime）。
 
+**当前实现 vs 目标可见度对比 / Current visibility vs goal:**
+
+```text
+工程师方案能看到:    🟦 ───────  🟦 ───────  🟦
+                    (光点之间全黑)
+
+老板真正想要的:      🟦 🟢 🟢 🟢 🟦 🟢 🟢 🟢 🟦
+                    (中间每一步都亮)
+```
+
+只发 `SessionStart` + `UserPromptSubmit` → boss 在两条 prompt 之间看不见
+alice 在 bash / edit 什么；要 5 通道（+`PreToolUse` / `Stop` / `SessionEnd`）
+才能让中间每一步亮起，对得起 anchor 句里那句 *"what each teammate's Claude
+Code instance is doing"*。实施 plan 见
+[`docs/plans/2026-05-11-feature-2-secondlevel-realtime/plan.md`](plans/2026-05-11-feature-2-secondlevel-realtime/plan.md)。
+
 - 设计入口：[`docs/features/team-share.md`](features/team-share.md)、
   [`docs/kanban-user-boss/`](kanban-user-boss/) 看板、
   [`docs/features/team-promote/`](features/team-promote/)、
