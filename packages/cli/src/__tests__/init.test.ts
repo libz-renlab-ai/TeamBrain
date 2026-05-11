@@ -648,6 +648,106 @@ describe("parseInitArgs", () => {
     expect(parseInitArgs(["--codex"])).toEqual({ target: "codex" });
     expect(parseInitArgs(["--target=both"])).toEqual({ target: "both" });
   });
+  it("--cwd=<path> assigns opts.cwd", () => {
+    expect(parseInitArgs(["--cwd=/tmp/sandbox"])).toEqual({
+      cwd: "/tmp/sandbox",
+    });
+  });
+  it("--cwd <path> (space-separated) assigns opts.cwd", () => {
+    expect(parseInitArgs(["--cwd", "/tmp/sandbox"])).toEqual({
+      cwd: "/tmp/sandbox",
+    });
+  });
+  it("--home=<path> assigns opts.homeDir", () => {
+    expect(parseInitArgs(["--home=/tmp/home"])).toEqual({
+      homeDir: "/tmp/home",
+    });
+  });
+  it("--skip-seed assigns opts.skipSeed", () => {
+    expect(parseInitArgs(["--skip-seed"])).toEqual({ skipSeed: true });
+  });
+  it("--cwd + --home + --skip-seed combined for Feature ① harness", () => {
+    expect(
+      parseInitArgs([
+        "--cwd=/tmp/sandbox",
+        "--home=/tmp/home",
+        "--skip-import",
+        "--skip-hook",
+        "--skip-seed",
+        "--skip-warmup",
+      ]),
+    ).toEqual({
+      cwd: "/tmp/sandbox",
+      homeDir: "/tmp/home",
+      skipImport: true,
+      skipHook: true,
+      skipSeed: true,
+      skipWarmup: true,
+    });
+  });
+  it("--cwd without value throws", () => {
+    expect(() => parseInitArgs(["--cwd"])).toThrowError(/--cwd/);
+  });
+  it("unknown --foo flag does not break parsing (warning to stderr)", () => {
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    expect(parseInitArgs(["--foo", "--skip-import"])).toEqual({
+      skipImport: true,
+    });
+    expect(writeSpy).toHaveBeenCalledWith(
+      expect.stringContaining("--foo"),
+    );
+    writeSpy.mockRestore();
+  });
+});
+
+describe("executeInit — Feature ① init in fresh empty cwd", () => {
+  let tmpFeat1: ReturnType<typeof mkTmp>;
+  beforeEach(() => (tmpFeat1 = mkTmp()));
+  afterEach(() => tmpFeat1.cleanup());
+
+  it("fresh empty cwd + all --skip-* → .teamagent/ landed + ok=true", async () => {
+    const r = await executeInit({
+      cwd: tmpFeat1.cwd,
+      homeDir: tmpFeat1.home,
+      skipImport: true,
+      skipHook: true,
+      skipSeed: true,
+      skipWarmup: true,
+      idGen: () => "feat1-test",
+      now: () => new Date("2026-05-11T12:00:00Z"),
+    });
+
+    // 第三方 judge harness 真正关心的契约：
+    expect(r.ok).toBe(true);
+    expect(nodeFs.existsSync(path.join(tmpFeat1.cwd, ".teamagent"))).toBe(true);
+    // create-dirs 是 .teamagent/ 落地的权威 step
+    const createDirs = r.steps.find((s) => s.step === "create-dirs");
+    expect(createDirs?.status).toBe("ok");
+    // compile-skills 是 ~/.claude/skills/teamagent/ 落地的权威 step
+    const compileSkills = r.steps.find((s) => s.step === "compile-skills");
+    expect(compileSkills?.status).toBe("ok");
+    // 没有 unhandled failed step（dryRun 之外）
+    const failed = r.steps.filter((s) => s.status === "failed");
+    expect(failed).toEqual([]);
+  });
+
+  it("rendered stdout contains ✅ markers — judge.json grep anchor", async () => {
+    const r = await executeInit({
+      cwd: tmpFeat1.cwd,
+      homeDir: tmpFeat1.home,
+      skipImport: true,
+      skipHook: true,
+      skipSeed: true,
+      skipWarmup: true,
+      idGen: () => "feat1-render-test",
+      now: () => new Date("2026-05-11T12:00:00Z"),
+    });
+    const out = renderInitResult(r);
+    expect(out).toContain("✅");
+    expect(out).toContain("TeamAgent 安装成功");
+  });
 });
 
 describe("executeInit --install-plugins (opt-in plugin install)", () => {
