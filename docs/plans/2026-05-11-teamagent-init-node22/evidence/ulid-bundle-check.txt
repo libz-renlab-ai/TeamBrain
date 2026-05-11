@@ -1,0 +1,11 @@
+=== ulid bundle check (post-build, worktree dist) ===
+ulid@2.4.0 inline references: 0
+secure crypto unusable strings: 0
+detectPrng symbols: 0
+
+=== externalized ulid imports (good) ===
+5935:import { ulid as defaultUlid3 } from "ulid";
+5974:import { ulid } from "ulid";
+6780:import { ulid as defaultUlid } from "ulid";
+7530:import { ulid as defaultUlid2 } from "ulid";
+8089:import { ulid as defaultUlid4 } from "ulid";
