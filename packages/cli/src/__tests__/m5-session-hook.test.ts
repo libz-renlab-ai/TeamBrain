@@ -92,6 +92,10 @@ describe("runM5Session walk-up entry (#161)", () => {
         published_changes: 0,
         pushed: false,
         errors: [],
+        // W15-014 adds skipped_count to the runM5Session result shape so
+        // the SessionStart banner can surface skip reasons. Walk-up early
+        // exits return 0.
+        skipped_count: 0,
       });
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
