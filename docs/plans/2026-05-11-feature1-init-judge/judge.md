@@ -70,7 +70,8 @@ itself is this markdown playbook — **no fixed bash script** lives at
   ```
 
 - Step 2: Run init against the sandbox using the new `--cwd / --home /
-  --skip-seed` flags (added in commit `7c5c5a3`).
+  --skip-seed` flags (added in commit `2f87234`; path-value guard hardened
+  in commit `1af66e7`).
   ```
   ( cd "$SANDBOX" && \
     tsx "$REPO_ROOT/packages/cli/src/bin.ts" init \

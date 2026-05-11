@@ -12,13 +12,13 @@
 
 | Plan output | Status | Reference |
 |---|---|---|
-| Parser fix (`--cwd / --home / --skip-seed`) | ✅ | commit `7c5c5a3`, `packages/cli/src/commands/init.ts:1567-1581` |
-| `init` CLI help text refresh | ✅ | commit `7c5c5a3`, `packages/cli/src/bin.ts:489-528` |
-| parseInitArgs unit-test coverage (7 cases) | ✅ | commit `b81067b`, `init.test.ts:651-712` |
-| executeInit fresh-cwd contract (2 cases) | ✅ | commit `b81067b`, `init.test.ts:716-770` |
-| Judge MD playbook | ✅ | commit `3bc3d7d`, `judge.md` |
-| Evidence snapshot | ✅ | commits `22b4da1` + `9272cca`, `evidence/20260511T130402Z-feature1-76e8d1d0/` |
-| BUSINESS-FEATURES anchor | ✅ | commit `79b1438`, `BUSINESS-FEATURES.md:92-94` |
+| Parser fix (`--cwd / --home / --skip-seed`) | ✅ | commits `2f87234` + `1af66e7`, `packages/cli/src/commands/init.ts:1564-1585` |
+| `init` CLI help text refresh | ✅ | commit `2f87234`, `packages/cli/src/bin.ts:489-528` |
+| parseInitArgs unit-test coverage (13 cases) | ✅ | commits `3ccd31f` + `1af66e7`, `init.test.ts:651-721` |
+| executeInit fresh-cwd contract (2 cases) | ✅ | commit `3ccd31f`, `init.test.ts:724-778` |
+| Judge MD playbook | ✅ | commit `e977c1e`, `judge.md` |
+| Evidence snapshot | ✅ | commits `5fc7898` + `afc8af4`, `evidence/20260511T130402Z-feature1-76e8d1d0/` |
+| BUSINESS-FEATURES anchor | ✅ | commit `61b6bd6`, `BUSINESS-FEATURES.md:92-94` |
 | PR + `/review` + squash-merge + POSTPR | ⏳ | task #7 (in progress at report write time) |
 
 ## Verification trace
@@ -51,7 +51,7 @@
   in a worktree resolves to the **main repo's** `.git`, so `REPO_ROOT`
   pointed at the upstream checkout (which has older code). Fixed by
   using `$(pwd)` of the worktree as `WORKTREE_ROOT` in V1 Step 0.
-  Misrouted attempt removed from evidence/ in commit `9272cca`.
+  Misrouted attempt removed from evidence/ in commit `afc8af4`.
 
 ## Open questions / followups
 
