@@ -179,6 +179,13 @@ import {
   parseRecordArgs,
   RecordArgError,
 } from "./commands/record.js";
+import {
+  executeFixtureReplay,
+  parseFixtureReplayArgs,
+  renderFixtureReplayResult,
+  renderFixtureReplayHelp,
+  FixtureReplayArgError,
+} from "./commands/fixture-replay.js";
 
 function findPackageVersion(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
@@ -856,6 +863,29 @@ async function main(): Promise<void> {
       }
       const result = await executeRecord(parsed);
       if (result.exitCode !== 0) process.exit(result.exitCode);
+      return;
+    }
+    case "fixture": {
+      try {
+        if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
+          process.stdout.write(renderFixtureReplayHelp());
+          return;
+        }
+        const opts = parseFixtureReplayArgs(rest);
+        const result = await executeFixtureReplay(opts);
+        process.stdout.write(
+          opts.json
+            ? JSON.stringify(result, null, 2) + "\n"
+            : renderFixtureReplayResult(result),
+        );
+        if (!result.ok) process.exit(1);
+      } catch (err) {
+        if (err instanceof FixtureReplayArgError) {
+          process.stderr.write(err.message.endsWith("\n") ? err.message : err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
       return;
     }
     case "compile": {

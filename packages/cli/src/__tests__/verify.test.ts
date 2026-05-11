@@ -24,12 +24,13 @@ describe("executeVerify", () => {
   });
   afterEach(() => tmp.cleanup());
 
-  it("runs all 5 scenarios → all pass with mock LLM", async () => {
+  it("runs all 6 scenarios → all pass with mock LLM", async () => {
     const { result } = await executeVerify({
       now: () => new Date("2026-04-15T01:00:00Z"),
     });
-    expect(result.total).toBe(5);
-    expect(result.passed).toBe(5);
+    expect(result.total).toBe(6);
+    expect(result.passed).toBe(6);
+    expect(result.scenarios.map((s) => s.scenarioId)).toContain("moment-dayjs");
     expect(result.averagePRR).toBe(100);
     expect(result.averageKP).toBe(5);
   });

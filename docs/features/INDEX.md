@@ -8,6 +8,7 @@ docs/features/
     ├── team-share.md             ← VERIFIED: export/import judge harness green
     ├── multi-tool.md             ← VERIFIED: PreToolUse/Stop/AttributionBus + DOGFOOD
     ├── compile.md                ← VERIFIED: default Skills-only, CLAUDE.md legacy opt-in
+    ├── fixture-replay.md         ← VERIFIED: tier-a deterministic scenario replay CLI
     ├── auto-capture/             ← md playbooks at docs/plans/docs--features--auto-capture--verify-canned-answer/judge.md
     │                               and docs/plans/docs--features--auto-capture--real-judge/judge.md
     ├── calibrator-v2/            ← md playbooks at docs/plans/docs--features--calibrator-v2--run-judge/judge.md
@@ -42,7 +43,7 @@ docs/features/
 Per-feature docs. All shipped features now carry a md playbook under
 `docs/plans/docs--features--<feature>--<harness>/judge.md` following Wave 6 A1–A9.
 
-For the **full feature inventory** (49 features, all VERIFIED), see
+For the **full feature inventory** (all VERIFIED), see
 [`docs/PRODUCT-FEATURES.md`](../PRODUCT-FEATURES.md).
 
 ## All features — VERIFIED
@@ -63,6 +64,7 @@ For the **full feature inventory** (49 features, all VERIFIED), see
 | Rule-quality validator | `docs/plans/docs--features--rule-quality--run-judge/judge.md` + `docs/plans/docs--features--rule-quality--verify-canned-answer/judge.md` | identical/confidence/missing/embedding checks |
 | Matcher scope (B-055 + file_types) | `docs/plans/docs--features--matcher-scope--run-judge/judge.md` | Word-boundary guard + glob scope correct |
 | Multi-tool: PreToolUse/Stop/AttributionBus | `docs/plans/docs--features--multi-tool--verify-canned-answer/judge.md` | All three hooks live; DOGFOOD Tier 2/3 green |
+| Fixture replay CLI (`fixture replay --tier=a`) | `docs/plans/docs--features--fixture-replay--run-judge/judge.md` | Deterministic moment-dayjs scenario proves correction → rule → intercept |
 | `teamagent compile` (Skills-default, CLAUDE.md legacy opt-in) | `packages/cli/src/__tests__/compile.test.ts` (`no flags: writes skills and leaves CLAUDE.md untouched` + `--legacy-claude-md restores old behavior`) | Default writes Skills only; deleted CLAUDE.md block does NOT regenerate without `--legacy-claude-md` (or `TEAMAGENT_LEGACY_CLAUDE_MD=1`) |
 | Canned-answer rules (9 triggers) | `docs/rule-verify/INDEX.md` | md playbooks under `docs/plans/` (archived: `docs/legacy/judge-scripts/scripts/verify-all-rules.sh`) |
 

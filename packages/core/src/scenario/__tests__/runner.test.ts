@@ -153,7 +153,7 @@ describe("runVerify — multi-scenario aggregation", () => {
     });
   });
 
-  describe("all 5 fixture scenarios", () => {
+  describe("all 6 fixture scenarios", () => {
     it("all pass with mock LLM", async () => {
       const r = await runVerify(allScenarios, {
         detector: ruleBasedCorrectionDetector,
@@ -161,13 +161,13 @@ describe("runVerify — multi-scenario aggregation", () => {
         makeStore: () => new InMemoryStore(),
         now: () => new Date("2026-04-15T01:00:00Z"),
       });
-      // Expectation: ALL 5 scenarios pass
+      // Expectation: ALL 6 scenarios pass
       const failed = r.scenarios.filter((s) => !s.passed);
       const failureSummary = failed
         .map((s) => `${s.scenarioId}: A=${s.phaseA.passed} B=${s.phaseB.passed} C=${s.phaseC.passed}`)
         .join("\n");
-      expect(r.passed, `Failed scenarios:\n${failureSummary}`).toBe(5);
-      expect(r.total).toBe(5);
+      expect(r.passed, `Failed scenarios:\n${failureSummary}`).toBe(6);
+      expect(r.total).toBe(6);
       expect(r.averagePRR).toBe(100);
       expect(r.averageKP).toBe(5);
     });
