@@ -66,7 +66,7 @@ The string `make atomic commits everything make file edits` must appear verbatim
 - `docs/PR-PLAN.md` — what to do when issues are found AFTER the PR is open (block merge, write PR-PLAN, parallel fix, push to same branch).
 - `docs/POSTPR.md` — after `/review` PASS three-step cleanup.
 - `docs/FIXEDFLOW.md` — the full issue → grill → driver → PR → squash-merge fixed flow.
-- `docs/adr/0007-local-review-as-gate.md` — why local `/review` is the gate, not cloud Codex.
+- `docs/adr/0007-local-review-skill-as-review-gate.md` — why local `/review` is the gate, not cloud Codex.
 - User-level `atomic-commits-on-edit.md` — same rule one layer up, applies in every git repo.
 
 ## Verification
