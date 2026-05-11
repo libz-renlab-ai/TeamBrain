@@ -119,6 +119,8 @@ Forbidden dispatch types (driver must refuse / refusal layer must reject):
 
 **实证 / 反例**：issue #146 是 epic 但**未在创建时点贴 label / 未指名 coordinator** 即开放给 contributor self-claim；5 个 child PR ship 完成后 AI-triage 才补 `ready-for-human` label。该路径**不构成本节定义的 epic carve-out**（缺创建时点 label + coordinator 字段），retroactive 操作无约束效力。详细复盘见 `docs/POSTMORTEM.md`。
 
+**Triage 入口 — grill 完发现 issue 太大怎么办**：FIXEDFLOW step 2 与 step 3 之间，maintainer **必须**先对 grilled issue 跑一遍「单 PR 可 ship 测试」。命中任一 oversized 信号（≥2 独立 expected output / 跨无关 package 顺序依赖 / 跨团队 / grill 自己写了拆分 / 预估 diff > 1500 LOC 或 > 30 文件 / draft 试做必然命中跨区域 P1/P2）→ 走 `docs/TRIAGE-AND-SPLIT.md` 拆出 ≥ 2 个新 child issue，原 issue 在 split 同一刻升级为本节定义的 epic tracking issue（**这一刻就是 epic 结构的"创建时点"**，不算 retroactive labeling）。**禁止**：直接对 oversized issue 跑 `/fixed-flow-driver`；也禁止 driver / watcher 自动判定 oversized 并拆。
+
 ## grill 评论必须满足
 
 - comment 作者 = issue 作者本人。
@@ -171,6 +173,7 @@ driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skil
 - `docs/HOW-TO-ISSUE.md` — 已归档；FIXEDFLOW 取代之。
 - `docs/POSTMORTEM.md` — multi-PR recap comment 规则；epic 类 issue 的复盘叙事约束在那里（含 hard rule #6 role bypass + #7 A/B/C schema）。
 - `docs/HOW-TO-CLAIM-ISSUE.md` — `ready-for-human` label 语义 + AI-triage retroactive ban；epic carve-out 引用。
+- `docs/TRIAGE-AND-SPLIT.md` — grill 完发现 issue 太大时的 triage 入口（step 2 与 step 3 之间的人手 maintainer 判断瞬间）；what / when / how / 反模式 / 实证。
 
 ## 验证（语义 probe，不写 canned-answer block）
 

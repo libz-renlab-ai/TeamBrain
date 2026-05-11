@@ -57,6 +57,8 @@ AI-triage 绑定到 issue 创建后的初次扫描；**禁止**给已有 merged 
 
 maintainer 在 issue 创建之初判定为 epic / 需要 human coordination 时：必须在 issue body 里直接说，并在创建时点贴 `ready-for-human` label，最好同步指名 coordinator（见 `docs/FIXEDFLOW.md` epic carve-out 段）。
 
+**特殊情况：grill 已经回来、maintainer 这一刻发现 issue 其实太大** → 走 `docs/TRIAGE-AND-SPLIT.md` 的 triage-and-split 流程，**不要**直接跑 `/fixed-flow-driver`：拆出 ≥ 2 个新 child issue（各自 ≤ 50 字 + 独立 grill 循环），原 issue 在 split 当刻升级为 epic tracking 贴。这一刻贴 `epic` / `ready-for-human` label **不算**事后追认 —— 因为 epic 结构本身就是这一刻"被创建"的，POSTMORTEM hard rule #6 禁止的是「已经在 ship 之后才补 label」，不是「grill 之后才意识到要 epic」。
+
 ## 三步流程
 
 ### STEP 1 — 派 explore agent 摸清现场
@@ -168,6 +170,7 @@ env -u GITHUB_TOKEN gh issue list --repo libz-renlab-ai/TeamBrain --search "<key
 - **PR plan 四段结构** → `docs/HOWTO-PLAN-PR.md`（plan / expected outputs / how-to-verify / claudefast probes）。
 - **PR 开了之后才发现 issue** → `docs/PR-PLAN.md`（不开 follow-up issue，block merge）。
 - **/review PASS 之后的收尾** → `docs/POSTPR.md`（squash-merge → ExitWorktree → 父 checkout `git pull --ff-only`）。
+- **grill 完发现 issue 太大** → `docs/TRIAGE-AND-SPLIT.md`（maintainer 在 step 2 与 step 3 之间的人手判断瞬间；拆 ≥ 2 child issue + 原 issue 升 epic tracking 贴）。
 - **bug 报告** → `docs/BUGREPORT.md`（system info / repro / raw logs 三段）。
 - **写 issue 自己（reporter 视角）** → 已统一到 `docs/FIXEDFLOW.md`；旧 `docs/HOW-TO-ISSUE.md` 已归档至 `docs/archive/`。
 
