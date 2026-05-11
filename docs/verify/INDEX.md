@@ -22,6 +22,7 @@ backstop).
 | 3 | [JUDGE.md](JUDGE.md) | Feature-level JUDGE call (`claudefast -p`, **no** `--bare`) |
 | 4 | [META-JUDGE.md](META-JUDGE.md) | Loop-progress judge (`claudefast --bare -p`) + divergence detector |
 | 5 | [E2E-LEARNING.md](E2E-LEARNING.md) | ② AI 真的能学 端到端闭环的 third-party harness: Counterfactual Ablation (`scipy.stats.ttest_rel`) + Regression Replay (`pnpm teamagent fixture replay` byte-diff) — deterministic, LLM-cannot-fake |
+| 6 | [BUSINESS-FEATURE-HARNESS-MAP.md](BUSINESS-FEATURE-HARNESS-MAP.md) | 把 [`BUSINESS-FEATURES.md`](../BUSINESS-FEATURES.md) 的 3 条 canonical business feature 与现存 harness 资产一一对齐（SHIPPED / VISION + LLM-cannot-fake 列），一页 status map |
 
 ## When to use which
 
