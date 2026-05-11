@@ -1577,8 +1577,12 @@ export function renderInitResult(result: InitResult): string {
     lines.push("⚠️  预览模式（--dry-run）：以下操作不会实际执行\n");
   }
 
-  // Group steps for display
+  // Group steps for display. `nested-init-guard` lives in its own top group
+  // so that a guard short-circuit doesn't silently emit only the bottom
+  // "❌ 安装未完成" footer with no visible reason. friendlyError() preserves
+  // the full ancestor-path + --force-nested-init hint.
   const stepGroups: Array<{ icon: string; label: string; stepKeys: string[] }> = [
+    { icon: "🛡️ ", label: "前置守卫", stepKeys: ["nested-init-guard"] },
     { icon: "🔍", label: "检测项目环境", stepKeys: ["detect-stack"] },
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
     { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook", "audit-orphan-hooks"] },
@@ -1695,6 +1699,7 @@ function buildPostInitWhatsNewTail(): string {
 
 function stepLabel(step: string): string {
   const map: Record<string, string> = {
+    "nested-init-guard": "嵌套项目守卫",
     "pre-check": "前置检查",
     "detect-stack": "技术栈",
     "create-dirs": "目录创建",
@@ -1725,6 +1730,9 @@ function friendlyError(raw: string): string {
   if (raw.includes("CLAUDE.md") && (raw.includes("EACCES") || raw.includes("不可读"))) {
     return "CLAUDE.md 文件不可读，请检查权限";
   }
+  // nested-init-guard detail is already user-actionable (carries ancestor path
+  // + --force-nested-init hint); never truncate it.
+  if (raw.includes("ancestor TeamAgent project")) return raw;
   // For pre-check failures that already have friendly messages, pass through
   if (raw.length < 120) return raw;
   return raw.slice(0, 100) + "...";

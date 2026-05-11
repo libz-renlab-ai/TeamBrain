@@ -745,6 +745,32 @@ describe("renderInitResult", () => {
     expect(out).toContain("前置检查");
   });
 
+  // Regression: when executeInit short-circuits on `nested-init-guard`, the
+  // returned InitResult has exactly one step whose key isn't listed in any
+  // stepGroup. The render loop silently dropped it, so users only saw the
+  // bottom "❌ 安装未完成 ... 运行 teamagent doctor" footer with NO reason —
+  // and doctor then sent them back to init in a loop. Surface the full detail
+  // (ancestor path + --force-nested-init hint) so the user can act.
+  it("renders nested-init-guard failure with ancestor path + --force-nested-init hint", () => {
+    const out = renderInitResult({
+      ok: false,
+      dryRun: false,
+      steps: [{
+        step: "nested-init-guard",
+        status: "failed",
+        detail:
+          "detected ancestor TeamAgent project at /Users/m1/projects; refusing to " +
+          "create duplicate .teamagent/ in /Users/m1/projects/demo-repo — cd to the " +
+          "project root or use --force-nested-init to override.",
+      }],
+      summary: { stack: "", presetAdded: 0, seedAdded: 0, importedRules: 0, totalActiveEntries: 0 },
+    });
+    expect(out).toContain("❌ 安装未完成");
+    // Specific anchors the user must see in order to act:
+    expect(out).toContain("ancestor TeamAgent project at /Users/m1/projects");
+    expect(out).toContain("--force-nested-init");
+  });
+
   it("success without --install-plugins shows hint about team plugins", () => {
     const out = renderInitResult({
       ok: true,
