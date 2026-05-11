@@ -2,6 +2,9 @@ node_modules/
 dist/
 .DS_Store
 *.log
+# evidence files under docs/plans/ are commit-worthy proof artifacts;
+# the *.log umbrella above must not swallow them.
+!docs/plans/**/*.log
 .env
 .env.local
 coverage/

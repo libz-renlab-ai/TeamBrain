@@ -1,0 +1,63 @@
+(node:47578) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+🔍 检测项目环境...
+   技术栈: (识别不到典型信号)
+
+📦 初始化知识库...
+   ✅ 前置检查: 所有前置检查通过
+   ✅ 目录创建: 已确保目录存在: 2 个
+   ✅ 预置规则: 注入元原则 0 条（总 8 条，8 条已存在）
+   ✅ 打包规则: 注入打包规则 0 条（总 58 条，58 条已存在）
+   ✅ 扫描规则: CLAUDE.md / AGENTS.md / .cursorrules 均不存在，跳过导入
+   ✅ 导入规则: 无规则可导入
+
+🔗 注册 Hook...
+   ✅ Hook 注册: 已注册: /Users/m1/projects/demo-repo/.claude/settings.local.json · 已写入用户级 ~/.claude/settings.json (Issue #161 viral install) · 已合并已有 statusLine (scope=user) → 用户原内容 + TeamBrain 状态栏会同时渲染
+   ✅ 孤儿 .sh 审计: 无孤儿 .sh
+
+📄 导出 Skills...
+   ✅ Skills: 已导出 68 条候选规则到 Skills；CLAUDE.md 规则块输出已禁用
+   ⏭  FIXEDFLOW Skill: 源 .claude/skills/claim-to-merge/SKILL.md 不存在（仅 TeamBrain 仓库需要）
+   ✅ 静态用户级 Skills: 已镜像静态用户级 skills：created=3 skip-exists=1 skip-disabled=4
+
+📦 Stack packs...
+   ✅ Pack 提示: ℹ️  暂无 stack packs 可用（teamagent pack list 查看）
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ TeamAgent 安装成功！
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌊 FIXEDFLOW — 本仓库 issue → merged code 的唯一路径
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  产品特性
+    你写 ≤50 字 issue + 贴 grill 评论 + 加 grill-ready label。
+    maintainer 在 Claude Code 里手动跑 /fixed-flow-driver skill:
+    worktree → 实现 → /review fix-loop（循环至 PASS）→ 普通 PR →
+    squash-merge → 清理。无 watcher / 无后台轮询 / 无自动 dispatch。
+    /review 出 issue 时强制走 PR-PLAN（禁开 follow-up issue）；
+    POSTPR 仅 squash-merge（禁 --merge / --rebase）。
+
+  快速验证（复制运行）
+    claudefast -p "explain TeamBrain FIXEDFLOW: 5 steps, who triggers step 3"
+
+  详情
+    .claude/skills/claim-to-merge/SKILL.md (TL;DR routing)
+    docs/FIXEDFLOW.md / docs/PR-PLAN.md / docs/POSTPR.md (canonical)
+
+下一步:
+  1. 重新打开 Claude Code（让 hook 生效）
+  2. 运行 teamagent doctor 验证安装
+  3. 运行 teamagent stats 查看知识库状态
+
+💡 团队标配插件（与 .claude/settings.json:enabledPlugins 同步）默认不装
+   需要时运行: teamagent install-plugins
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🆕 本次安装的 0.11.0 新增:
+
+  • [Deprecated] **`teamagent install-user-hook` is now a soft-retire shim**. The
+  • [Fixed] **In-TeamBrain double-tap on Stop hook eliminated**. Pre-v0.11 the
+
+详情: teamagent whatsnew
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

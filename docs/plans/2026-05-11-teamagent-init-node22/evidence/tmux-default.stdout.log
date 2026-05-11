@@ -1,0 +1,6 @@
+🛡️  前置守卫...
+   ❌ 嵌套项目守卫: detected ancestor TeamAgent project at /Users/m1/projects; refusing to create duplicate .teamagent/ in /Users/m1/projects/demo-repo — cd to the project root or use --force-nested-init to override.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+❌ 安装未完成，请修复以上问题后重试
+   运行 teamagent doctor 获取诊断建议

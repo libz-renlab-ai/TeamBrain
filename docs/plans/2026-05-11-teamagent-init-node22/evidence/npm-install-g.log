@@ -1,0 +1,15 @@
+=== before install ===
+file:///Users/m1/.nvm/versions/node/v22.21.1/lib/node_modules/teamagent/dist/bin.js:5994
+  const err = new Error(message);
+              ^
+
+=== npm install -g /Users/m1/projects/TeamBrain/.claude/worktrees/wise-percolating-rainbow/packages/teamagent ===
+
+removed 8 packages, and changed 1 package in 3s
+install_exit_code=0
+
+=== after install ===
+0.11.0
+(node:16534) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+post_version_exit_code=0
