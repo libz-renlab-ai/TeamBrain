@@ -294,7 +294,7 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   checks.push(hookScriptCheck);
   await tryFix(hookScriptCheck);
 
-  // Check 7b (issue #280): real hook spawn — warn-only.
+  // Check 7b (issue #280): real hook spawn — strict.
   // checkHookScript only verifies the .cjs file exists; a script can still
   // crash at module-load on `require()` of a missing transitive dep (#158
   // removed web-tree-sitter et al. from teamagent's dependencies, but the
@@ -306,10 +306,12 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
   // stdin (so bin-session-start's parseInput returns null and the hook
   // fast-exits 0 without running auto-init / cleanup / decideAction).
   //
-  // Commit 1: warn-only. Probe failures surface as `skip` with a ⚠️ -prefixed
-  // detail so they show up in the report but do not flip allPassed.
-  // Commit 4 (after the underlying spawn + lazy-require fixes have landed)
-  // upgrades this to a strict `fail`.
+  // Now strict (commit 4 — was warn-only in commit 1): probe failures
+  // return `status: "fail"`, flipping allPassed and forcing the user to
+  // act. The underlying spawn fix (commit 2: Windows shell:true) and
+  // import-graph contract (commit 3: chaos test + extended scan) keep
+  // the false-positive rate at zero on healthy installs, so promoting
+  // to a strict gate no longer paints green installs red.
   if (hookScriptCheck.status === "pass") {
     checks.push(await checkHookSpawn(hookScriptCheck.detail, opts.hookProbe));
   }
@@ -794,12 +796,17 @@ const defaultHookProbe: HookProbe = (scriptPath, opts = {}) => {
 };
 
 /**
- * Issue #280 commit 1: warn-only health check that actually spawns the
- * SessionStart hook script. Returns `pass` when the process starts and
- * exits 0; any failure surfaces as `skip` with a ⚠️-prefixed detail so it
- * shows up in the report without flipping `allPassed`. Commit 4 will
- * upgrade the skip to a strict fail once the underlying fixes have
- * landed.
+ * Issue #280: strict health check that actually spawns the SessionStart
+ * hook script. Returns `pass` when the process starts and exits 0;
+ * any failure (spawn error / timeout / non-zero exit) returns
+ * `status: "fail"`, which flips `allPassed` and surfaces the regression
+ * to the user.
+ *
+ * Strict since commit 4 of the issue #280 chain. Commit 1 introduced
+ * this check as warn-only (`status: "skip"`) so it could ship and be
+ * observed before the underlying spawn (commit 2) and import-graph
+ * (commit 3) work landed. With those fixes in place, healthy installs
+ * have zero false-positive surface, so we promote the gate to strict.
  */
 export async function checkHookSpawn(
   scriptPath: string,
@@ -809,16 +816,16 @@ export async function checkHookSpawn(
   if (result.spawnError) {
     return {
       name: "hook-spawn",
-      status: "skip",
-      detail: `⚠️  hook spawn 启动失败: ${result.spawnError.slice(0, 200)}`,
+      status: "fail",
+      detail: `hook spawn 启动失败: ${result.spawnError.slice(0, 200)}`,
       fix: "重装 teamagent (npm install -g teamagent) 或检查 node 是否可用",
     };
   }
   if (result.timedOut) {
     return {
       name: "hook-spawn",
-      status: "skip",
-      detail: `⚠️  hook spawn 超过 5s 未退出 — 可能卡在 require/import 链`,
+      status: "fail",
+      detail: `hook spawn 超过 5s 未退出 — 可能卡在 require/import 链`,
       fix: "检查 ~/.teamagent/postinstall.log 中的 stage=install-user-hook 与依赖完整性",
     };
   }
@@ -832,8 +839,8 @@ export async function checkHookSpawn(
   const stderrTail = result.stderr.trim().split("\n").slice(-5).join(" | ").slice(-400);
   return {
     name: "hook-spawn",
-    status: "skip",
-    detail: `⚠️  hook spawn exit=${result.exitCode} — ${stderrTail || "(no stderr)"}`,
+    status: "fail",
+    detail: `hook spawn exit=${result.exitCode} — ${stderrTail || "(no stderr)"}`,
     fix: "重装 teamagent 或检查 ~/.teamagent/postinstall.log",
   };
 }

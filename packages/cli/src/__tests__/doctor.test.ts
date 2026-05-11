@@ -792,8 +792,9 @@ describe("doctor --fix safety net (issue #172)", () => {
 });
 
 /**
- * Issue #280 commit 1: `checkHookSpawn` warn-only contract.
- * Probe is injectable so tests do not touch real child_process.
+ * Issue #280: `checkHookSpawn` strict contract (since commit 4 of the
+ * issue-280 chain). Probe is injectable so tests do not touch real
+ * child_process.
  */
 describe("checkHookSpawn (issue #280)", () => {
   function makeProbe(result: HookProbeResult): HookProbe {
@@ -810,7 +811,7 @@ describe("checkHookSpawn (issue #280)", () => {
     expect(out.fix).toBeUndefined();
   });
 
-  it("skips (warn) on non-zero exit and surfaces the last stderr line", async () => {
+  it("fails on non-zero exit and surfaces the last stderr line", async () => {
     const stderr = [
       "node:internal/modules/cjs/loader:1248",
       "  throw err;",
@@ -819,14 +820,13 @@ describe("checkHookSpawn (issue #280)", () => {
     ].join("\n");
     const probe = makeProbe({ exitCode: 1, stderr, timedOut: false });
     const out = await checkHookSpawn("/fake/bin-session-start.cjs", probe);
-    expect(out.status).toBe("skip");
-    expect(out.detail).toContain("⚠️");
+    expect(out.status).toBe("fail");
     expect(out.detail).toContain("exit=1");
     expect(out.detail).toContain("Cannot find module 'web-tree-sitter'");
     expect(out.fix).toBeDefined();
   });
 
-  it("skips (warn) when the probe reports a spawn error", async () => {
+  it("fails when the probe reports a spawn error", async () => {
     const probe = makeProbe({
       exitCode: null,
       stderr: "",
@@ -834,18 +834,16 @@ describe("checkHookSpawn (issue #280)", () => {
       spawnError: "Error: ENOENT: no such file or directory, open '/missing/node'",
     });
     const out = await checkHookSpawn("/fake/bin-session-start.cjs", probe);
-    expect(out.status).toBe("skip");
-    expect(out.detail).toContain("⚠️");
+    expect(out.status).toBe("fail");
     expect(out.detail).toContain("启动失败");
     expect(out.detail).toContain("ENOENT");
     expect(out.fix).toContain("npm install -g teamagent");
   });
 
-  it("skips (warn) when the probe times out", async () => {
+  it("fails when the probe times out", async () => {
     const probe = makeProbe({ exitCode: null, stderr: "", timedOut: true });
     const out = await checkHookSpawn("/fake/bin-session-start.cjs", probe);
-    expect(out.status).toBe("skip");
-    expect(out.detail).toContain("⚠️");
+    expect(out.status).toBe("fail");
     expect(out.detail).toContain("5s");
     expect(out.detail).toContain("require/import");
   });
@@ -854,15 +852,18 @@ describe("checkHookSpawn (issue #280)", () => {
     const longLine = "a".repeat(2_000);
     const probe = makeProbe({ exitCode: 1, stderr: longLine, timedOut: false });
     const out = await checkHookSpawn("/fake/bin-session-start.cjs", probe);
-    expect(out.status).toBe("skip");
+    expect(out.status).toBe("fail");
     // Detail prefix + truncated stderr should be bounded.
     expect(out.detail.length).toBeLessThan(600);
   });
 
-  it("never flips allPassed in commit 1 (warn-only contract)", async () => {
-    // Spawn-error / timeout / non-zero must all report `skip`, never `fail`.
-    // This locks in the commit-1 vs commit-4 boundary: until the underlying
-    // bugs are fixed, doctor stays green on hook-spawn issues by design.
+  it("strictly fails on every non-pass variant — flipping allPassed", async () => {
+    // After commit 4 the warn-only era is over: spawn-error / timeout /
+    // non-zero exit all return `fail`, so an installation with a broken
+    // hook surfaces red. The underlying spawn fix (commit 2) + import-
+    // graph contract (commit 3) keep healthy installs at zero
+    // false-positive rate, so this strict gate does not paint green
+    // installs red.
     const variants: HookProbeResult[] = [
       { exitCode: 1, stderr: "Error: ...", timedOut: false },
       { exitCode: null, stderr: "", timedOut: false, spawnError: "EACCES" },
@@ -870,8 +871,8 @@ describe("checkHookSpawn (issue #280)", () => {
     ];
     for (const v of variants) {
       const r = await checkHookSpawn("/x", makeProbe(v));
-      expect(r.status).not.toBe("fail");
-      expect(r.status).toBe("skip");
+      expect(r.status).toBe("fail");
+      expect(r.status).not.toBe("skip");
     }
   });
 });
