@@ -1,0 +1,8 @@
+{
+  "overall": "PASS",
+  "failures": [],
+  "reasoning": "All 5 criteria met: exit code is 0; .teamagent/ contains knowledge.db and .project-root; stdout has 8 checkmark lines plus banner 'TeamAgent 安装成功' on line 24; stderr contains only business-level SQLite ExperimentalWarning, no unhandled panics.",
+  "evidence_dir_read": "docs/plans/2026-05-11-feature1-init-judge/evidence/20260511T130402Z-feature1-76e8d1d0/",
+  "judge_agent_type": "Explore subagent (read-only, no source code access)",
+  "judged_at": "2026-05-11T13:05:00Z"
+}
