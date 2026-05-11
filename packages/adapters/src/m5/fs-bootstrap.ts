@@ -93,6 +93,11 @@ export function wrapHookWithTeamagentBlock(content: string): string {
 /**
  * Insert/refresh the TeamAgent block in an existing user hook.
  * Idempotent: running twice with the same `content` is a no-op.
+ *
+ * PR #282 review follow-up: throws when only one of START/END marker is
+ * present (or END appears before START) — otherwise a corrupted hook
+ * silently grows a second START marker on next apply, and the run after
+ * that truncates user code between the orphan START and the new END.
  */
 export function augmentHookWithTeamagentBlock(
   existing: string,
@@ -101,7 +106,17 @@ export function augmentHookWithTeamagentBlock(
   const body = stripShebang(content).replace(/\n+$/, "");
   const startIdx = existing.indexOf(TEAMAGENT_HOOK_BLOCK_START);
   const endIdx = existing.indexOf(TEAMAGENT_HOOK_BLOCK_END);
-  if (startIdx >= 0 && endIdx > startIdx) {
+  const hasStart = startIdx >= 0;
+  const hasEnd = endIdx >= 0;
+  if (hasStart !== hasEnd || (hasStart && hasEnd && endIdx <= startIdx)) {
+    throw new Error(
+      "teamagent hook block markers are corrupted in existing hook " +
+        "(only one of START/END found, or END appears before START). " +
+        "Refusing to overwrite to avoid silent data loss. " +
+        "Please restore both markers manually, or remove the existing block.",
+    );
+  }
+  if (hasStart && hasEnd) {
     const before = existing.slice(0, startIdx).replace(/\n+$/, "");
     const after = existing
       .slice(endIdx + TEAMAGENT_HOOK_BLOCK_END.length)
@@ -216,12 +231,27 @@ export class FsBootstrap implements BootstrapPort {
       } else if (chainable) {
         // User already has a hook — chain-load by adding/refreshing the
         // marker block instead of silently skipping (W15-003 root cause).
-        const augmented = augmentHookWithTeamagentBlock(existing, content);
-        if (augmented === existing) {
-          result.skipped.push(rel);
-        } else {
-          await fs.writeFile(p, augmented, "utf8");
-          result.chained.push(rel);
+        // PR #282 review follow-up: if the marker pair is corrupted in
+        // the existing hook, the helper throws. Catch per-file, leave the
+        // hook untouched (no data loss), and bucket it as skipped so the
+        // renderer surfaces the file to the user.
+        try {
+          const augmented = augmentHookWithTeamagentBlock(existing, content);
+          if (augmented === existing) {
+            result.skipped.push(rel);
+          } else {
+            await fs.writeFile(p, augmented, "utf8");
+            result.chained.push(rel);
+          }
+        } catch (e) {
+          if (
+            e instanceof Error &&
+            e.message.includes("teamagent hook block markers are corrupted")
+          ) {
+            result.skipped.push(rel);
+          } else {
+            throw e;
+          }
         }
       } else {
         // Non-hook file (e.g. .teamagent/manifest.json) — keep idempotency

@@ -134,7 +134,6 @@ const PATTERNS: PatternRule[] = [
   },
 ];
 
-const BASE64_CANDIDATE_RE = /[A-Za-z0-9+/]{20,}={0,2}/g;
 const SPACE_FRAGMENT_RE = /[\s ]+/g;
 
 function isPrintable(s: string): boolean {
@@ -170,6 +169,50 @@ function scanRaw(text: string): SecretMatch[] {
     }
   }
   return out;
+}
+
+/**
+ * Recursively decode base64 candidates and feed the result through scanRaw.
+ *
+ * `outerAnchor` pins the reported {start,end} to the user-visible span in
+ * the original input — when we recurse into a nested base64 blob, the
+ * inner offsets are meaningless to the caller, so we keep the outer span.
+ * `prefix` accumulates "b64:" once per layer, so `snippet` tells the
+ * caller how deeply the secret was nested.
+ *
+ * Caller passes depthRemaining = 2 (PR #282 review follow-up to W15-004:
+ * one-level decode missed double-encoded secrets).
+ */
+function scanBase64Recursive(
+  text: string,
+  outerAnchor: { start: number; end: number } | null,
+  prefix: string,
+  depthRemaining: number,
+  out: SecretMatch[],
+): void {
+  if (depthRemaining <= 0) return;
+  const re = /[A-Za-z0-9+/]{20,}={0,2}/g;
+  let cand: RegExpExecArray | null;
+  while ((cand = re.exec(text)) !== null) {
+    let decoded: string;
+    try {
+      decoded = Buffer.from(cand[0], "base64").toString("utf-8");
+    } catch {
+      continue;
+    }
+    if (!isPrintable(decoded)) continue;
+    const anchor =
+      outerAnchor ?? { start: cand.index, end: cand.index + cand[0].length };
+    for (const inner of scanRaw(decoded)) {
+      out.push({
+        kind: inner.kind,
+        snippet: `${prefix}${inner.snippet}`,
+        start: anchor.start,
+        end: anchor.end,
+      });
+    }
+    scanBase64Recursive(decoded, anchor, `b64:${prefix}`, depthRemaining - 1, out);
+  }
 }
 
 /**
@@ -224,25 +267,13 @@ export function scanForSecrets(text: string): SecretScanResult {
     }
   }
 
-  // W15-004: base64-decode candidate blobs and re-scan the decoded text.
-  for (let cand = BASE64_CANDIDATE_RE.exec(safe); cand !== null; cand = BASE64_CANDIDATE_RE.exec(safe)) {
-    let decoded: string;
-    try {
-      decoded = Buffer.from(cand[0], "base64").toString("utf-8");
-    } catch {
-      continue;
-    }
-    if (!isPrintable(decoded)) continue;
-    for (const inner of scanRaw(decoded)) {
-      matches.push({
-        kind: inner.kind,
-        snippet: `b64:${inner.snippet}`,
-        start: cand.index,
-        end: cand.index + cand[0].length,
-      });
-    }
-  }
-  BASE64_CANDIDATE_RE.lastIndex = 0;
+  // W15-004 (+ PR #282 review follow-up): base64-decode candidate blobs and
+  // re-scan the decoded text. Recurse one extra level (depth 2) so a
+  // double-encoded secret — Buffer.from(base64(sk-...)).toString("base64")
+  // — does not slip past. Each layer is still capped by MAX_SCAN_INPUT_BYTES
+  // (decoded output is shorter than its source, so the budget is
+  // monotonically bounded).
+  scanBase64Recursive(safe, null, "b64:", 2, matches);
 
   const deduped = dedupApiTokenOverCreditCard(matches);
   return { hit: deduped.length > 0, matches: deduped };

@@ -80,6 +80,48 @@ describe("hook chain-load helpers (W15-003)", () => {
     expect(twice).toBe(once);
   });
 
+  it("PR #282 review: refuses to overwrite when only START marker is present (corrupted hook)", () => {
+    const corrupted =
+      "#!/bin/sh\necho [user-top]\n" +
+      TEAMAGENT_HOOK_BLOCK_START +
+      "\nold-body-no-end\nuser-trailing-code\n";
+    expect(() =>
+      augmentHookWithTeamagentBlock(
+        corrupted,
+        "#!/usr/bin/env bash\n" + TEAMAGENT_BODY,
+      ),
+    ).toThrow(/markers are corrupted/);
+  });
+
+  it("PR #282 review: refuses to overwrite when only END marker is present (corrupted hook)", () => {
+    const corrupted =
+      "#!/bin/sh\necho [user-top]\n" +
+      "user-body\n" +
+      TEAMAGENT_HOOK_BLOCK_END +
+      "\nuser-trailing-code\n";
+    expect(() =>
+      augmentHookWithTeamagentBlock(
+        corrupted,
+        "#!/usr/bin/env bash\n" + TEAMAGENT_BODY,
+      ),
+    ).toThrow(/markers are corrupted/);
+  });
+
+  it("PR #282 review: refuses to overwrite when END appears before START (corrupted hook)", () => {
+    const corrupted =
+      "#!/bin/sh\n" +
+      TEAMAGENT_HOOK_BLOCK_END +
+      "\nuser-middle\n" +
+      TEAMAGENT_HOOK_BLOCK_START +
+      "\n";
+    expect(() =>
+      augmentHookWithTeamagentBlock(
+        corrupted,
+        "#!/usr/bin/env bash\n" + TEAMAGENT_BODY,
+      ),
+    ).toThrow(/markers are corrupted/);
+  });
+
   it("replaces TeamAgent block when payload changes (block, not duplicate)", () => {
     const userHook = "#!/bin/sh\necho [user]\n";
     const v1 = augmentHookWithTeamagentBlock(
@@ -147,6 +189,39 @@ describe("FsBootstrap.applyInfection chain-load (W15-003)", () => {
     expect(merged).toContain("teamagent m5-sync --quiet");
     expect(merged).toContain(TEAMAGENT_HOOK_BLOCK_START);
     expect(merged).toContain(TEAMAGENT_HOOK_BLOCK_END);
+  });
+
+  it("PR #282 review: corrupted markers in user hook are skipped (no data loss, no abort)", async () => {
+    await fs.mkdir(path.join(projectRoot, ".githooks"), { recursive: true });
+    const corrupted =
+      "#!/bin/sh\necho [user-top]\n" +
+      TEAMAGENT_HOOK_BLOCK_START +
+      "\nold-body-with-missing-end\necho [user-trailing-that-would-be-lost]\n";
+    await fs.writeFile(
+      path.join(projectRoot, ".githooks", "post-merge"),
+      corrupted,
+    );
+
+    const plan: InfectionPlan = {
+      required: true,
+      files_to_create: {
+        ".githooks/post-merge":
+          "#!/usr/bin/env bash\nteamagent m5-sync --quiet\n",
+      },
+      dirs_to_create: [],
+    };
+    const r = await makePort().applyInfection(projectRoot, plan);
+
+    // skipped bucket, not chained or written — user content preserved verbatim
+    expect(r.skipped).toContain(".githooks/post-merge");
+    expect(r.chained).not.toContain(".githooks/post-merge");
+    expect(r.written).not.toContain(".githooks/post-merge");
+
+    const onDisk = await fs.readFile(
+      path.join(projectRoot, ".githooks", "post-merge"),
+      "utf8",
+    );
+    expect(onDisk).toBe(corrupted);
   });
 
   it("fresh write wraps payload with markers (so re-apply is a no-op)", async () => {
