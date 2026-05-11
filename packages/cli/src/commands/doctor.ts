@@ -5,7 +5,11 @@ import os from "node:os";
 import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { openDb } from "@teamagent/adapters";
-import { stripLegacyTeamagentBlock } from "@teamagent/core";
+import {
+  planStaticUserSkillInstall,
+  STATIC_USER_SKILLS,
+  stripLegacyTeamagentBlock,
+} from "@teamagent/core";
 import { unifiedDiff } from "./doctor-diff.js";
 
 const _require = createRequire(import.meta.url);
@@ -274,6 +278,11 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
 
   // Check 9: plugin sync (teamagent plugin files present in .claude/plugins)
   checks.push(checkPluginSync(cwd, home));
+
+  // Check 9b: static user-level skills propagated (docs/INIT-PROPAGATION.md).
+  // Reports whether the four bundled static skills were mirrored to both
+  // ~/.claude/skills/<name>/SKILL.md and ~/.codex/skills/<name>/SKILL.md.
+  checks.push(checkStaticUserSkillsPropagated(home));
 
   // Check 10: codex binary presence
   checks.push(checkCodexBin(opts.codexProbe));
@@ -718,6 +727,49 @@ export function checkSettingsJsonScope(
  * Check that teamagent plugin files are present in .claude/plugins (project level)
  * or ~/.claude/plugins (user level). A plugin directory exists if install-plugins ran.
  */
+/**
+ * Issue (#288, follow-up to #218 + #287): report whether the four static
+ * user-level skills documented in `docs/INIT-PROPAGATION.md` were mirrored
+ * to both `~/.claude/skills/<name>/SKILL.md` and `~/.codex/skills/<name>/SKILL.md`.
+ *
+ * Status semantics:
+ * - `pass` — every (skill, target) destination file exists.
+ * - `fail` — at least one destination is missing.
+ *
+ * Fix recipe: `teamagent init` re-runs the mirror step.
+ */
+export function checkStaticUserSkillsPropagated(home: string): DoctorCheckResult {
+  const plan = planStaticUserSkillInstall({
+    homeDir: home,
+    fileExists: (p) => fs.existsSync(p),
+    joinPath: path.join,
+  });
+  const expected = plan.length;
+  const present = plan.filter((e) => e.action === "skip-exists").length;
+  const missingEntries = plan.filter((e) => e.action === "create");
+
+  if (present === expected) {
+    return {
+      name: "skills-propagated",
+      status: "pass",
+      detail: `static user skills propagated ✓ ${present}/${expected}（${STATIC_USER_SKILLS.length} skills × 2 targets）`,
+    };
+  }
+
+  const missingShort = missingEntries
+    .slice(0, 4)
+    .map((e) => `${e.skill}/${e.target}`)
+    .join(", ");
+  const more = missingEntries.length > 4 ? ` +${missingEntries.length - 4}` : "";
+
+  return {
+    name: "skills-propagated",
+    status: "fail",
+    detail: `static user skills propagation incomplete: ${present}/${expected}; missing ${missingShort}${more}`,
+    fix: "teamagent init",
+  };
+}
+
 export function checkPluginSync(cwd: string, home: string): DoctorCheckResult {
   const projectPluginsDir = path.join(cwd, ".claude", "plugins");
   const userPluginsDir = path.join(home, ".claude", "plugins");

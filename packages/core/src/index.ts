@@ -1,5 +1,18 @@
 export { scoreEntry } from "./scorer.js";
 export {
+  STATIC_USER_SKILLS,
+  STATIC_USER_SKILL_TARGETS,
+  STATIC_USER_SKILL_CONTENT,
+  planStaticUserSkillInstall,
+  computeDestPath as computeStaticUserSkillDestPath,
+  type StaticUserSkillName,
+  type StaticUserSkillTarget,
+  type StaticUserSkillAction,
+  type StaticUserSkillPlanEntry,
+  type FileExistsProbe as StaticUserSkillFileExistsProbe,
+  type StaticUserSkillPlanOptions,
+} from "./static-user-skills/index.js";
+export {
   TRANSLATIONS,
   isDuckModeEnabled,
   duckify,

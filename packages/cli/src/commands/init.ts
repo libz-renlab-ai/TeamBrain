@@ -31,9 +31,11 @@ import {
   DEFAULT_IMPORT_CONFIDENCE,
   OBSERVED_FILE_LIST,
   renderPackPromptBody,
+  planStaticUserSkillInstall,
   type FilePresence,
   type ObservedFile,
   type ObservedFiles,
+  type StaticUserSkillTarget,
 } from "@teamagent/core";
 import {
   executePackAdd,
@@ -146,6 +148,14 @@ const CLAIM_TO_MERGE_SKILL_ID = "claim-to-merge" as const;
  * the function body, stepGroups (renderInitResult), or stepLabel mapping.
  */
 const MIRROR_CLAIM_STEP = `mirror-${CLAIM_TO_MERGE_SKILL_ID}-skill` as const;
+
+/**
+ * Step key for the broader static-user-skills mirror (docs/INIT-PROPAGATION.md).
+ * Distinct from MIRROR_CLAIM_STEP because this one targets the top-level
+ * ~/.claude/skills/<name>/ and ~/.codex/skills/<name>/ (not the
+ * ~/.claude/skills/teamagent/<name>/ namespace).
+ */
+const STATIC_USER_SKILLS_STEP = "mirror-static-user-skills" as const;
 
 /**
  * Repo-relative paths the FIXEDFLOW banner mentions. Exported so the unit
@@ -286,6 +296,7 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
   if (targetIncludesCodex(target)) {
     steps.push(doLinkCodexFiles(paths, dryRun));
   }
+  steps.push(doMirrorStaticUserSkills(paths, target, dryRun));
 
   // 末尾预热向量模型（首装首次触发；测试/离线/已 cached 时跳过）
   const skipWarmup =
@@ -1240,6 +1251,80 @@ function doMirrorClaimToMergeSkill(
 }
 
 /**
+ * Mirror the four static user-level skills (per `docs/INIT-PROPAGATION.md`)
+ * to top-level `~/.claude/skills/<name>/SKILL.md` and
+ * `~/.codex/skills/<name>/SKILL.md`. Distinct from
+ * `doMirrorClaimToMergeSkill` (which targets a teamagent-namespaced dir).
+ *
+ * Plan computed by pure `planStaticUserSkillInstall` from @teamagent/core.
+ * This shell does the actual fs writes, honoring:
+ * - skip-existing (don't overwrite user customizations)
+ * - target filter (`--target=claude` / `--target=codex`)
+ * - dry-run (preview only)
+ *
+ * Failure is non-fatal — same rationale as `mirrorProjectSkillToUserLevel`.
+ */
+function doMirrorStaticUserSkills(
+  paths: ReturnType<typeof resolvePaths>,
+  target: InitOptions["target"],
+  dryRun: boolean,
+): InitStepResult {
+  const targets: StaticUserSkillTarget[] = [];
+  if (targetIncludesClaude(target)) targets.push("claude");
+  if (targetIncludesCodex(target)) targets.push("codex");
+
+  const plan = planStaticUserSkillInstall({
+    homeDir: paths.home,
+    fileExists: (p) => fs.existsSync(p),
+    joinPath: path.join,
+    targets,
+  });
+
+  let createdCount = 0;
+  let skipExistingCount = 0;
+  let skipDisabledCount = 0;
+  const writeErrors: string[] = [];
+
+  for (const entry of plan) {
+    if (entry.action === "skip-disabled") {
+      skipDisabledCount++;
+      continue;
+    }
+    if (entry.action === "skip-exists") {
+      skipExistingCount++;
+      continue;
+    }
+    if (dryRun) {
+      createdCount++;
+      continue;
+    }
+    try {
+      fs.mkdirSync(path.dirname(entry.destPath), { recursive: true });
+      fs.writeFileSync(entry.destPath, entry.content, "utf-8");
+      createdCount++;
+    } catch (err) {
+      writeErrors.push(`${entry.skill}/${entry.target}: ${String(err).slice(0, 80)}`);
+    }
+  }
+
+  const summary = `created=${createdCount} skip-exists=${skipExistingCount} skip-disabled=${skipDisabledCount}`;
+
+  if (writeErrors.length > 0) {
+    return okStep(
+      STATIC_USER_SKILLS_STEP,
+      `⚠️ 部分镜像失败但 init 继续: ${summary}; errors=${writeErrors.join("; ").slice(0, 200)}`,
+    );
+  }
+  if (dryRun) {
+    return okStep(
+      STATIC_USER_SKILLS_STEP,
+      `(dry-run) 会镜像 ${createdCount} 个静态用户级 skill（${summary}）`,
+    );
+  }
+  return okStep(STATIC_USER_SKILLS_STEP, `已镜像静态用户级 skills：${summary}`);
+}
+
+/**
  * Append the FIXEDFLOW guidance banner (issue #218) to the given line buffer.
  * Doc paths come from FIXEDFLOW_BANNER_DOC_PATHS so the path-exists unit test
  * stays in sync with the banner content.
@@ -1498,7 +1583,7 @@ export function renderInitResult(result: InitResult): string {
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
     { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook", "audit-orphan-hooks"] },
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
-    { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills", MIRROR_CLAIM_STEP] },
+    { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills", MIRROR_CLAIM_STEP, STATIC_USER_SKILLS_STEP] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
     { icon: "📦", label: "Stack packs", stepKeys: ["load-pack", "pack-prompt"] },
   ];
@@ -1622,6 +1707,7 @@ function stepLabel(step: string): string {
     "install-plugins": "Plugin 安装",
     "compile-skills": "Skills",
     [MIRROR_CLAIM_STEP]: "FIXEDFLOW Skill",
+    [STATIC_USER_SKILLS_STEP]: "静态用户级 Skills",
     "link-codex-files": "Codex 软链接",
     "load-pack": "Pack 安装",
     "pack-prompt": "Pack 提示",

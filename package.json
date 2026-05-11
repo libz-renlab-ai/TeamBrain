@@ -21,6 +21,7 @@
     "build:publish": "pnpm --filter teamagent build",
     "prepublish:teamagent": "pnpm build:publish && cd packages/teamagent && npm pack --dry-run",
     "dashboard": "node scripts/generate-dashboard.cjs",
+    "regen-static-user-skills": "node scripts/regen-static-user-skills.cjs",
     "setup:codex-cloud": "bash scripts/setup-codex-cloud.sh",
     "install:from-md": "tsx scripts/install-from-md.ts"
   },
