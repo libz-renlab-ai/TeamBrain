@@ -1562,22 +1562,25 @@ export function parseInitArgs(argv: string[]): InitOptions {
     } else if (a.startsWith("--pack=")) {
       opts.pack = a.slice("--pack=".length);
     } else if (a === "--cwd") {
-      const value = argv[++i];
-      if (!value) throw new Error("--cwd 需要 <path> 值");
-      opts.cwd = value;
+      opts.cwd = parsePathArg("--cwd", argv[++i]);
     } else if (a.startsWith("--cwd=")) {
-      opts.cwd = a.slice("--cwd=".length);
+      opts.cwd = parsePathArg("--cwd", a.slice("--cwd=".length));
     } else if (a === "--home") {
-      const value = argv[++i];
-      if (!value) throw new Error("--home 需要 <path> 值");
-      opts.homeDir = value;
+      opts.homeDir = parsePathArg("--home", argv[++i]);
     } else if (a.startsWith("--home=")) {
-      opts.homeDir = a.slice("--home=".length);
+      opts.homeDir = parsePathArg("--home", a.slice("--home=".length));
     } else if (a.startsWith("--")) {
       process.stderr.write(`teamagent init: 忽略未知 flag ${a}\n`);
     }
   }
   return opts;
+}
+
+function parsePathArg(flag: "--cwd" | "--home", value: string | undefined): string {
+  if (!value || value.startsWith("-")) {
+    throw new Error(`${flag} 需要 <path> 值`);
+  }
+  return value;
 }
 
 function parseTarget(value: string | undefined): NonNullable<InitOptions["target"]> {

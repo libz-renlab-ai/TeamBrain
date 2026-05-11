@@ -688,6 +688,25 @@ describe("parseInitArgs", () => {
   it("--cwd without value throws", () => {
     expect(() => parseInitArgs(["--cwd"])).toThrowError(/--cwd/);
   });
+  it("--cwd followed by another flag throws instead of consuming it as a path", () => {
+    expect(() => parseInitArgs(["--cwd", "--skip-import"])).toThrowError(
+      /--cwd/,
+    );
+  });
+  it("--cwd= without value throws", () => {
+    expect(() => parseInitArgs(["--cwd="])).toThrowError(/--cwd/);
+  });
+  it("--home without value throws", () => {
+    expect(() => parseInitArgs(["--home"])).toThrowError(/--home/);
+  });
+  it("--home followed by another flag throws instead of consuming it as a path", () => {
+    expect(() => parseInitArgs(["--home", "--skip-hook"])).toThrowError(
+      /--home/,
+    );
+  });
+  it("--home= without value throws", () => {
+    expect(() => parseInitArgs(["--home="])).toThrowError(/--home/);
+  });
   it("unknown --foo flag does not break parsing (warning to stderr)", () => {
     const writeSpy = vi
       .spyOn(process.stderr, "write")
