@@ -5,6 +5,7 @@ import {
 } from "@teamagent/ports/contracts";
 import {
   ClaudeCodeLLMClient,
+  defaultSpawnerOptions,
   parseClaudeJsonOutput,
   type Spawner,
   type SpawnResult,
@@ -228,5 +229,51 @@ describe("parseClaudeJsonOutput", () => {
       { type: "result", is_error: true, result: "rate limited" },
     ]);
     expect(() => parseClaudeJsonOutput(stdout)).toThrow(/is_error/);
+  });
+});
+
+/**
+ * Issue #280: assert the Windows-conditional `shell: true` branch of the
+ * default spawner. Tested via the exported `defaultSpawnerOptions` helper
+ * so we do not have to monkey-patch `process.platform` or actually spawn.
+ *
+ * Why this matters: with `shell: false` on Windows, Node's spawn lookup
+ * does NOT honor PATHEXT and lands on the first `*.exe` in PATH — which
+ * on machines that have moved their global npm prefix is a stale
+ * `claude.exe` launcher pointing to a deleted `cli.js`. The user's
+ * `analyze --commit` then logs `failed=N, extracted=0` every cycle and
+ * learning silently halts.
+ */
+describe("defaultSpawnerOptions (issue #280)", () => {
+  it("enables shell on Windows so cmd.exe honors PATHEXT", () => {
+    const opts = defaultSpawnerOptions("win32");
+    expect(opts.shell).toBe(true);
+  });
+
+  it("keeps shell off on macOS / Linux to avoid an extra shell process", () => {
+    expect(defaultSpawnerOptions("darwin").shell).toBe(false);
+    expect(defaultSpawnerOptions("linux").shell).toBe(false);
+    expect(defaultSpawnerOptions("freebsd").shell).toBe(false);
+  });
+
+  it("always pipes stdio (stdin/stdout/stderr) so the client can write the prompt", () => {
+    for (const p of ["win32", "darwin", "linux"] as NodeJS.Platform[]) {
+      expect(defaultSpawnerOptions(p).stdio).toEqual(["pipe", "pipe", "pipe"]);
+    }
+  });
+
+  it("always keeps windowsHide=true to avoid console flashes from the Stop pipeline", () => {
+    for (const p of ["win32", "darwin", "linux"] as NodeJS.Platform[]) {
+      expect(defaultSpawnerOptions(p).windowsHide).toBe(true);
+    }
+  });
+
+  it("defaults to the current process.platform when called with no argument", () => {
+    // Sanity check: should not throw and should produce a consistent
+    // shape regardless of host platform. We only assert structural keys
+    // because the actual `shell` value depends on where this test runs.
+    const opts = defaultSpawnerOptions();
+    expect(Object.keys(opts).sort()).toEqual(["shell", "stdio", "windowsHide"]);
+    expect(opts.shell).toBe(process.platform === "win32");
   });
 });

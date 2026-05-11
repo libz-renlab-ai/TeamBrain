@@ -163,18 +163,47 @@ export function parseClaudeJsonOutput(stdout: string): string {
   return resultObj.result;
 }
 
+/**
+ * Issue #280: spawn options for the default spawner, exported so unit tests
+ * can assert the platform-conditional `shell` value without monkey-patching
+ * `process.platform`.
+ *
+ * On Windows we need `shell: true` so Node routes through cmd.exe, which
+ * honors PATHEXT. With the default `shell: false`, Node's bare lookup
+ * does NOT honor PATHEXT and lands on the first `*.exe` in PATH — which on
+ * machines that have moved their global npm prefix leaves a stale
+ * `claude.exe` launcher pointing to a deleted `cli.js` (the issue #280
+ * repro). On macOS / Linux, `shell: false` already works correctly and
+ * avoids an unnecessary shell process per call.
+ *
+ * Safety: `command` originates from `ClaudeCodeLLMClient.executable`
+ * (defaults to the hard-coded string `"claude"`, or an explicit injected
+ * absolute path), `args` are fixed literals from `complete()`
+ * (`-p --output-format json --no-session-persistence` + optional
+ * `--model <alias>`), and the prompt is passed via stdin. No user input
+ * reaches the shell, so `shell: true` does not introduce a shell-injection
+ * surface on Windows.
+ *
+ * `windowsHide: true` is kept on every platform — it's a no-op outside
+ * Windows but prevents the Async Stop pipeline from flashing a console
+ * window per call on Windows.
+ */
+export function defaultSpawnerOptions(
+  platform: NodeJS.Platform = process.platform,
+): { stdio: ["pipe", "pipe", "pipe"]; shell: boolean; windowsHide: boolean } {
+  return {
+    stdio: ["pipe", "pipe", "pipe"],
+    shell: platform === "win32",
+    windowsHide: true,
+  };
+}
+
 /** 默认的真实 spawner，基于 node:child_process。 */
 const defaultSpawner: Spawner = (command, args, options) => {
   return new Promise<SpawnResult>((resolve) => {
     let child: ChildProcess;
     try {
-      child = nodeSpawn(command, args, {
-        stdio: ["pipe", "pipe", "pipe"],
-        shell: false,
-        // Avoid popping up console windows on Windows. Async Stop pipeline can
-        // fire this repeatedly; without this the screen floods with terminals.
-        windowsHide: true,
-      });
+      child = nodeSpawn(command, args, defaultSpawnerOptions());
     } catch (err) {
       resolve({ kind: "error", message: String(err) });
       return;
