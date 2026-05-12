@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { TeamRuleFile } from "@teamagent/types";
+import type { TeamRuleAlive, TeamRuleFile } from "@teamagent/types";
 import {
   createFsCopyBridge,
   createMockLlmResponder,
@@ -36,12 +36,14 @@ describe("L4 fs-copy pipeline — avoidance rule propagation A → B", () => {
   });
 
   it("rule-OFF allows the tool input; rule-ON (after fs-copy) BLOCKS the same input", async () => {
+    const ruleId = "avoid-rm-rf-root";
+    const ruleContent = "rm -rf";
     const rule: TeamRuleFile = {
-      rule_id: "avoid-rm-rf-root",
+      rule_id: ruleId,
       author: "A",
       current: {
         deleted: false,
-        content: "rm -rf",
+        content: ruleContent,
         confidence: 0.95,
         modified_by: "A",
         modified_ts: "2026-05-12T07:00:00Z",
@@ -84,16 +86,16 @@ describe("L4 fs-copy pipeline — avoidance rule propagation A → B", () => {
     const landed = JSON.parse(
       await fs.readFile(landedPath, "utf8"),
     ) as TeamRuleFile;
-    expect(landed.rule_id).toBe(rule.rule_id);
-    if (landed.current.deleted) {
-      throw new Error("copy mutated tombstone vs alive shape");
-    }
-    expect(landed.current.content).toBe(rule.current.content);
+    expect(landed.rule_id).toBe(ruleId);
+    expect(landed.current.deleted).toBe(false);
+    // Cast is safe because the line above already asserted deleted === false.
+    const alive = landed.current as TeamRuleAlive;
+    expect(alive.content).toBe(ruleContent);
 
     // rule-ON: same tool input must now BLOCK and cite the propagated rule.
     const on = await responder.evaluate(toolInvocation);
     expect(on.block).toBe(true);
-    expect(on.citations).toEqual([rule.rule_id]);
+    expect(on.citations).toEqual([ruleId]);
     expect(on.skipped).toBe(0);
 
     // The L4 observable strictly changed across the transit boundary.
