@@ -27,6 +27,7 @@ import {
   describeDaemonReadiness,
   readEmbedderState,
 } from "./embedder-state.js";
+import { tryAcquireSpawnLock } from "./embedder-spawn-lock.js";
 
 const DEFAULT_MODEL = "Xenova/multilingual-e5-small";
 const DEFAULT_DIM = 384;
@@ -88,8 +89,18 @@ export class DaemonFirstEmbedder implements RuleEmbedder {
  * Best-effort detached spawn of bin-embedder.cjs. Locates the bin via the
  * known dist path or via TEAMAGENT_EMBEDDER_BIN env override.
  *
- * Idempotent under concurrent callers via file-state lock check (the daemon
- * itself refuses to start when another live pid owns the state file).
+ * Issue #315 (Race α): when N SessionStart hooks fire concurrently with no
+ * daemon yet running, all N call `tryDetachedSpawn`, see the missing state
+ * file, and each spawn a detached child process. The losers' children
+ * exit gracefully once a winner writes `state.status=starting` — but until
+ * that write happens, every spawned child is a 650MB-resident node
+ * process. On a 5-Claude-window opening, that's a 3.25GB transient spike.
+ *
+ * Fix: atomically claim `<statePath>.spawn.lock` via `fs.openSync(wx)`.
+ * Only the winner proceeds to spawn; concurrent losers skip silently. Lock
+ * is released after the spawn() syscall returns — the daemon child writes
+ * its own state file independently. Stale locks (mtime > 30s) are
+ * auto-cleared by the next acquirer.
  */
 export function tryDetachedSpawn(statePath: string): void {
   try {
@@ -101,12 +112,27 @@ export function tryDetachedSpawn(statePath: string): void {
 
     const binPath = resolveEmbedderBin();
     if (!binPath) return;
-    const child = spawn(process.execPath, [binPath, "--state-path", statePath], {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    child.unref();
+
+    // Race α defense: only one spawner at a time.
+    const lock = tryAcquireSpawnLock(`${statePath}.spawn.lock`);
+    if (!lock) return;
+    try {
+      // Re-check readiness after acquiring the lock — a previous spawner
+      // may have completed between our first check and our wx-create.
+      const r2 = describeDaemonReadiness(statePath);
+      if (r2.ready) return;
+      const s2 = readEmbedderState(statePath);
+      if (s2 && s2.status === "starting") return;
+
+      const child = spawn(process.execPath, [binPath, "--state-path", statePath], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      child.unref();
+    } finally {
+      lock.release();
+    }
   } catch {
     // best-effort
   }
