@@ -186,6 +186,12 @@ import {
   renderFixtureReplayHelp,
   FixtureReplayArgError,
 } from "./commands/fixture-replay.js";
+import {
+  executeSymphony,
+  parseSymphonyArgs,
+  renderSymphonyHelp,
+  SymphonyArgError,
+} from "./commands/symphony.js";
 
 function findPackageVersion(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
@@ -881,6 +887,25 @@ async function main(): Promise<void> {
         if (!result.ok) process.exit(1);
       } catch (err) {
         if (err instanceof FixtureReplayArgError) {
+          process.stderr.write(err.message.endsWith("\n") ? err.message : err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
+      return;
+    }
+    case "symphony": {
+      try {
+        if (rest.includes("--help") || rest.includes("-h")) {
+          process.stdout.write(renderSymphonyHelp());
+          return;
+        }
+        const opts = parseSymphonyArgs(rest);
+        const result = await executeSymphony(opts, process.cwd());
+        process.stdout.write(result.output);
+        if (result.exitCode !== 0) process.exit(result.exitCode);
+      } catch (err) {
+        if (err instanceof SymphonyArgError) {
           process.stderr.write(err.message.endsWith("\n") ? err.message : err.message + "\n");
           process.exit(2);
         }
