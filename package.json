@@ -23,7 +23,12 @@
     "dashboard": "node scripts/generate-dashboard.cjs",
     "regen-static-user-skills": "node scripts/regen-static-user-skills.cjs",
     "setup:codex-cloud": "bash scripts/setup-codex-cloud.sh",
-    "install:from-md": "tsx scripts/install-from-md.ts"
+    "install:from-md": "tsx scripts/install-from-md.ts",
+    "frontend:install": "cd landing/rocketteam && npm install --no-audit --no-fund",
+    "frontend:dev": "cd landing/rocketteam && npm run dev",
+    "frontend:build": "cd landing/rocketteam && npm run build",
+    "frontend:start": "cd landing/rocketteam && npm run start",
+    "frontend:typecheck": "cd landing/rocketteam && npm run typecheck"
   },
   "engines": {
     "node": ">=22.5.0"
