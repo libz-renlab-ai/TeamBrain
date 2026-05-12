@@ -141,3 +141,25 @@ Two of the three follow-ups originally captured in PR #232 § 8 landed in v0.11.
   Currently a soft-retire shim delegating to `applyUserLevelChannelOps`;
   removed when `postinstall.mjs:365` is also migrated to call `init` /
   `install-hook` directly.
+
+## Codex hook parity (research draft, issue #289)
+
+> **DRAFT** — research-only summary added by issue #289. The full surface (registry format, payload field-by-field diff, output schema, operational caveats) lives in [`./codex-hooks-spec.md`](./codex-hooks-spec.md). Sub-issue #293 will promote this into the canonical Claude lifecycle ASCII diagram once #290 + #291 land the actual `.codex/` wiring.
+
+The TeamBrain Claude hook inventory documented above maps to Codex's officially-supported hook surface as follows. Same row schema as the Claude `## Channel-by-channel` section: one row per event, with the Codex verdict (`supported` / `absent` / `unknown`) and a one-line note on what changes between the two stacks.
+
+| # | Event | Codex verdict | Notes vs the Claude row above |
+|---|-------|---------------|-------------------------------|
+| 1 | `SessionStart` | supported | Codex carries an extra `source` field (`startup` \| `resume` \| `clear`); Claude has no `source` discriminator |
+| 2 | `UserPromptSubmit` | supported | Same `prompt` field; matcher is ignored on both sides |
+| 3 | `PreToolUse` | supported | `Write`/`Edit` collapse into Codex's `apply_patch`; Claude's `permission_mode` field on input is **absent** in Codex (Codex uses the separate `PermissionRequest` event instead) |
+| 3a | `PermissionRequest` | supported | Codex-unique event; no Claude analog. Hook returns `decision: {behavior: "allow" \| "deny"}` |
+| 4 | `PostToolUse` | supported | Field-for-field equivalent (`tool_name`, `tool_use_id`, `tool_input`, `tool_response`) |
+| 5 | `Stop` | supported | Codex stdin adds `stop_hook_active` + `last_assistant_message`; TeamBrain's three-handler Stop chain (`bin-stop.cjs` + `self-report-fused.sh` + `bin-digital-twin-tap.cjs`) needs an adapter shim — see issue #290 |
+| 6 | `PreCompact` | absent | Codex docs do not promise this event. `bin-pre-compact.ts` source exists in TeamBrain but cannot be wired against Codex |
+| 7 | `SessionEnd` | absent | Same — Codex docs do not promise this event |
+| 8 | `SubagentStop` / `Notification` | absent | TeamBrain does not currently use them either; no parity work needed |
+
+**Verdict: 6/9 Claude events have a Codex equivalent**; 3 are absent (`PreCompact`, `SessionEnd`, `SubagentStop`/`Notification`); 1 Codex-unique event (`PermissionRequest`) has no Claude analog and would map to TeamBrain's existing `permission_mode` handling inside `bin-pre-tool-use.cjs`.
+
+For the per-event stdin field diff, output schema diff, registry file format (`~/.codex/{config.toml,hooks.json}` + project-level variants), trust gate, and the active Codex Desktop 0.129.0-alpha.15 hook regression (upstream issue #21639), see [`./codex-hooks-spec.md`](./codex-hooks-spec.md). For the research evidence + verbatim source URLs, see [`../plans/2026-05-12-issue-289-codex-hooks-spec/research.md`](../plans/2026-05-12-issue-289-codex-hooks-spec/research.md).
