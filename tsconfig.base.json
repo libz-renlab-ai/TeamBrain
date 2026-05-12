@@ -17,5 +17,5 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "exclude": ["node_modules", "dist", "scripts/out", "docs/features"]
+  "exclude": ["node_modules", "dist", "scripts/out", "docs/features", "landing/overlay", "landing/rocketteam"]
 }
