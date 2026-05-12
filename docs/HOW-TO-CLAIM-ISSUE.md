@@ -1,7 +1,7 @@
 ```text
    ┌──────────────────────────────────────────────────────────────────────┐
    │   claim issue → explore → research → plan → annotate → impl → PR    │
-   │   ↑ where this doc zooms in on FIXEDFLOW step 3 (after grill-ready) │
+   │   ↑ after grill-ready + docs-grill-ready gates both pass            │
    └─────────────────────────┬────────────────────────────────────────────┘
                              │
        ┌─────────────────────┴─────────────────────────────────┐
@@ -175,7 +175,7 @@ env -u GITHUB_TOKEN gh issue list --repo libz-renlab-ai/TeamBrain --search "<key
 
 ## 与其它流程的边界
 
-- **整条 issue → PR → merge 工作流** → `docs/FIXEDFLOW.md`（≤ 50 字 issue + grill + grill-ready label + `/fixed-flow-driver` 5 步）。
+- **整条 issue → PR → merge 工作流** → `docs/FIXEDFLOW.md`（≤ 50 字 issue + `/grill-via-web` + `grill-ready` + `/grill-with-docs` + `docs-grill-ready` + `/fixed-flow-driver`）。
 - **plan / research / report 三类文档约定** → `docs/PLAN-RESEARCH-REPORT.md`（写什么、放哪里、谁来评）。
 - **PR plan 四段结构** → `docs/HOWTO-PLAN-PR.md`（plan / expected outputs / how-to-verify / claudefast probes）。
 - **PR 开了之后才发现 issue** → `docs/PR-PLAN.md`（不开 follow-up issue，block merge）。
