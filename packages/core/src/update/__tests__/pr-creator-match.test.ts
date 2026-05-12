@@ -97,7 +97,6 @@ describe("isLocalUserPrCreator", () => {
 
   it("undefined inputs are safe (no throw, returns false)", () => {
     expect(isLocalUserPrCreator({})).toBe(false);
-    // @ts-expect-error — explicitly testing missing prCreatorLogin
     expect(isLocalUserPrCreator({ ghLogin: "alice" })).toBe(false);
   });
 });
