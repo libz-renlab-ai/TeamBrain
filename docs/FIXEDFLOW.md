@@ -153,15 +153,30 @@ driver 启动时会同时校验 grill comment + docs-grill comment + 两个 labe
 
 策略由 issue #338 codify。`ready-for-human` label 的官方描述是 `Needs human judgment / external access / design decision`——「该不该 close」本身就是一次 human-judgment 事件。因此：
 
-**带 `ready-for-human` label 的 issue 只能由真人 maintainer 手动 close。禁止 agent / bot 调用 `gh issue close`。**
+**带 `ready-for-human` label 的 issue 只能由真人 maintainer 手动 close。禁止 agent / bot 把它从 `open` 状态迁出（close / delete / transfer / convert-to-discussion / lock-as-resolved 等任何 state transition），也禁止 agent / bot 私自 remove `ready-for-human` label 以绕过本规则。**
 
 ### 适用范围
 
-- ❌ Claude Code / Codex / `/fixed-flow-driver` / `/claim-to-merge` / 任何 autonomous worker / 任何 bot / 任何 watcher / 任何 cron / 任何 stale-bot / 任何 GitHub Action 在 `pull_request: closed` 或 `schedule:` 触发下调用 `gh issue close`（或任何等价的 close API：`gh issue edit --state closed`、`PATCH /repos/:owner/:repo/issues/:N -f state=closed`、`@octokit/rest` 的 `octokit.issues.update({state:"closed"})` 等）关闭带 `ready-for-human` label 的 issue —— 一律禁止。
-- ❌ 即使 agent 判断该 issue 已被某 merged PR 解决 / 已过期 / 是 duplicate / 已被另一条 issue 覆盖 —— 只能贴评论说明，**不许自己 close**。
-- ❌ 即使 agent 读到本规则后口头同意 —— 本规则本身也不许被 agent close（issue #338 自身就是它的 self-test case）。
-- ✅ 只有真人 maintainer（libz 的任一 GitHub 账号 / 其它有 maintain 权限的真人）在浏览器 / CLI 里手动按 close，才是合法路径。
-- ✅ **PR 关键字 auto-close 例外**：若真人 maintainer 已经手动判定该 issue 「等 PR fix 即可结案」（即 human-judgment gate 已通过），可以在 PR body 写 `Closes #N`，让 GitHub 在 squash-merge 时 auto-close。这是 PR merge 的副作用，不算 agent 主动 close。但需要前置 human-judgment：维护者要么先 remove `ready-for-human` label、要么显式在 issue 评论 ack PR 走向。
+**Intent-based ban（不靠枚举 API 名）**：任何**非真人 actor**（Claude Code / Codex / `/fixed-flow-driver` / `/claim-to-merge` / 任何 autonomous worker / 任何 bot / 任何 watcher / 任何 cron / 任何 stale-bot / 任何 GitHub Action 在 `pull_request: closed` / `schedule:` / `issues:` / `workflow_dispatch:` 等任意触发下）对带 `ready-for-human` label 的 issue 做下列任意一种**状态迁移**——一律禁止：
+
+- ❌ close（`gh issue close` / `gh issue edit --state closed` / `PATCH /repos/:owner/:repo/issues/:N -f state=closed` / `@octokit/rest` 的 `octokit.issues.update({state:"closed"})` / GraphQL `closeIssue` mutation / `gh api graphql` 等价调用 / 批量 close 脚本……）
+- ❌ delete（`gh issue delete` / GraphQL `deleteIssue`）
+- ❌ transfer（`gh issue transfer` 转出到别的 repo）
+- ❌ convert-to-discussion（`gh issue develop` / web UI convert）
+- ❌ lock + 标 off-topic / spam / resolved 当作软关闭使用
+- ❌ remove `ready-for-human` label（`gh issue edit --remove-label ready-for-human` / API `DELETE /issues/:N/labels/...`）——本质等价于解除本规则的保护，agent 自己摘 label 等于自己解除自己的约束，必须禁止
+
+枚举只是脚手架，**判定原则 = "非真人 actor + 任何把 issue 从 open 状态搬出去或解除 ready-for-human 保护的操作 = forbidden，与具体 API 表面无关"**。新的 GitHub feature / 第三方工具引入新的 close-equivalent surface 时默认落入本禁令，不需要每个新 surface 都来改本规则。
+
+补充约束：
+
+- ❌ 即使 agent 判断该 issue 已被某 merged PR 解决 / 已过期 / 是 duplicate / 已被另一条 issue 覆盖 —— 只能贴评论说明，**不许自己做任何状态迁移**。
+- ❌ 即使 agent 读到本规则后口头同意 —— 本规则本身也不许被 agent close / delete / transfer（issue #338 自身就是它的 self-test case）。
+- ✅ 只有真人 maintainer（libz 的任一 GitHub 账号 / 其它有 maintain 权限的真人）在浏览器 / CLI 里手动操作，才是合法路径。
+- ✅ **PR 关键字 auto-close 例外（需要可机器验证的 human-ack 证据）**：若真人 maintainer 已经手动判定该 issue 「等 PR fix 即可结案」，可以在 PR body 写 `Closes #N`，让 GitHub 在 squash-merge 时 auto-close。但 agent 必须能**机器验证**前置 human-ack——满足下列任一即可，**单凭 "我觉得 maintainer 应该同意" / "讨论里似乎有共识" 不算 ack**：
+  - (a) `ready-for-human` label 已被 **非 bot GitHub actor** 在 PR open **之前**手动 remove（`gh api repos/:owner/:repo/issues/:N/events` 可查到 `unlabeled` 事件 + actor permission ≥ maintain），且 actor 不是 PR 作者本人；或
+  - (b) issue 上有 repo maintainer（`gh api repos/:owner/:repo/collaborators/:user/permission` 返回 `admin` / `maintain` / `write`）authored 的评论包含字面字符串 `ack: close-via-PR #<PR-N>`（PR-N 必须等于即将合 PR 的编号），且评论发布在 PR squash-merge **之前**。
+  - PR body 必须明文引用上述证据（label-removed event URL / ack 评论 URL + actor 用户名 + permission level），让 reviewer 与未来读者一眼看到 human-judgment gate 的可验证 trace。引用不全 = 走默认禁令 = ❌。
 
 ### 与 `grill-ready` 互斥
 
@@ -174,15 +189,19 @@ driver 启动时会同时校验 grill comment + docs-grill comment + 两个 labe
 
 如果同一条 issue 同时挂 `ready-for-human` 与 `grill-ready`：**先 remove `grill-ready`** 再让 driver 介入；如果反向决策（升级为人手处理），先 remove `grill-ready` + `docs-grill-ready` 再贴 `ready-for-human`。driver 看到 `ready-for-human` label 一律拒绝 dispatch（参见 §Dispatch policy）。
 
+**两个 label 的 remove 都必须由真人 maintainer 操作**——agent / bot 不能为了让自己跑得动而自己 remove `ready-for-human`（会与本节 §适用范围 的 label-strip 禁令冲突；driver 看到该 label 时**只能拒绝 dispatch + 退出**，绝不能 strip-and-continue）。
+
 ### 与 refusal layer 的关系
 
 `.github/workflows/issue-conformance.yml` 在 enforce 期会对「24h 内无 `grill-ready` label」的 issue 评论 + close（§refusal layer）。**此 close 路径必须 whitelist `ready-for-human`**：conformance Action 与任何未来的 stale-bot / cleanup watcher / repo-wide sweep 一律不得 close 带 `ready-for-human` label 的 issue。docs 在此提前 codify 这条约束；workflow yaml 的实装在另行 issue 跟进，不在本规则的 docs PR 范围。
 
-### 落地建议（不强制 — issue #338 自身留给 maintainer 决定）
+### 落地建议（仅 enforcement 时点可选 — 禁令本身仍是 MUST）
+
+下面三条是把上面 §适用范围 的 MUST 禁令落到自动化拦截层的**实装建议**，每条的「做不做 / 何时做」由 maintainer 决定；但**做不做 enforcement 实装 ≠ 放宽禁令本身**——只要 `ready-for-human` label 还在 issue 上，§适用范围 的状态迁移 + label-strip 禁令对所有 agent / bot 永远是 hard rule。
 
 1. 给 stale-issue / cleanup watcher 加白名单：`ready-for-human` 永不自动 close（与 §与 refusal layer 的关系 段对齐）。
-2. 可选 pre-close hook：检测 `gh issue close` actor 是 bot/agent + issue 含 `ready-for-human` label → reject。
-3. driver / `/claim-to-merge` 看到 `ready-for-human` label 时只能贴评论并退出，不得触发任何 close 调用（已由 §Dispatch policy 的 refusal 路径覆盖）。
+2. 可选 pre-close hook：检测 `gh issue close`（及 §适用范围 列出的任意等价 close API / 状态迁移 / label-strip）actor 是 bot/agent + issue 含 `ready-for-human` label → reject。
+3. driver / `/claim-to-merge` 看到 `ready-for-human` label 时只能贴评论并退出，不得触发任何 close 调用 / label-strip（已由 §Dispatch policy 的 refusal 路径覆盖）。
 
 ### 与 retroactive ban 的关系
 
