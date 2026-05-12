@@ -9,9 +9,16 @@ import type { TeamRuleFile } from "@teamagent/types";
  *
  * Signature complexity: **keyword-substring** (ADR-0014/332.md decision #4
  * option (b)). The responder treats each alive `TeamRuleFile.current.content`
- * as a literal substring keyword and matches against
- * `JSON.stringify(toolInput).toLowerCase()`. Tombstones (`deleted:true`) and
- * malformed JSON files are skipped without throwing.
+ * as a literal lowercase substring keyword, matched against every string
+ * value reachable from `toolInput` (walked recursively, NOT JSON-encoded:
+ * encoding would turn a real "\n" inside a rule into the two-char sequence
+ * "\\n" in the haystack, silently breaking propagation for rules whose
+ * content contains escape characters).
+ *
+ * Tombstones (`deleted:true`) are not citations. Citations are deduped on
+ * `rule_id` and emitted in (author, file) lex order. Malformed JSON, shape
+ * mismatches, and `EISDIR` (a directory accidentally named `*.json`) go via
+ * the `onSkip` callback + the skipped counter; never thrown.
  *
  * Why a mock (not a real LLM call) for this layer:
  * - Hot path PR-gate must be hermetic + deterministic; real claudefast lives
@@ -22,18 +29,36 @@ import type { TeamRuleFile } from "@teamagent/types";
 export interface MockLlmResponderInput {
   /** B's project root (where `.teamagent/team/<author>/<rule_id>.json` lives). */
   projectRoot: string;
-  /** Tool name the (hypothetical) Claude session is about to invoke. */
+  /**
+   * Tool name the (hypothetical) Claude session is about to invoke. Reserved
+   * for slice 2b tool-name scoping; currently unused — the responder matches
+   * across all rules regardless of `toolName`.
+   */
   toolName: string;
-  /** Tool input payload; matched as `JSON.stringify(input).toLowerCase()`. */
+  /**
+   * Tool input payload; the responder walks every string value (recursively
+   * through nested objects/arrays) and treats the union of those strings as
+   * the haystack. Does NOT use JSON.stringify (escape chars would lie).
+   */
   toolInput: Record<string, unknown>;
 }
 
 export interface MockLlmResponderOutput {
   /** True iff at least one alive rule's content matched the tool input. */
   block: boolean;
-  /** Matched rule ids, sorted by (author, file) lexicographic order. */
+  /**
+   * Matched rule ids, sorted by (author, file) lex order then deduped on
+   * `rule_id` — the same `rule_id` shipped by two authors (legitimate per
+   * the M5 lineage contract: `author` is "first creator", not unique key)
+   * cites exactly once, in first-encountered-author order.
+   */
   citations: string[];
-  /** Number of files skipped due to malformed JSON or shape mismatch. */
+  /**
+   * Number of files skipped due to malformed JSON, shape mismatch, or
+   * EISDIR on a directory accidentally named `*.json`. Bare disk errors
+   * (ENOENT, permission denied) on intermediate dirs are NOT counted —
+   * they're treated as "this corner of the team tree doesn't exist yet".
+   */
   skipped: number;
 }
 
@@ -74,7 +99,10 @@ class MockLlmResponderImpl implements MockLlmResponder {
       throw e;
     }
 
-    const haystack = JSON.stringify(input.toolInput).toLowerCase();
+    const haystacks = collectStrings(input.toolInput).map((s) =>
+      s.toLowerCase(),
+    );
+    const seen = new Set<string>();
 
     for (const author of [...authors].sort()) {
       const authorDir = path.join(teamDir, author);
@@ -100,7 +128,20 @@ class MockLlmResponderImpl implements MockLlmResponder {
         let raw: string;
         try {
           raw = await fs.readFile(filePath, "utf8");
-        } catch {
+        } catch (e) {
+          const code = (e as NodeJS.ErrnoException).code;
+          if (code === "EISDIR") {
+            // A directory named `<name>.json` matches the suffix filter but
+            // is not a rule file. Count as skipped + report; do not throw.
+            result.skipped += 1;
+            this.opts.onSkip?.({
+              path: filePath,
+              reason: "EISDIR (directory named *.json)",
+            });
+          }
+          // Other read errors (ENOENT race, EACCES) are treated as "file
+          // disappeared mid-scan" — silent skip, matches the existing
+          // fs-team-rule-store best-effort scan semantic.
           continue;
         }
 
@@ -116,13 +157,14 @@ class MockLlmResponderImpl implements MockLlmResponder {
           continue;
         }
 
-        const ruleResult = matchRule(parsed, haystack);
+        const ruleResult = matchRule(parsed, haystacks);
         if (ruleResult.kind === "skip") {
           result.skipped += 1;
           this.opts.onSkip?.({ path: filePath, reason: ruleResult.reason });
           continue;
         }
-        if (ruleResult.kind === "hit") {
+        if (ruleResult.kind === "hit" && !seen.has(ruleResult.rule_id)) {
+          seen.add(ruleResult.rule_id);
           result.citations.push(ruleResult.rule_id);
         }
       }
@@ -138,7 +180,7 @@ type MatchResult =
   | { kind: "hit"; rule_id: string }
   | { kind: "skip"; reason: string };
 
-function matchRule(parsed: unknown, haystack: string): MatchResult {
+function matchRule(parsed: unknown, haystacks: string[]): MatchResult {
   if (parsed === null || typeof parsed !== "object") {
     return { kind: "skip", reason: "rule root is not an object" };
   }
@@ -163,10 +205,39 @@ function matchRule(parsed: unknown, haystack: string): MatchResult {
   if (keyword.length === 0) {
     return { kind: "miss" }; // empty / whitespace-only content never matches
   }
-  if (haystack.includes(keyword)) {
-    // Narrow to TeamRuleFile after we've validated the shape ourselves.
-    const rule = parsed as TeamRuleFile;
-    return { kind: "hit", rule_id: rule.rule_id };
+  for (const hay of haystacks) {
+    if (hay.includes(keyword)) {
+      const rule = parsed as TeamRuleFile;
+      return { kind: "hit", rule_id: rule.rule_id };
+    }
   }
   return { kind: "miss" };
+}
+
+/**
+ * Recursively walk a value and collect every string encountered. Used to
+ * build the haystack from `toolInput` without going through `JSON.stringify`,
+ * which would escape characters and produce wrong substrings for any rule
+ * whose `content` contains a newline, tab, backslash, or quote.
+ */
+function collectStrings(value: unknown): string[] {
+  const out: string[] = [];
+  visit(value, out);
+  return out;
+}
+
+function visit(value: unknown, out: string[]): void {
+  if (typeof value === "string") {
+    out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) visit(item, out);
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      visit(v, out);
+    }
+  }
 }

@@ -159,4 +159,81 @@ describe("MockLlmResponder.evaluate", () => {
     });
     expect(result).toEqual({ block: false, citations: [], skipped: 0 });
   });
+
+  it("matches rule content containing newlines (haystack walks string values, not JSON.stringify)", async () => {
+    // Regression for the JSON-escape silent-miss issue: a rule with a real
+    // newline in `content` must match a tool input string that contains the
+    // same real newline. Going through JSON.stringify would render the
+    // newline as a literal backslash-n in the haystack and miss.
+    await writeRule(
+      projectRoot,
+      "A",
+      avoidanceRule("avoid-multi-line", "rm -rf\n/tmp"),
+    );
+    const responder = createMockLlmResponder();
+    const result = await responder.evaluate({
+      projectRoot,
+      toolName: "Bash",
+      toolInput: { command: "echo before\nrm -rf\n/tmp\necho after" },
+    });
+    expect(result.block).toBe(true);
+    expect(result.citations).toEqual(["avoid-multi-line"]);
+  });
+
+  it("walks nested objects + arrays inside toolInput when collecting haystack strings", async () => {
+    await writeRule(projectRoot, "A", avoidanceRule("avoid-secret", "secret-token"));
+    const responder = createMockLlmResponder();
+    const result = await responder.evaluate({
+      projectRoot,
+      toolName: "Edit",
+      toolInput: {
+        file: "x.md",
+        edits: [{ old: "foo", new: "secret-token here" }],
+      },
+    });
+    expect(result.block).toBe(true);
+    expect(result.citations).toEqual(["avoid-secret"]);
+  });
+
+  it("dedupes citations when two authors ship the same rule_id", async () => {
+    // M5 lineage: `author` is first-creator, NOT a uniqueness key. The same
+    // rule_id legitimately appears under two `team/<author>/` dirs after a
+    // rewrite or back-port. Citations must dedupe on rule_id.
+    await writeRule(projectRoot, "Alice", avoidanceRule("avoid-rm-rf", "rm -rf"));
+    await writeRule(projectRoot, "Zed", avoidanceRule("avoid-rm-rf", "rm -rf"));
+    const responder = createMockLlmResponder();
+    const result = await responder.evaluate({
+      projectRoot,
+      toolName: "Bash",
+      toolInput: { command: "rm -rf /" },
+    });
+    expect(result.block).toBe(true);
+    expect(result.citations).toEqual(["avoid-rm-rf"]); // exactly once
+  });
+
+  it("skips a directory accidentally named *.json instead of throwing EISDIR", async () => {
+    const authorDir = path.join(projectRoot, ".teamagent", "team", "A");
+    await fs.mkdir(authorDir, { recursive: true });
+    // Plant a *directory* with .json suffix to trigger EISDIR on readFile.
+    await fs.mkdir(path.join(authorDir, "bogus.json"));
+    await fs.writeFile(
+      path.join(authorDir, "good.json"),
+      JSON.stringify(avoidanceRule("avoid-rm", "rm -rf")),
+      "utf8",
+    );
+
+    const skips: Array<{ path: string; reason: string }> = [];
+    const responder = createMockLlmResponder({ onSkip: (e) => skips.push(e) });
+    const result = await responder.evaluate({
+      projectRoot,
+      toolName: "Bash",
+      toolInput: { command: "rm -rf /" },
+    });
+    expect(result.block).toBe(true);
+    expect(result.citations).toEqual(["avoid-rm"]);
+    expect(result.skipped).toBe(1);
+    expect(skips).toHaveLength(1);
+    expect(skips[0]!.path).toContain("bogus.json");
+    expect(skips[0]!.reason).toContain("EISDIR");
+  });
 });
