@@ -195,6 +195,5 @@ anything that needs `/review`'s adversarial pass.
 
 ## §8. Verification
 
-P2 (mutex) and P3 (refusal) probes in
-`docs/plans/2026-05-12-two-drivers/judge.md` cover §1 and §2; P1-P5 is
-the full suite.
+P2 (mutex) + P3 (refusal) probes in `docs/plans/2026-05-12-two-drivers/judge.md`
+cover §1 and §2; P1-P5 is the full suite.
