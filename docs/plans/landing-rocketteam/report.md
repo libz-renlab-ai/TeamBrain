@@ -47,9 +47,18 @@ This report.md is written before squash-merge with placeholders; on merge the au
 
 | # | Title | Trigger |
 |---|---|---|
-| F1 | `[landing] PR-2 GitHub Pages deploy workflow` | After PR-1 squash-merges |
-| F2 | `[landing] PR-3 real adapter implementation` | After PR-2 lands and a buildable but data-empty landing is live |
-| F3 | `[landing] upstream PR for output:'export' OR fork to libz-renlab-ai org` | After PR-2 reveals which override path is cleaner |
+| F1 | `[landing] PR-2 wire submodules + adapter step into existing landing-deploy.yml` | After PR-1 squash-merges. NO new workflow file. |
+| F2 | `[landing] PR-3 content-bridge implementation (RocketTeam content → apps/landing/src/_generated/)` | After PR-2 lands and an empty-fragment-emitting bridge is in CI |
+| F3 | `[landing] optional fork of hrdAI3/RocketTeam under libz-renlab-ai if upstream content cadence becomes a bottleneck` | Only if F2 reveals friction |
+
+## Architectural pivot mid-PR (2026-05-12)
+
+Initial PR-1 design assumed a separate Next.js Pages deploy. Post-push repo search (which I should have done pre-push — flagged in self-report) surfaced two hard conflicts with existing `apps/landing/`:
+
+1. `apps/landing/README.md` explicitly bans Next.js / React / Vue / any JS framework (source: `docs/specs/2026-05-07-landing-copy-actually-needed.md` decisions 1 / 7; P5 anti-slop).
+2. `.github/workflows/landing-deploy.yml` already owns the `libz-renlab-ai.github.io/TeamBrain/` Pages slot with `concurrency: group: pages`.
+
+Pivot locked at the plan.md / report.md level (commits append-only on this branch, no force-push, no rewrite of the three atomic commits): the adapter becomes a **content bridge** — reads structured content from `landing/rocketteam/`, emits Pretext-native HTML fragments under `apps/landing/src/_generated/` for inclusion by the existing static build. **No `next build` ever runs. No second Pages workflow.** Existing landing policy stays intact; submodule pins the upstream content source by SHA.
 
 ## Risks observed during delivery
 

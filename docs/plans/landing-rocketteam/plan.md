@@ -22,22 +22,28 @@
 
 ## Task description
 
-Wire `hrdAI3/RocketTeam` (Next.js app, public) into TeamBrain as the source-of-truth for the **feature 2 / feature 3** landing page (per `docs/BUSINESS-FEATURES.md`):
+Wire `hrdAI3/RocketTeam` (Next.js app, public) into TeamBrain as a **content source** for the **feature 2 / feature 3** landing page (per `docs/BUSINESS-FEATURES.md`):
 
 - Feature 2 = team leaders see, in second-level realtime, what each teammate's Claude Code instance is doing
 - Feature 3 = video recording + upload to centralized storage
 
+### Locked architecture (resolved 2026-05-12 after surfacing conflict with existing `apps/landing/`)
+
+The existing `apps/landing/README.md` explicitly bans Next.js / React / Vue / any JS framework (decision source: `docs/specs/2026-05-07-landing-copy-actually-needed.md` decisions 1 / 7; P5 anti-slop). `.github/workflows/landing-deploy.yml` already owns the `libz-renlab-ai.github.io/TeamBrain/` Pages slot.
+
+Chosen path: **keep both** — submodule is the upstream content source, existing `apps/landing/` static HTML/CSS stays the deploy form. The adapter is the **content bridge**: at build time it reads structured content out of `landing/rocketteam/` and writes Pretext-native HTML fragments that `apps/landing/src/` includes. **No `next build` is ever run** in CI; **no second Pages workflow** is added.
+
 This PR-1 slice does the minimum subset that is reviewable in one squash-merge:
 
 1. Add `hrdAI3/RocketTeam` as git submodule at `landing/rocketteam`, pinned to a specific upstream SHA (no working-tree copy of upstream content into TeamBrain — submodule pointer only).
-2. Land a `packages/landing-adapter/` skeleton that defines the TypeScript contract surface our future deploy workflow will call into to inject TeamBrain feature 2/3 data into the RocketTeam landing.
-3. Author `plan.md` / `research.md` / `report.md` (this trio) so a future contributor can land the GitHub Pages deploy workflow without re-discovering the design.
+2. Land a `packages/landing-adapter/` skeleton that defines the TypeScript contract surface for the content bridge described above.
+3. Author `plan.md` / `research.md` / `report.md` (this trio) so a future contributor can land the content bridge without re-discovering the design.
 
 Explicitly **out of scope** in PR-1:
 
-- `next.config.js` patch to enable `output: 'export'` on the upstream — that lives in a fork/branch on the upstream, or in our own thin wrapper, not in this PR.
-- `.github/workflows/landing-deploy.yml` — separate PR after PR-1 lands and the adapter contract is locked.
-- Real implementation of the adapter (PR-1 ships type contracts + TODO stubs only).
+- No second `landing-deploy.yml` workflow — existing one stays canonical.
+- No `next.config.js` `output: 'export'` work — we never run `next build`, so this is not needed.
+- Real adapter implementation that reads `landing/rocketteam/` content and emits HTML fragments — that lives in PR-3 once the content extraction target is scoped (which RocketTeam files / which sections feed which apps/landing/ blocks).
 - Editing or copying upstream RocketTeam files into our tree — submodule is a pointer, not a fork.
 
 ## Expected outputs (acceptance criteria)
@@ -72,10 +78,10 @@ LLM judge (a separate `claudefast -p` or subagent invocation) reads only the six
 - **R1**: upstream `hrdAI3/RocketTeam` is owned by a different account; future churn there can drift the landing. → Mitigation: pin by SHA in submodule (this is what `git submodule add` does by default). Bumping the SHA is a separate, reviewable PR.
 - **R2**: PR-1 ships an adapter skeleton with no real implementation. → Acceptable because the GitHub Pages workflow PR is gated on this skeleton's contract being merged first; splitting per `docs/TRIAGE-AND-SPLIT.md` Single-PR Shippable Test.
 - **R3**: FIXEDFLOW deviation — this PR did not originate from a grilled GitHub issue with `grill-ready` label and a `grill-working` claim per `docs/HOW-TO-CLAIM-ISSUE.md` / `docs/PRE-IMPLEMENT-CLAIM.md`. → Flag for maintainer review; if FIXEDFLOW compliance is required, close this PR, open a `<=50` word issue, re-grill, re-claim, redo.
-- **R4**: `next.config.js` in the upstream does not currently enable `output: 'export'`; therefore even after PR-1 lands, GitHub Pages cannot serve the app without a follow-up that either (a) patches via build-time override script in the deploy workflow, or (b) opens an upstream PR. → Tracked as follow-up; not blocking PR-1.
+- **R4**: upstream RocketTeam content shape is not yet inspected in detail (only file tree + build scripts in `research.md`). The adapter contract in `packages/landing-adapter/src/index.ts` currently models `Feature2Signal` / `Feature3Signal` as **TeamBrain-side runtime signals**, not as **upstream content sections**. PR-3 will either (a) add new content-bridge types alongside the runtime-signal types, or (b) refactor — depending on how the content bridge ends up wired. → Tracked as follow-up; not blocking PR-1 because PR-1 ships only the contract surface, no callers yet.
 
 ## Follow-up slices (not in PR-1)
 
-- **PR-2**: `.github/workflows/landing-deploy.yml` — checkout with `submodules: recursive`, run `pnpm --filter landing/rocketteam install && next build` with `output: 'export'` override, publish `out/` to `gh-pages` branch, enable Pages from that branch.
-- **PR-3**: real adapter implementation — wires TeamBrain feature 2 (attribution bus / second-level realtime stream) + feature 3 (video upload metadata) into the data shape the RocketTeam landing expects.
-- **PR-4**: optional fork of `hrdAI3/RocketTeam` under `libz-renlab-ai` org if upstream becomes a bottleneck.
+- **PR-2**: update existing `.github/workflows/landing-deploy.yml` to checkout submodules (`submodules: recursive`) and add a `landing-adapter run` step before `pnpm --filter landing build`, so the adapter can drop generated HTML fragments into `apps/landing/src/_generated/` before the existing static build copies them into `dist/`. No new workflow file, no new Pages slot, no `next build`.
+- **PR-3**: real adapter implementation — reads structured content from `landing/rocketteam/` (specific files TBD in PR-3 scoping) and emits Pretext-native HTML fragments under `apps/landing/src/_generated/` for inclusion by `apps/landing/src/index.html`. Stays inside the existing "no JS frameworks" landing policy.
+- **PR-4**: optional fork of `hrdAI3/RocketTeam` under `libz-renlab-ai` org if upstream becomes a bottleneck for content updates.
