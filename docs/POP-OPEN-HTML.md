@@ -57,21 +57,34 @@ spawn("open", ["-a", "Google Chrome", outPath], { detached: true, stdio: "ignore
 每个 pop-open HTML 入口必须在自己的 PR 里提交 judge harness probe：
 
 ```bash
-# probe 1: artifact 路径在 /tmp 下
-test "$(<command> --print-output-path)" = "/tmp/teamagent/<feature>/<name>.html" || exit 1
+# probe 1: artifact 路径在 /tmp/teamagent/<feature>/ 下，文件扩展是 .html
+# 路径含 ${Date.now()} 时间戳，用 glob 而不是字面 string 比较
+out="$(<command> --print-output-path)"
+case "$out" in
+  /tmp/teamagent/*/*.html) ;;
+  *) echo "FAIL probe 1: output path '$out' not under /tmp/teamagent/<feature>/*.html" >&2; exit 1 ;;
+esac
 
 # probe 2: 调用 open -a "Google Chrome"
-strace -f -e execve <command> 2>&1 | grep -q 'open.*Google Chrome' || exit 1   # Linux
-# macOS：用 dtruss 或在代码里 spy spawn 调用并断言 args 命中 ["open","-a","Google Chrome",...]
+# macOS（项目默认）：用 env-var spy — 实现侧在 spawn open 之前先 echo 命令到 $TEAMAGENT_OPEN_SPY
+#   if (process.env.TEAMAGENT_OPEN_SPY) fs.appendFileSync(process.env.TEAMAGENT_OPEN_SPY, `${argv.join(" ")}\n`);
+TEAMAGENT_OPEN_SPY="$(mktemp)" <command> >/dev/null 2>&1
+grep -q 'open -a Google Chrome' "$TEAMAGENT_OPEN_SPY" || { echo "FAIL probe 2 (macOS): spawn args 未命中 open -a Google Chrome" >&2; exit 1; }
+rm -f "$TEAMAGENT_OPEN_SPY"
+# Linux 等价：strace -f -e execve <command> 2>&1 | grep -q 'google-chrome\|chromium' || exit 1
 
-# probe 3: pop 是 default，不是 opt-in
-<command> --help | grep -q -- '--no-pop' && ! <command> --help | grep -q -- '--open\b'
+# probe 3: pop 是 default，不是 opt-in（必须有 --no-pop，且禁止 --open）
+help_out="$(<command> --help 2>&1)"
+echo "$help_out" | grep -q -- '--no-pop' || { echo "FAIL probe 3a: --help 缺 --no-pop" >&2; exit 1; }
+echo "$help_out" | grep -q -- '--open\b' && { echo "FAIL probe 3b: --help 仍含 --open opt-in flag" >&2; exit 1; }
 ```
 
 probe 全部 PASS 才能 merge；如果命令暂时不能符合，请在 PR 描述里挂 follow-up issue 链接，不要 retroactively 改 rule。
 
+> Probe 2 的 macOS env-var spy 实现：pop-open 入口在 spawn 之前读 `process.env.TEAMAGENT_OPEN_SPY`，非空时 append 一行 `open -a Google Chrome <path>` 到该文件，再正常 spawn。CI / probe 把 `TEAMAGENT_OPEN_SPY` 指向 `mktemp` 临时文件 → 不需要 dtrace / 不需要 root / 不污染用户桌面。Linux probe 可以继续走 `strace`，因为 fallback chain 是 `google-chrome` / `chromium` / `xdg-open`，不一定走 `open`。
+
 ## Out of scope / 不归本规则管
 
 - 纯 markdown 渲染到 terminal（无 HTML artifact）。
-- 写入 repo 内的 **静态文档** HTML（如 `docs/design-system/artifacts/2026-05-01/html-preview/finalized.html` 这种已提交的展示物）—— 这些是 source-of-truth artifact，不是 pop-open 入口，不会自动 open。
+- 写入 repo 内的 **静态文档** HTML，**且没有任何 CLI / skill / 脚本会自动 `open` 它** —— 这些是手工提交的 source-of-truth 展示物（如 `docs/design-system/artifacts/.../html-preview/finalized.html`、`docs/teamagent-rules.html`、`docs/kanban-user-boss/index.html`、`docs/hyperframes/teamagent-hook/index.html`、`docs/specs/*.html`、`docs/plans/**/*.html`、`docs/plans/issue-84/i-phase/design-variants/{A,B,C}*/index.html`），不是 pop-open 入口，不会自动 open。判定规则：grep 整个 repo，如果没有任何 `spawn("open", ...)` / `open <path>` 命令 / dashboard generator 把该 .html 当 target，就算 out of scope；一旦有代码 auto-open 它，立刻回到三条铁律管辖。
 - CI / headless 测试场景：允许加 `--no-pop` 跳过 step 3，仍必须满足 step 1 + step 2。
