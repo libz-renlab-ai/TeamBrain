@@ -37,3 +37,5 @@ grep -cE "require\(['\"]ulid['\"]\)" packages/digital-twin/dist/bin-uploader.cjs
 ```
 
 Verdict: all judge probes verified PASS in the worktree on 2026-05-12 (doctor.test.ts 57 ✓, uploader-log 5 ✓, digital-twin-command 23 ✓, both typechecks clean, rebuilt bin has the marker + no `require("ulid")`).
+
+Verification subagent (read-only, per `docs/AGENTIC-CODING-POLICY.md` §3) — 2026-05-12: **pass**. Confirmed all 6 grill decisions + the 3 /review-pass-1 fixes landed; ran the suites (doctor 57 / digital-twin-command 23 / uploader-log 5 / bin-uploader 2 / build-config 5 / tap-session 13, all green), rebuilt `dist/bin-uploader.cjs` (marker count = 1, `require("ulid")` count = 0). Non-blocking counter-examples noted: a corrupted partial copy that contains the marker string but doesn't short-circuit would be probed (timeout→SIGKILL) — low risk, marker only emitted by this build; `tap-session` still falls back to `stdio:'ignore'` if `openSync(uploader.log)` throws (documented).
