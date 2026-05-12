@@ -10,6 +10,7 @@ import {
   STATIC_USER_SKILLS,
   stripLegacyTeamagentBlock,
 } from "@teamagent/core";
+import { digitalTwinPaths, readLastUploaderError } from "@teamagent/digital-twin";
 import { unifiedDiff } from "./doctor-diff.js";
 import {
   enumerateInstallTableBundlePaths,
@@ -81,6 +82,20 @@ export type HookProbe = (
   opts?: { timeoutMs?: number },
 ) => Promise<HookProbeResult>;
 
+/**
+ * Issue #368: probe whether the staged uploader daemon (`~/.teamagent/
+ * digital-twin/bin-uploader.cjs`) actually loads. Reuses {@link HookProbeResult}
+ * — a non-zero exit / spawn error / timeout (or a `MODULE_NOT_FOUND` on stderr)
+ * means the daemon can't run and transcripts will never upload. The probe runs
+ * the daemon with `TEAMAGENT_UPLOADER_DRYRUN=1` so it loads every top-level
+ * import (the issue #368 bug crashed here) and exits 0 without touching config,
+ * the PID lock, or the upload loop.
+ */
+export type UploaderProbe = (
+  binPath: string,
+  opts?: { timeoutMs?: number },
+) => Promise<HookProbeResult>;
+
 export interface DoctorOptions {
   fix?: boolean;
   /** Issue #172: when true with `fix`, compute fix preview (unified diff) without writing anything. */
@@ -96,6 +111,8 @@ export interface DoctorOptions {
   mcpProbe?: McpProbe;
   /** Issue #280: injectable hook spawn probe for `checkHookSpawn`. Default uses real child_process. */
   hookProbe?: HookProbe;
+  /** Issue #368: injectable uploader-daemon spawn probe for `checkDigitalTwinUploader`. Default uses real child_process. */
+  uploaderProbe?: UploaderProbe;
   /**
    * Issue #299: injection points for `checkInstallTableBundles`. Tests pass
    * synthetic enumerators + existsFn to avoid touching the real dist tree.
@@ -362,6 +379,15 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
 
   // Check 11: MCP server reachability
   checks.push(await checkMcpReachability(cwd, opts.mcpProbe));
+
+  // Check 11b (issue #368): staged digital-twin uploader daemon loads.
+  // The uploader is spawned by the Stop-hook tap with stdio captured to
+  // ~/.teamagent/digital-twin/uploader.log; if the staged bin-uploader.cjs
+  // can't load (e.g. an un-bundled require("ulid") → MODULE_NOT_FOUND from a
+  // dir with no node_modules) it crashes on every spawn and zero transcripts
+  // ever reach the collector — silently, until now. `skip` when digital-twin
+  // isn't initialised on this machine.
+  checks.push(await checkDigitalTwinUploader(home, opts.uploaderProbe));
 
   // Check 12: CLAUDE.md is optional human-maintained guidance; generated blocks are deprecated.
   const claudeMdPath = path.join(cwd, "CLAUDE.md");
@@ -872,6 +898,123 @@ export async function checkHookSpawn(
     status: "fail",
     detail: `hook spawn exit=${result.exitCode} — ${stderrTail || "(no stderr)"}`,
     fix: "重装 teamagent 或检查 ~/.teamagent/postinstall.log",
+  };
+}
+
+/**
+ * Issue #368: default probe that spawns the staged uploader daemon with
+ * `TEAMAGENT_UPLOADER_DRYRUN=1` and empty stdin. The dry-run branch runs
+ * after every top-level import resolves and exits 0 without touching config
+ * or the PID lock — so a non-zero exit / spawn error / timeout means the
+ * staged `bin-uploader.cjs` can't load (the issue #368 bug: an un-bundled
+ * `require("ulid")` → `MODULE_NOT_FOUND` from a dir with no `node_modules`).
+ */
+const defaultUploaderProbe: UploaderProbe = (binPath, opts = {}) => {
+  const timeoutMs = opts.timeoutMs ?? 5_000;
+  return new Promise<HookProbeResult>((resolve) => {
+    const env = { ...process.env, TEAMAGENT_UPLOADER_DRYRUN: "1" };
+    let child;
+    try {
+      child = nodeSpawn(process.execPath, [binPath], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env,
+        windowsHide: true,
+      });
+    } catch (err) {
+      resolve({ exitCode: null, stderr: "", timedOut: false, spawnError: String(err) });
+      return;
+    }
+    let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { child.kill("SIGKILL"); } catch { /* already dead */ }
+      resolve({ exitCode: null, stderr, timedOut: true });
+    }, timeoutMs);
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ exitCode: null, stderr, timedOut: false, spawnError: String(err) });
+    });
+    child.stderr?.on("data", (d) => { stderr += d.toString("utf-8"); });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ exitCode: code, stderr, timedOut: false });
+    });
+    child.stdin?.end();
+  });
+};
+
+/**
+ * Issue #368: health check for the staged digital-twin uploader daemon.
+ * Surfaces a `digital-twin-uploader: OK | BROKEN` line so a silently-crashing
+ * uploader (transcripts never reach the collector) is visible.
+ *
+ * - `skip` — `~/.teamagent/digital-twin/bin-uploader.cjs` not staged yet
+ *   (digital-twin not initialised on this machine; nothing to probe).
+ * - `pass` — the daemon loads and dry-run-exits 0. If `uploader.log` has a
+ *   recent error line it's appended as a note (the crash happened before;
+ *   the fix may already be in place).
+ * - `fail` — spawn error / timeout / non-zero exit / `MODULE_NOT_FOUND` on
+ *   stderr. `fix` rebuilds + re-stages the daemon binary.
+ *
+ * `probe` is injectable for unit tests; production uses {@link defaultUploaderProbe}.
+ */
+export async function checkDigitalTwinUploader(
+  home: string,
+  probe: UploaderProbe = defaultUploaderProbe,
+): Promise<DoctorCheckResult> {
+  const name = "digital-twin-uploader";
+  const binPath = path.join(digitalTwinPaths(home).digitalTwinDir, "bin-uploader.cjs");
+  if (!fs.existsSync(binPath)) {
+    return {
+      name,
+      status: "skip",
+      detail: "digital-twin-uploader: 未安装 (本机未跑过 teamagent init / install-hook)",
+    };
+  }
+  const result = await probe(binPath);
+  const lastErr = readLastUploaderError(home);
+  const moduleNotFound = /MODULE_NOT_FOUND|Cannot find module/i.test(result.stderr);
+
+  if (result.spawnError) {
+    return {
+      name,
+      status: "fail",
+      detail: `digital-twin-uploader: BROKEN — spawn 失败: ${result.spawnError.slice(0, 200)}`,
+      fix: "node 不可用？检查后重装 teamagent",
+    };
+  }
+  if (result.timedOut) {
+    return {
+      name,
+      status: "fail",
+      detail: "digital-twin-uploader: BROKEN — dry-run 超过 5s 未退出 (可能卡在 require/import 链)",
+      fix: "pnpm --filter @teamagent/digital-twin build && pnpm teamagent install-hook",
+    };
+  }
+  if (result.exitCode === 0 && !moduleNotFound) {
+    return {
+      name,
+      status: "pass",
+      detail:
+        "digital-twin-uploader: OK (dry-run 加载了所有 import)" +
+        (lastErr ? ` · 注意 uploader.log 有历史错误: ${lastErr.line} (line ${lastErr.lineno})` : ""),
+    };
+  }
+  const stderrTail = result.stderr.trim().split("\n").slice(-5).join(" | ").slice(-400);
+  const why = moduleNotFound
+    ? `MODULE_NOT_FOUND — ${stderrTail || "(staged bin-uploader.cjs 缺打包依赖)"}`
+    : `exit=${result.exitCode} — ${stderrTail || lastErr?.line || "(no stderr)"}`;
+  return {
+    name,
+    status: "fail",
+    detail: `digital-twin-uploader: BROKEN — ${why}`,
+    fix: "pnpm --filter @teamagent/digital-twin build && pnpm teamagent install-hook",
   };
 }
 
