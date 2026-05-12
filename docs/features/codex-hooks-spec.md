@@ -52,7 +52,7 @@ Activation flag (per S6 reproducer, consistent with S3) — Codex hooks only run
 codex_hooks = true
 ```
 
-Trust gate (verbatim from S2): *"Untrusted projects skip project-scoped `.codex/` layers, including project-local config, hooks, and rules."* Project-level hooks therefore require the project to be marked trusted (mechanism `unknown` from public docs — see §6 Open questions). User-level hooks load regardless of project trust.
+Trust gate (verbatim from S2): *"Untrusted projects skip project-scoped `.codex/` layers, including project-local config, hooks, and rules."* Project-level hooks therefore require the project to be marked trusted (mechanism `unknown` from public docs — see §8 Open questions, item #6). User-level hooks load regardless of project trust.
 
 Admin-enforced overlay (referenced in S2 only, schema not documented): a `requirements.toml` exposes `[hooks]` with `managed_dir` / `windows_managed_dir` and per-event arrays. Treat as `unknown` until codex-rs source resolves it.
 
