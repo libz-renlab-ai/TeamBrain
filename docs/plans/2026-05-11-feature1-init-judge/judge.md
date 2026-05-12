@@ -53,6 +53,12 @@ The MAIN agent dispatches via subagent or `claudefast -p`. The harness
 itself is this markdown playbook — **no fixed bash script** lives at
 `scripts/*.sh` per project rule (user memory `feedback_judge_harness_md_playbook.md`).
 
+> **Quickstart (fresh contributor)** — one prerequisite, then the recipe is
+> self-contained: (1) `pnpm install` once at `$REPO_ROOT` so the repo-local
+> tsx binary exists at `node_modules/.bin/tsx`; (2) run §V1 Steps 0-4 below.
+> The Step 2 guard exits 127 with a remediation hint if the binary is
+> missing, so a forgotten `pnpm install` fails loud, not silently.
+
 - Step 0: Resolve repo root (handles git worktrees).
   ```
   GIT_COMMON_DIR="$(git rev-parse --git-common-dir 2>/dev/null || true)"
@@ -73,13 +79,22 @@ itself is this markdown playbook — **no fixed bash script** lives at
   --skip-seed` flags (added in commit `2f87234`; path-value guard hardened
   in commit `1af66e7`).
   ```
+  TSX="$REPO_ROOT/node_modules/.bin/tsx"
+  [ -x "$TSX" ] || { echo "tsx missing — run pnpm install in $REPO_ROOT" >&2; exit 127; }
   ( cd "$SANDBOX" && \
-    tsx "$REPO_ROOT/packages/cli/src/bin.ts" init \
+    "$TSX" "$REPO_ROOT/packages/cli/src/bin.ts" init \
       --cwd="$SANDBOX" --home="$TMPHOME" \
       --skip-import --skip-warmup --skip-hook --skip-seed \
   ) >"$EVIDENCE_DIR/init.stdout.log" 2>"$EVIDENCE_DIR/init.stderr.log"
   echo $? > "$EVIDENCE_DIR/init.exitcode"
   ```
+  Why repo-local `node_modules/.bin/tsx` and not bare `tsx`: a fresh
+  contributor / fresh worktree has no guarantee `tsx` is on `$PATH`
+  (it's a devDep, not a global). Pinning to the repo-local path makes
+  the harness self-contained as long as `pnpm install` has run. The
+  PASS run on 2026-05-11 was lucky — the caller happened to have `tsx`
+  on PATH. The guard above turns that silent assumption into an
+  exit 127 fast-fail with a remediation hint.
   Why direct `tsx` and not `pnpm teamagent`: pnpm scripts run with cwd =
   package dir, which would defeat the harness's intent to land init on
   the sandbox. The new `--cwd` flag is the authoritative target signal.
@@ -112,6 +127,8 @@ and emits `evidence/<run_id>/judge.json`. Canonical schema:
   "stdout_path": "init.stdout.log",
   "stderr_path": "init.stderr.log",
   "exit_code": 0,
+  "sandbox": "<absolute sandbox path; optional audit field>",
+  "home": "<absolute isolated-HOME path; optional audit field>",
   "metrics": {
     "sandbox_files_total": <int>,
     "teamagent_files_total": <int>,
@@ -130,9 +147,15 @@ and emits `evidence/<run_id>/judge.json`. Canonical schema:
     {"id": "no_unhandled_error", "pass": <bool>}
   ],
   "overall": "PASS|FAIL",
-  "feature_status": "active"
+  "feature_status": "active",
+  "harness_change": "<optional one-line note describing any non-default harness invocation; e.g. a tsx pinning change>"
 }
 ```
+
+Optional audit fields (`sandbox`, `home`, `harness_change`) are permitted but
+not required. The first two have been present in PASS runs since 2026-05-11;
+`harness_change` was added in the 2026-05-12 tsx-pin commit so future judge.json
+files can self-describe non-default invocations.
 
 There is no fallback mode. All five checks must be true for the playbook
 to PASS.
@@ -177,10 +200,13 @@ and emits the final verdict. Prompt template:
   because Feature ①'s value prop hinges on being able to git-track and
   PR-review the proof. The chosen-once snapshot becomes the PR's
   verification artefact.
-- Dependencies: `tsx` (already in repo via root devDependencies); `git`
-  for `git init`; `uuidgen` (macOS / Linux util-linux default). No
-  network, no Claude CLI required — `--skip-import` short-circuits the
-  LLM path.
+- Dependencies: `tsx` is a root devDependency, resolved via the
+  repo-local path `node_modules/.bin/tsx` (Step 2 above). Run
+  `pnpm install` once in `$REPO_ROOT` before invoking the harness;
+  the Step 2 guard exits 127 with a remediation hint if the binary
+  is missing. Also required: `git` for `git init`; `uuidgen` (macOS /
+  Linux util-linux default). No network, no Claude CLI required —
+  `--skip-import` short-circuits the LLM path.
 - Limitations: the harness only proves `init` lands an empty `.teamagent/`
   and compiles skills. It does NOT verify post-init `teamagent doctor`,
   embed warmup completion, or hook invocation. Those are covered by
