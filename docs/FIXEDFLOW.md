@@ -6,23 +6,24 @@
 
   TeamBrain FIXEDFLOW — 唯一允许的 issue → PR → merge 工作流
 
-  step 1 (manual)         step 2 (manual)              steps 3–5 (manual, human runs skill)
-  ─────────────────       ─────────────────────        ──────────────────────────────────
-  <50 word issue   ──→    /grill-me (web) 或     ──→   maintainer 在 Claude Code 里手动跑
-   via 唯一 template       /grill-with-docs (CLI)        /fixed-flow-driver skill
-                           paste 输出到 comment         │
-                           + 加 grill-ready label       ├─ implement
-                                                        │
-                                                        ├─ /review  ─┐
-                                                        │            │  loop ∞
-                                                        │  findings  │  至 PASS
-                                                        │  → PR-PLAN ┘
-                                                        │
-                                                        ├─ gh pr create (normal, 非 draft)
-                                                        └─ gh pr merge --squash --auto
+  step 1 (human)   step 2 (human)        step 2.5 (human)         steps 3–5 (human runs skill)
+  ──────────────   ──────────────────    ─────────────────────    ───────────────────────────
+  <50 word issue ─▶ /grill-via-web   ──▶ /grill-with-docs     ──▶ maintainer 在 Claude Code 跑
+   via 唯一        (ChatGPT/Claude.ai)  (CLI, docs gate)            /fixed-flow-driver skill
+   template        paste grill 到       写 docs-grill comment       │
+                   issue comment        + 自加 docs-grill-ready     ├─ implement
+                   + 加 grill-ready                                  │
+                                                                     ├─ /review  ─┐
+                                                                     │            │  loop ∞
+                                                                     │  findings  │  至 PASS
+                                                                     │  → PR-PLAN ┘
+                                                                     │
+                                                                     ├─ gh pr create (普通 PR)
+                                                                     └─ gh pr merge --squash --auto
 
-  refusal layer：所有「非此模板 / 超 50 字 / 24h 内无 grill-ready」issue 一律 close
-  禁止任何 watcher / 后台轮询 / 自动 dispatch；step 3-5 必须由人主动启动
+  refusal layer：非此模板 / 超 50 字 / 24h 内无 grill-ready 一律 close
+  禁止任何 watcher / cron / daemon / 后台轮询 / 自动 dispatch / repo-wide sweep
+  step 3-5 必须由人手动 invoke；两个 label（grill-ready + docs-grill-ready）必须同时存在
 ```
 
 # FIXEDFLOW — TeamBrain 唯一 issue → PR → merge 工作流
@@ -32,45 +33,39 @@
 > **取代 `docs/HOW-TO-ISSUE.md`**（已归档至 `docs/archive/HOW-TO-ISSUE.md`）。
 > 自 2026-05-09 起，TeamBrain 仅接受走 FIXEDFLOW 的 issue。
 
-## TL;DR — 5 步铁律
+## TL;DR — 5+1 步铁律（step 2.5 docs gate）
 
 1. **写 issue（手动，<50 字）** — 通过仓库唯一 issue template 提交，body 限 50 字以内。
-2. **跑 grill 并贴评论（手动）** — 在 web claude.ai 跑 `/grill-me` 或在 CC CLI 跑 `/grill-with-docs`，把输出整段贴回 issue 评论；comment 末尾必须以 `--- end grill ---` 结束（或保持评论 60 秒以上不再编辑）；最后给 issue 加 `grill-ready` label。
-3. **手动跑 driver（人手）** — maintainer 看到 `grill-ready` issue，在 Claude Code 里执行 `/fixed-flow-driver` skill 并传入 issue 编号；driver 在 `.codex/worktrees/issue-<N>/` 起 `feat/issue-<N>` 分支，按 grill 评论实现。
-4. **/review 循环（driver 内部自动 — never ends）** — driver 跑 `/review` skill，发现 finding 就更新 `docs/plans/<date>-pr-<N>-fix-plan.md` 并修；**`/review` loop never ends — 只有 PASS 能终止 driver**；`needs-human` label 不再退出 driver，仅作 informational signal。
+2. **issue grill（手动，唯一入口 `/grill-via-web`）** — 在 ChatGPT / Claude.ai 跑 `/grill-via-web` 把 issue 一题一题问透；把整段输出贴回 issue 评论，末尾以 `--- end grill ---` 结束（或保持 60 秒不再编辑）；最后给 issue 加 `grill-ready` label。**`/grill-via-web` 是唯一允许的 issue-grill 入口**——不接受用 `/grill-me` / `/grill-with-docs` 作为 issue grill 入口。
+2.5. **docs gate（手动 `/grill-with-docs`，强制）** — `/grill-via-web` 落地后、driver 启动前，maintainer 在 Claude Code 里跑 `/grill-with-docs`，把 grill 结果对照项目代码、`docs/CONTEXT.md` 与 `docs/adr/` 检查一遍；需要落地的术语 / 决策 / 文档增量写到对应 docs + grill log（默认追加到 `docs/adr/0014-save-grilled-comments-to-adr.md`，大型 grill 落到 `docs/adr/0014/<issue-N>.md`）。`/grill-with-docs` 必须写回一条 docs-grill 评论，末尾以 `--- end docs grill ---` 结尾，并**自己**加上 `docs-grill-ready` label。
+3. **手动跑 driver（人手）** — maintainer 看到 `grill-ready` + `docs-grill-ready` **同时存在**的 issue 后，在 Claude Code 里执行 `/fixed-flow-driver` skill 并传入 issue 编号；driver 在 `.codex/worktrees/issue-<N>/` 起 `feat/issue-<N>` 分支，按 grill 评论实现。
+4. **/review 循环（driver 内部自动 — never ends）** — driver 跑 `/review` skill，发现 finding 就更新 `docs/plans/<date>-pr-<N>-fix-plan.md` 并修；**`/review` loop never ends — 只有 PASS 能终止 driver**；`needs-human` label 不再退出 driver，仅作 informational signal。正常 flow 下用户**不**手动跑 `/review`。
 5. **开 PR + squash-merge（driver 内部自动 — keep trying until it failed）** — `gh pr create`（**普通 PR，非 draft**）→ `gh pr merge <N> --squash --auto`（**仅 squash**）；如果 squash-merge 失败 → rebase 重试 → rebase 再失败也不 bail，**keep trying until it failed**（详见 §冲突恢复）；merge 成功后清理 worktree、写 `report.md`。
 
-「人手」贯穿 step 1-3：reporter 写 issue + 贴 grill，maintainer 看到后**主动**调起 driver。**禁止任何 watcher / 守护进程 / 后台轮询 / 自动 dispatch**——driver 只能由人在 Claude Code 会话里显式启动。
+「人手」贯穿 step 1-3：reporter 写 issue + 跑 web grill，maintainer 跑 `/grill-with-docs` docs gate 并**主动**调起 driver。**禁止任何 watcher / 守护进程 / 后台轮询 / 自动 dispatch / repo-wide scanner / cron job**——driver 只能由人在 Claude Code 会话里显式启动。如果链路在中途卡住，人类可以手动跑 `/claim-to-merge` 或 `/fixed-flow-driver` 接上，这是人手补救入口，**不是 happy path**。
 
-## Dispatch policy — only grilled-issues
+## Dispatch policy — only docs-gated grilled-issues
 
-The FIXEDFLOW driver may **only** be dispatched on **grilled-issues** —
-issues that have a valid grill comment (per §grill 评论必须满足 below) AND
-the `grill-ready` label. The only type of dispatch that is allowed in
-TeamBrain is dispatch on **grilled-issues**, manually invoked by a maintainer
-in a Claude Code session.
+The FIXEDFLOW driver may **only** be dispatched on **docs-gated grilled-issues** — issues that have **both**: (a) valid grill comment + `grill-ready` label; (b) valid docs-grill comment + `docs-grill-ready` label. Dispatch is always manual, in a Claude Code session.
 
-Allowed dispatch type:
-
-- ✅ **grilled-issues** — issue with valid grill comment + `grill-ready` label,
-  picked up by a human running `/fixed-flow-driver <N>` in Claude Code.
-
-Forbidden dispatch types (driver must refuse / refusal layer must reject):
-
-- ❌ blank issues / non-grill-template issues
-- ❌ issues with stale or missing grill comments (>24h without `grill-ready`)
+- ✅ **docs-gated grilled-issues** — both gates set, human runs `/fixed-flow-driver <N>` in Claude Code.
+- ❌ blank / non-grill-template issues
+- ❌ stale or missing grill comment (>24h without `grill-ready`)
+- ❌ `grill-ready` set but `docs-grill-ready` missing (docs gate not run)
 - ❌ retroactive AI-triage labels (see `docs/HOW-TO-CLAIM-ISSUE.md`)
-- ❌ watcher / cron / background poller / auto-dispatch of any kind
-- ❌ epic-style issues without an `epic` label and named coordinator (see §Epic carve-out)
+- ❌ any watcher / cron / daemon / background poller / repo-wide scanner / auto-dispatch
+- ❌ epic-style issues without `epic` label + named coordinator (see §Epic carve-out)
+
+**No automatic scanner / sweep / poller.** Humans write issues, grill in the web (`/grill-via-web`), then run `/grill-with-docs` to update docs; only after both gates land do humans manually `/fixed-flow-driver` to continue.
 
 ## Claim an issue — what happens (2-outcome contract)
 
 「Claim an issue」= maintainer 拿到一个 issue 编号、决定要不要跑 `/fixed-flow-driver` skill。结局**只有两种**：
 
-1. **Pause and stop if no `grill-ready` label / 无有效 grill 评论** — driver 起来后先校验 issue 是否齐备 grill comment + `grill-ready` label。缺失或评论无法解析 → driver 不动代码、不开 worktree、不写 PR；回评 `needs-grill-comment`（或交给 conformance Action 在 24h 后 auto-close）后立刻退出。
-2. **Do everything from issue → merged PR with `/review` fix-loop** — 条件满足时 driver 全程跑：建 `.codex/worktrees/issue-<N>/` → 按 grill comment 实现 → 跑 `/review` skill 进 **循环 fix**（每轮写 `docs/plans/<date>-pr-<N>-fix-plan.md` 三段计划）至 PASS → 开**普通** PR（`--draft` 严禁）→ `gh pr merge <N> --squash --auto`（仅 squash）→ 清理 worktree、写 `report.md`。期间无第三方 reviewer，但启动这件事 **必须由人主动做**。
+1. **Pause and stop if any gate missing** — driver 起来后先校验 issue 是否同时齐备：(a) grill comment + `grill-ready` label；(b) docs-grill comment + `docs-grill-ready` label。任一缺失或评论无法解析 → driver 不动代码、不开 worktree、不写 PR；回评说明缺哪一道 gate（`needs-grill-comment` 或 `needs-docs-grill`），或交给 conformance Action 在 24h 后 auto-close，立刻退出。
+2. **Do everything from issue → merged PR with `/review` fix-loop** — 两道 gate 都满足时 driver 全程跑：建 `.codex/worktrees/issue-<N>/` → 按 grill comment 实现 → 跑 `/review` skill 进 **循环 fix**（每轮写 `docs/plans/<date>-pr-<N>-fix-plan.md` 三段计划）至 PASS → 开**普通** PR（`--draft` 严禁）→ `gh pr merge <N> --squash --auto`（仅 squash）→ 清理 worktree、写 `report.md`。期间无第三方 reviewer，但启动这件事 **必须由人主动做**。
 
-简记：**no grill-ready ⇒ driver 起来即退；have grill-ready ⇒ driver 一路跑到 squash-merge；driver 永远只在被人显式调用时才存在。**
+简记：**any gate missing ⇒ driver 起来即退；both gates set ⇒ driver 一路跑到 squash-merge；driver 永远只在被人显式调用时才存在。**
 
 ## Preempted by an existing PR — 2-outcome contract
 
@@ -88,8 +83,9 @@ Forbidden dispatch types (driver must refuse / refusal layer must reject):
 | 步骤 | 谁负责 | 进入条件 | 退出条件 |
 |------|--------|----------|----------|
 | 1 写 issue | reporter | 用 fixed-flow template 提交 | issue 入 open queue |
-| 2 grill paste + label | reporter | issue body 通过 conformance 检查 | `grill-ready` label 已加，comment 60s 未再编辑或带 `--- end grill ---` |
-| 3 启动 driver | maintainer 在 Claude Code 里跑 `/fixed-flow-driver` skill | reporter 完成 step 2 + maintainer 主动调用 | feat 分支推到 origin |
+| 2 issue grill (`/grill-via-web`) | reporter | issue body 通过 conformance 检查 | `grill-ready` label 已加，comment 60s 未再编辑或带 `--- end grill ---` |
+| 2.5 docs gate (`/grill-with-docs`) | maintainer 在 Claude Code | step 2 完成 | docs-grill comment 末尾带 `--- end docs grill ---` + `docs-grill-ready` label 已加 |
+| 3 启动 driver | maintainer 在 Claude Code 里跑 `/fixed-flow-driver` skill | step 2 + 2.5 都完成 + maintainer 主动调用 | feat 分支推到 origin |
 | 4 /review loop | driver 内部 | branch pushed | /review 全部 finding PASS |
 | 5 PR + merge | driver 内部 | /review PASS | merge 完成 + worktree 清理 |
 
@@ -123,12 +119,22 @@ Forbidden dispatch types (driver must refuse / refusal layer must reject):
 
 ## grill 评论必须满足
 
-- comment 作者 = issue 作者本人。
-- comment 来自 `/grill-me`（web claude.ai）或 `/grill-with-docs`（CC CLI）整段输出。
+- comment 作者 = issue 作者本人（或 reporter 授权的 grill helper）。
+- comment 来自 `/grill-via-web`（ChatGPT / Claude.ai）整段输出。
 - comment 末尾以 `--- end grill ---` 单行结束，**或** comment 创建后 60 秒内不再编辑。
-- 加上 `grill-ready` label 之后，maintainer 才会被允许跑 driver。
+- 加上 `grill-ready` label 之后，maintainer 才会被允许进入 step 2.5（docs gate）。
 
-driver 启动后会把 grill 评论解读为 step 3 的 plan；如果评论缺失或无法解析，driver 立刻退出并回评 `needs-grill-comment`。
+driver 启动时会同时校验 grill comment + docs-grill comment + 两个 label；任一缺失立刻退出并按 §Claim an issue 段返回对应回评。
+
+## docs-grill 评论必须满足
+
+- comment 作者 = maintainer（运行 `/grill-with-docs` 的人）。
+- comment 来自 `/grill-with-docs` 在 Claude Code 里对 grill 结果做 docs-against-code/CONTEXT/ADRs 检查后的输出，**不是**一次新的 grill。
+- comment 内容至少描述：哪些 docs 被更新（含 `docs/CONTEXT.md` 术语 delta 与 ADR 增删）；如果不需要更新 docs，显式写「no docs update needed」。
+- comment 末尾以 `--- end docs grill ---` 单行结束。
+- `/grill-with-docs` 自己负责加 `docs-grill-ready` label；maintainer 不要靠手贴 label 绕过这条 skill 的实际执行。
+
+`/grill-with-docs` 默认把决策追加到 `docs/adr/0014-save-grilled-comments-to-adr.md`；大型 grill 落到 `docs/adr/0014/<issue-N>.md`（详见 ADR-0014）。
 
 ## refusal layer（拒绝其它 issue 类型）
 
@@ -147,7 +153,7 @@ driver 启动后会把 grill 评论解读为 step 3 的 plan；如果评论缺�
 
 driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skills/`）。
 
-- **调用方式**：仅由人在 Claude Code 会话里显式 `/fixed-flow-driver <issue-number>`；不存在任何机器自动 dispatch 路径。dispatch 类型只能是 grilled-issues（见 §Dispatch policy）。
+- **调用方式**：仅由人在 Claude Code 会话里显式 `/fixed-flow-driver <issue-number>`；不存在任何机器自动 dispatch 路径。dispatch 类型只能是 docs-gated grilled-issues（见 §Dispatch policy）。**`/review` 是 merge 前自动的内部 review gate；正常 flow 下用户不需要手动跑 `/review`**。
 - **并发 — let the first go**：同一时刻只跑一个 issue worktree（FIFO by issue number）。如果 many workers hit one same worktree（多个 driver 撞 `.codex/worktrees/issue-<N>/`），**let the first go**：第一个 driver 拿到 worktree 锁继续干，后续 driver 检测到 `.codex/worktrees/issue-<N>/.lock` sentinel（含第一个 driver 的 session id）后立即礼让退出 —— **不抢、不强删、不 race**。锁文件由第一个 driver 在 worktree 创建后写入，merge 完成清理 worktree 时一并删除。
 - **/review 循环 — never ends**：`/review` loop 是无限循环；它 **never ends** until `/review` PASS。没有 max-iter cutoff、没有 token-budget kill、没有 needs-human 退出。driver 持续 finding → fix-plan → commit → 再 `/review`，永远不放弃，**until it passes**。iteration 计数与累计 token 写到 `.fixedflow/iter-<N>.json`；driver 在第 10 / 25 / 50 / 100 / 250 / 500 / ... 轮发 PushNotification；每 10 轮在 issue 上贴一条 token-burn 摘要评论作 informational signal，但 loop 不为此停。`needs-human` label 在 loop 中**仅作 informational**，不再触发退出（曾经是 escape hatch，现已废弃）。
 - **PR-PLAN 强制**：每一轮 /review fix 必须先写或更新 `docs/plans/<date>-pr-<N>-fix-plan.md`（task / outputs / judge harness 三段，参考 `docs/PR-PLAN.md`），不允许跳过。
@@ -161,19 +167,22 @@ driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skil
 | dependabot / 安全补丁 PR（无对应 issue） | 仓库 admin 在 issue（如有）或 PR 上加 `bypass-fixed-flow` label |
 | 真·hotfix 必须 5 分钟内合 | 同上；并提示作者补一个 retro issue 走 FIXEDFLOW |
 | `/review` 死循环烧 token 太多 | 不再触发退出 —— `/review` loop never ends until PASS。`needs-human` label 仅作 informational；要真停只能 kill 进程或关 PR |
-| maintainer 一时没看到 grill-ready issue | 没事——issue 留在队列里等下一次 maintainer 主动巡检（无 SLA） |
+| maintainer 一时没看到 grill-ready / docs-grill-ready issue | 没事——issue 留在队列里等下一次 maintainer 主动巡检（**无 SLA，无 scanner，无 cron**） |
+| 链路在中途卡住（grill 落地后 docs gate 漏了，或 docs gate 之后 driver 没起） | 人类手动跑 `/claim-to-merge` 或 `/fixed-flow-driver` 接上；这是人手补救入口，非 happy path |
 | squash-merge 持续失败 | driver 不 bail；keep trying until it failed —— 反复 rebase/retry，直到物理上跑不动（PR closed / branch deleted / 进程被杀） |
 
 ## 与既有规则的关系
 
-- `docs/HOWTO-PLAN-PR.md` — FIXEDFLOW step 3 的 PR 描述继续按 4 段结构（plan / expected outputs / how-to-verify / claudefast probes）写。
+- `docs/specs/2026-05-11-fixedflow-sessionstart-banner.zh.md` — Chinese SessionStart banner 文案 / gate contract / hard rules / docs-only trigger semantics SoT。
+- `docs/adr/0014-save-grilled-comments-to-adr.md`（+ `docs/adr/0014/<issue-N>.md` siblings） — `/grill-with-docs` 把 grill 决策持久化到 ADR 的具体规则。
+- `docs/HOWTO-PLAN-PR.md` — FIXEDFLOW step 3 的 PR 描述按 4 段结构写。
 - `docs/PR-PLAN.md` — FIXEDFLOW step 4 每轮 fix 强制按 PR-PLAN 三段写新 plan 文件。
 - `docs/POSTPR.md` — FIXEDFLOW step 4 / 5 即 POSTPR 循环的程序化版本。
 - `docs/feature-verification.md` — FIXEDFLOW 自身的 feature-verification 由 `docs/plans/2026-05-09-fixed-flow/judge.md` 承担。
 - `docs/HOW-TO-ISSUE.md` — 已归档；FIXEDFLOW 取代之。
-- `docs/POSTMORTEM.md` — multi-PR recap comment 规则；epic 类 issue 的复盘叙事约束在那里（含 hard rule #6 role bypass + #7 A/B/C schema）。
-- `docs/HOW-TO-CLAIM-ISSUE.md` — `ready-for-human` label 语义 + AI-triage retroactive ban；epic carve-out 引用。
-- `docs/TRIAGE-AND-SPLIT.md` — grill 完发现 issue 太大时的 triage 入口（step 2 与 step 3 之间的人手 maintainer 判断瞬间）；what / when / how / 反模式 / 实证。
+- `docs/POSTMORTEM.md` — multi-PR recap comment 规则；epic 类 issue 的复盘叙事约束在那里（hard rule #6 + #7）。
+- `docs/HOW-TO-CLAIM-ISSUE.md` — claim 前必须看到两个 label；`ready-for-human` + AI-triage retroactive ban；epic carve-out 引用。
+- `docs/TRIAGE-AND-SPLIT.md` — grill 完发现 issue 太大时的 triage 入口（人手 maintainer 判断瞬间）。
 
 ## 验证（语义 probe，不写 canned-answer block）
 
