@@ -257,6 +257,26 @@ export const VIDEOS_DASHBOARD_HTML = `<!doctype html>
 let videos = [];
 let selectedIdx = -1;
 
+// Escape every user-controlled string before it touches innerHTML / attribute
+// interpolation. Required because label, id, user_id, sha256, captured_at,
+// container, and link all originate from the upload envelope written by the
+// CLI — a hostile teammate could otherwise stuff <script> into --label and
+// the boss's browser would execute it on /videos.
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"'\\/]/g, function (c) {
+    switch (c) {
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      case "'": return '&#39;';
+      case '/': return '&#x2F;';
+      default: return c;
+    }
+  });
+}
+
 function formatBytes(n) {
   if (n < 1024) return n + ' B';
   if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
@@ -284,11 +304,11 @@ function renderList() {
       '<li class="vitem' + sel + '" onclick="selectVideo(' + i + ')">',
         '<div class="vthumb"><span class="play">▶</span></div>',
         '<div class="vbody">',
-          '<div class="vlabel">' + (v.label || v.id) + '</div>',
+          '<div class="vlabel">' + esc(v.label || v.id) + '</div>',
           '<div class="vmeta">',
-            '<span class="who">@' + v.user_id + '</span>',
-            '<span class="when">' + v.date + ' · ' + formatBytes(v.size) + '</span>',
-            '<span class="ext">' + v.container + '</span>',
+            '<span class="who">@' + esc(v.user_id) + '</span>',
+            '<span class="when">' + esc(v.date) + ' · ' + formatBytes(v.size) + '</span>',
+            '<span class="ext">' + esc(v.container) + '</span>',
           '</div>',
         '</div>',
       '</li>'
@@ -300,29 +320,49 @@ function selectVideo(i) {
   selectedIdx = i;
   renderList();
   const v = videos[i];
-  const link = v.link.startsWith('http') ? v.link : (window.location.origin + v.link);
+  // Build the link via URL to defang any injected javascript: / data: schemes
+  // and to keep the server-supplied path-encoding intact. window.location.origin
+  // is always http(s)://host[:port], so absolute URLs win and we fall through
+  // to URL() only for server-relative links.
+  let link;
+  try {
+    const base = v.link.startsWith('http') ? v.link : window.location.origin + v.link;
+    const u = new URL(base);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('unsupported protocol');
+    link = u.toString();
+  } catch {
+    link = '';
+  }
+  const linkEsc = esc(link);
+  // Pass the link to copyLink via the DOM (dataset) instead of inline JS so a
+  // crafted link can't break out of the attribute. The handler reads
+  // event.currentTarget.dataset.link, which the browser already escapes.
   document.getElementById('player').innerHTML = [
     '<div class="player-head">',
       '<div>',
-        '<div class="title">' + (v.label || 'Untitled upload') + '</div>',
-        '<div class="meta">by <strong style="color:var(--accent)">@' + v.user_id + '</strong> · ' + v.date + ' · ' + formatBytes(v.size) + '</div>',
+        '<div class="title">' + esc(v.label || 'Untitled upload') + '</div>',
+        '<div class="meta">by <strong style="color:var(--accent)">@' + esc(v.user_id) + '</strong> · ' + esc(v.date) + ' · ' + formatBytes(v.size) + '</div>',
       '</div>',
-      '<button class="share" onclick="copyLink(\\'' + link + '\\', this)">Share link</button>',
+      '<button class="share" data-link="' + linkEsc + '" onclick="copyLinkFromBtn(this)">Share link</button>',
     '</div>',
     '<div class="player-body">',
-      '<video controls preload="metadata" src="' + link + '"></video>',
+      '<video controls preload="metadata" src="' + linkEsc + '"></video>',
       '<div class="link-row">',
-        '<span class="url">' + link + '</span>',
-        '<button class="copy" onclick="copyLink(\\'' + link + '\\', this)">Copy</button>',
+        '<span class="url">' + linkEsc + '</span>',
+        '<button class="copy" data-link="' + linkEsc + '" onclick="copyLinkFromBtn(this)">Copy</button>',
       '</div>',
       '<div class="details">',
-        '<div class="detail"><div class="lbl">Upload ID</div><div class="val">' + v.id + '</div></div>',
-        '<div class="detail"><div class="lbl">SHA-256</div><div class="val">' + (v.sha256 || '—') + '</div></div>',
-        '<div class="detail"><div class="lbl">Container</div><div class="val">' + v.container.toUpperCase() + '</div></div>',
-        '<div class="detail"><div class="lbl">Captured at</div><div class="val">' + formatWhen(v.captured_at) + '</div></div>',
+        '<div class="detail"><div class="lbl">Upload ID</div><div class="val">' + esc(v.id) + '</div></div>',
+        '<div class="detail"><div class="lbl">SHA-256</div><div class="val">' + esc(v.sha256 || '—') + '</div></div>',
+        '<div class="detail"><div class="lbl">Container</div><div class="val">' + esc((v.container || '').toUpperCase()) + '</div></div>',
+        '<div class="detail"><div class="lbl">Captured at</div><div class="val">' + esc(formatWhen(v.captured_at)) + '</div></div>',
       '</div>',
     '</div>'
   ].join('');
+}
+
+function copyLinkFromBtn(btn) {
+  copyLink(btn.dataset.link || '', btn);
 }
 
 function copyLink(link, btn) {
