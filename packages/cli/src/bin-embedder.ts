@@ -37,6 +37,7 @@ import {
   writeEmbedderState,
   type EmbedderState,
 } from "./embedder-state.js";
+import { tryAcquireSpawnLock } from "./embedder-spawn-lock.js";
 
 const DEFAULT_IDLE_EXIT_MS = 30 * 60 * 1000; // 30 min — well past typical session
 
@@ -137,6 +138,20 @@ async function runDaemon(opts: DaemonOpts): Promise<number> {
     }
   }
 
+  // Issue #315 (Race β): tryAcquireLock above is TOCTOU. When N daemon
+  // children all spawn before any of them writes state.status=starting,
+  // every one passes the lock check and enters the cold-load path, each
+  // loading 650MB of ONNX. The startup-lock below makes the
+  // "tryAcquireLock + writeState(starting) + cold-load" sequence
+  // mutually exclusive across processes. A daemon that fails to acquire
+  // the lock exits without loading the model — the winner will be
+  // discoverable via /health within a few seconds.
+  const startupLock = tryAcquireSpawnLock(`${opts.statePath}.startup.lock`);
+  if (!startupLock) {
+    process.stderr.write("[embedder] another daemon is in startup; exiting\n");
+    return 0;
+  }
+
   const model = opts.model ?? "Xenova/multilingual-e5-small";
   const startedAt = new Date().toISOString();
 
@@ -170,8 +185,13 @@ async function runDaemon(opts: DaemonOpts): Promise<number> {
       error: msg.slice(0, 500),
     });
     process.stderr.write(`[embedder] load failed: ${msg}\n`);
+    startupLock.release();
     return 1;
   }
+  // Cold load complete: release the startup lock so subsequent daemons
+  // can detect "already running" via the state file (status=starting
+  // here, status=running written below in step 3 after server.listen).
+  startupLock.release();
 
   // Step 3: idle / refcount tracking. Keep timestamps in-process; re-read
   // members from state file before deciding to exit so SessionEnd hooks'
