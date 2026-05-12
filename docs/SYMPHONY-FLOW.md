@@ -38,9 +38,9 @@ covers the Symphony track in isolation.
    fixed-flow (`<50` 字 body, fixed-flow template; D5 in plan §2a).
 2. **Symphony self-claims (autonomous)** — the Symphony daemon polling
    GitHub picks up the issue, runs the §0 sanity gate
-   (TWO-DRIVER-COEXISTENCE.md §2), atomically swaps
-   `--remove-label nothing --add-label symphony-working` (it's an add since
-   `track:symphony` stays), and posts a workpad claim comment.
+   (TWO-DRIVER-COEXISTENCE.md §2), runs `gh issue edit <N> --add-label
+   symphony-working` (`track:symphony` stays), and posts a workpad claim
+   comment.
 3. **Symphony implements + opens PR (autonomous)** — Symphony writes code
    in its workspace, opens a regular (non-draft) PR with branch
    `symphony/issue-<N>` and body containing `Closes #<N>`. PR carries
@@ -122,12 +122,19 @@ The human reviewer's job on a Symphony PR:
 1. Read the PR diff and the workpad comment on the issue.
 2. Optionally run TeamBrain's `/review` skill locally for a deeper pass
    (not required; this is the **Symphony** track, not fixed-flow).
-3. If acceptable: `gh pr edit <PR> --add-label symphony-human-reviewed`.
-   This is the merge authorization.
-4. If unacceptable: leave PR comments; **do not** add the label. Symphony
-   reads the comments on its next poll cycle and addresses them (just like
-   upstream Symphony's PR-feedback-sweep protocol). The human re-reviews
-   and adds the label when satisfied.
+3. If acceptable, do **both** atomic actions (label alone is NOT enough
+   under standard GitHub branch protection — `required_pull_request_reviews`
+   needs an actual PR-review approval, not a label):
+   - `gh pr review <PR> --approve` — satisfies branch protection's
+     `required_approving_review_count`.
+   - `gh pr edit <PR> --add-label symphony-human-reviewed` — satisfies
+     the Symphony-track merge contract.
+   Both are required. Branch-protection check details:
+   `docs/BEFORE-MERGE.md` §branch-protection verify.
+4. If unacceptable: leave PR comments; **do not** approve, **do not** add
+   the label. Symphony reads the comments on its next poll cycle and
+   addresses them (upstream Symphony's PR-feedback-sweep protocol).
+   Human re-reviews and does both step-3 actions when satisfied.
 
 The reviewer must be a human (`actor.type == "User"`, not in the repo's
 bot allowlist). Agents / bots / Symphony itself are forbidden from adding
