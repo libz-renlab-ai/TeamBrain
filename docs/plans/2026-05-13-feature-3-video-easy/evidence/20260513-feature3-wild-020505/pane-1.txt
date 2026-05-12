@@ -1,0 +1,35 @@
+
+
+feat-feature3-video-upload on  worktree-feat-feature3-video-upload:feat/m6-feature3-video-upload-wedge [$] vi
+a  v22.21.1
+❯ clear; cd /Users/m1/projects/TeamBrain/.claude/worktrees/feat-feature3-video-upload; echo "=== pane 1: teama
+gent video upload (CLI happy path) ===; first record then upload"
+=== pane 1: teamagent video upload (CLI happy path) ===; first record then upload
+
+feat-feature3-video-upload on  worktree-feat-feature3-video-upload:feat/m6-feature3-video-upload-wedge [$] vi
+a  v22.21.1
+❯ echo "[step 1] simulate screen-record via ffmpeg lavfi (stand-in for screencapture -v)"; ffmpeg -y -loglevel
+ error -f lavfi -i color=c=teal:s=320x180:r=15 -t 3 -c:v libx264 -pix_fmt yuv420p /tmp/feature3-evidence/demo-
+clip.mp4; ls -la /tmp/feature3-evidence/demo-clip.mp4; echo; echo "[step 2] one-command upload"; npx tsx packa
+ges/cli/src/bin.ts video upload /tmp/feature3-evidence/demo-clip.mp4 --endpoint=http://127.0.0.1:19100 --user-
+id=ceo-duck --label="feature-3 dogfood" --json 2>/dev/null | tee /tmp/feature3-evidence/upload.json
+[step 1] simulate screen-record via ffmpeg lavfi (stand-in for screencapture -v)
+-rw-r--r--  1 m1  wheel  2864  5月 13 02:03 /tmp/feature3-evidence/demo-clip.mp4
+
+[step 2] one-command upload
+{
+  "ok": true,
+  "id": "01KRENQ80BE363HS5M18SJ47BC",
+  "user_id": "ceo-duck",
+  "date": "2026-05-12",
+  "link": "http://127.0.0.1:19100/api/file?user=ceo-duck&date=2026-05-12&id=01KRENQ80BE363HS5M18SJ47BC&ext=mp4
+",
+  "payload_size": 2864,
+  "payload_sha256": "fa54791d5f3765b4eabcf079e49a738755a87d9f790d6ac21672de94240420e9",
+  "container": "mp4",
+  "file": "demo-clip.mp4"
+}
+
+feat-feature3-video-upload on  worktree-feat-feature3-video-upload:feat/m6-feature3-video-upload-wedge [$] vi
+a  v22.21.1 took 2s
+❯

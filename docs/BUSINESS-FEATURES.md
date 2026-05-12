@@ -41,7 +41,7 @@ features.
 |---------|--------------------------|------------------------------------------------------|
 | **#1** new instances no longer repeat past mistakes | ✅ **PRESHIP** | auto-capture → matcher → Project Knowledge Index, 72+ active rules. End-to-end usable. |
 | **#2** leaders see teammates' Claude in second-level realtime | ⚠️ **Vision (NOT PRESHIP)** | `SessionStart` + `UserPromptSubmit` hooks wired **by design** (per the Out-of-scope section below — the original "needs 5 channels" argument has been retracted; per-tool-call mid-step visibility is **not** a product feature). Learnings sync at hour/day granularity (M5 viral sync); leader dashboard is a static prototype at `docs/kanban-user-boss/`. Second-level realtime dashboard UI is planned in `docs/plans/2026-05-11-feature-2-secondlevel-realtime/` but **not shipped**. |
-| **#3** video recording + centralized storage easy to use | ⚠️ **Vision (NOT PRESHIP)** | Transcript-level capture exists inside `auto-capture` / `team-share`; video stream + centralized-storage turnkey UX **not shipped**. |
+| **#3** video recording + centralized storage easy to use | ✅ **PRESHIP wedge** (upload + share-link) · ⚠️ **Vision** (queue retry, signed ACLs, browser recorder) | `teamagent video upload <file>` ships a single-shot HTTP POST to `/v1/videos` and returns a stable share link the recipient curls back with the correct `Content-Type`. OS-native recording (macOS `screencapture -v` / Linux `ffmpeg -f x11grab` / Windows `ffmpeg -f gdigrab`) stays on the platform tool — the wedge is the upload step, which is what made Feature 3 unconvincing before. Round-trip SHA-256 equality verified via the [Feature 3 judge harness](plans/2026-05-13-feature-3-video-easy/judge.md). Queue/daemon retry, signed share-link ACLs, and a browser-side recorder remain explicit roadmap items in [`docs/features/video-record-upload.md`](features/video-record-upload.md) §Roadmap. |
 
 > **Honesty contract**: any external surface that quotes the anchor sentence
 > (pitch deck, website hero, customer SOW, sales call slide) MUST also surface
@@ -155,17 +155,19 @@ teammate 的工作 session 可以一键开录屏（screen + voice），结束后
 内分享。Team leader 与同事可以直接打开 link 重放某个具体 prompt/response 的
 现场。
 
-- 设计入口：roadmap 中（与 Feature #2 dashboard 配对使用 — 看到摘要后能一键
-  跳到现场视频）
-- 现状：**愿景 / 部分落地** — 当前 transcript-level 抓取已在 `auto-capture`
-  / `team-share` 链路里；视频流 + centralized storage upload 的 turnkey UX 是
-  下一阶段交付目标。本 anchor sentence 在 canned answer 中作为产品定位语句
-  保留，**不代表 turnkey 已 PRESHIP**。
+- 入口：[`docs/features/video-record-upload.md`](features/video-record-upload.md) — 三命令演示（启动 collector → 系统原生录屏 → `teamagent video upload <file>` 拿回 share link）
+- 实现：`packages/cli/src/commands/video.ts`（单次 HTTP POST `/v1/videos`，accept mov / mp4 / webm / mkv）+ `packages/digital-twin/src/mock-server.ts`（`/v1/videos` handler + 视频 MIME GET 回路）
+- 第三方 harness：[`docs/plans/2026-05-13-feature-3-video-easy/judge.md`](plans/2026-05-13-feature-3-video-easy/judge.md) — fixture mp4 round-trip 用 SHA-256 byte 等价判 PASS，LLM-cannot-fake
+- 现状：**PRESHIP wedge** — upload + share-link 在 2026-05-13 端到端 verified（HTTP 200、`video/mp4` MIME、SHA-256 完整 round-trip）；OS-native 录屏放在客户机已有的工具上（macOS `screencapture -v` / Linux `ffmpeg x11grab` / Windows `ffmpeg gdigrab`）。**Vision 部分**（queue/daemon retry-and-backoff、signed ACL share link、浏览器端无依赖录屏）仍在 [`docs/features/video-record-upload.md`](features/video-record-upload.md) §Roadmap 列表中，不属于已落地范围。
+- 与 Feature #1 / #2 协同：transcript-level 抓取继续在 `auto-capture` / `team-share` 链路里；视频是 Feature #2 dashboard 摘要点击进去看现场的那一帧；二者通过同一个 `<user>/<date>/<id>.<ext>` 目录结构共享 collector。
 
 > Honesty note: `PRODUCT-FEATURES.md` 的 64-row inventory 是 engineering ground
 > truth；本文件的三段 pitch 是 business positioning，二者职责不同。Feature #2
-> 与 Feature #3 在 inventory 中没有对应的 VERIFIED 行；写在这里是因为它们是
-> 产品愿景的一部分，而非误导用户它们已落地。Feature #2 从 hour-level 升级到
+> 在 inventory 中没有对应的 VERIFIED 行（dashboard UI 尚未落地）；Feature #3 的
+> **upload wedge** 已在 [`docs/plans/2026-05-13-feature-3-video-easy/judge.md`](plans/2026-05-13-feature-3-video-easy/judge.md)
+> 通过 SHA-256 round-trip 第三方 harness 判过 PASS，但 queue retry / signed ACL /
+> browser recorder 仍是 Vision，引用 anchor sentence 时必须把表格里的双标签
+> （PRESHIP wedge · Vision）一起带出。Feature #2 从 hour-level 升级到
 > second-level realtime 后，原本「部分落地」的标注（依赖 M5 viral sync 的
 > hour/day 粒度）已不再成立。
 

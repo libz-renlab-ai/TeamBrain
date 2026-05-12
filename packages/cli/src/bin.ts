@@ -191,6 +191,12 @@ import {
   RecordArgError,
 } from "./commands/record.js";
 import {
+  executeVideo,
+  parseVideoArgs,
+  VideoArgError,
+  VIDEO_HELP,
+} from "./commands/video.js";
+import {
   executeFixtureReplay,
   parseFixtureReplayArgs,
   renderFixtureReplayResult,
@@ -928,6 +934,25 @@ async function main(): Promise<void> {
       if (result.exitCode !== 0) process.exit(result.exitCode);
       return;
     }
+    case "video": {
+      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(VIDEO_HELP);
+        return;
+      }
+      let parsedVideo;
+      try {
+        parsedVideo = parseVideoArgs(rest, process.env.TEAMAGENT_VIDEO_ENDPOINT);
+      } catch (err) {
+        if (err instanceof VideoArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
+      const result = await executeVideo(parsedVideo);
+      if (result.exitCode !== 0) process.exit(result.exitCode);
+      return;
+    }
     case "fixture": {
       try {
         if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
@@ -1444,6 +1469,10 @@ async function main(): Promise<void> {
           "                                   管理 TeamBrain Digital Twin sidecar 配置（~/.teamagent/digital-twin.json）；inject-mock 走端到端 smoke",
           "  teamagent record <start|stop|import>",
           "                                   本地工作录音子命令（ffmpeg → Opus/OGG → queue/pending/）",
+          "  teamagent video upload <file> [--endpoint <url>] [--label <l>] [--user-id <id>] [--json]",
+          "                                   Feature #3 wedge：上传屏幕录像到中心化存储（mov/mp4/webm/mkv），返回 shareable link",
+          "                                   录制本身用系统原生工具（macOS `screencapture -v`/Linux `ffmpeg -f x11grab`/Win `ffmpeg -f gdigrab`）",
+          "                                   详见 docs/features/video-record-upload.md",
           "  teamagent ingest --from-insights <path> | --from-audit | --from-pr <n>",
           "                   | --from-git [--since=30d] | --from-ci [--since=30d] | --from-candidates <path>",
           "                                   多源摄入：Claude /insights / npm audit / PR review / git hotspot / CI failure",

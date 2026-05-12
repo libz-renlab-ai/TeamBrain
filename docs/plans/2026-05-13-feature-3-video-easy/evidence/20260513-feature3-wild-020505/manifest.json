@@ -1,0 +1,17 @@
+{
+  "run_id": "20260513-feature3-wild-020505",
+  "captured_at": "2026-05-12T18:05:05Z",
+  "screen_mov": {
+    "path_in_run": "/tmp/feature3-evidence/capture/screen.mov",
+    "size_bytes": 1351090,
+    "sha256": "86406a82f221f921292865ebaa02f4d87f663a5567f33e8aacb7af65d3388b5e",
+    "dogfood_link": "http://127.0.0.1:19100/api/file?user=dogfood&date=2026-05-12&id=01KRENSE1EHW3D6Q5PZFR68AP8&ext=mov"
+  },
+  "demo_clip_mp4": {
+    "size_bytes": 2864,
+    "sha256": "fa54791d5f3765b4eabcf079e49a738755a87d9f790d6ac21672de94240420e9",
+    "share_link": "http://127.0.0.1:19100/api/file?user=ceo-duck&date=2026-05-12&id=01KRENQ80BE363HS5M18SJ47BC&ext=mp4"
+  },
+  "verdict": "PASS",
+  "reasoning": "SHA-256 byte equality on both uploads; HTTP 200; Content-Type matches container; recipient curl returns identical bytes"
+}
