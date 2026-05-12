@@ -10,18 +10,18 @@
    updated on each follow-up PR
 ```
 
-# Report — PR-1 (submodule + adapter skeleton)
+# Report — PR-1 (submodule + content-bridge skeleton)
 
-## Status: DRAFT — finalised at merge time
+## Status: pre-merge, branch-2 locked
 
-This report.md is written before squash-merge with placeholders; on merge the author commits a second pass that fills in the merged SHA, PR number, and final pinned upstream SHA.
+PR: https://github.com/libz-renlab-ai/TeamBrain/pull/390. Awaiting `/review` PASS per ADR-0007 before squash-merge. Architecture is locked to branch 2 (see "Architectural pivot mid-PR" below); any further design churn warrants a new PR rather than amends to this branch.
 
 ## What this PR delivered
 
-1. Added `hrdAI3/RocketTeam` as git submodule at `landing/rocketteam`, pinned at SHA `3922219668cb1b41b4631487983518f6d3914543` (upstream `main` HEAD at time of clone).
+1. Added `hrdAI3/RocketTeam` as git submodule at `landing/rocketteam`, pinned at upstream SHA `3922219668cb1b41b4631487983518f6d3914543` (upstream `main` HEAD at time of clone, 2026-05-12).
 2. Authored `docs/plans/landing-rocketteam/plan.md`, `research.md`, `report.md` (this file).
-3. Added `packages/landing-adapter/` workspace with TypeScript contract surface (`LandingPayload`, `Feature2Signal`, `Feature3Signal`) and TODO-marked stubs.
-4. Updated root `pnpm-workspace.yaml` / `tsconfig*.json` only as needed to make the new package compile.
+3. Added `packages/landing-adapter/` workspace with TypeScript contract surface (`LandingPayload`, `Feature2Signal`, `Feature3Signal`) and TODO-marked stubs. `pnpm --filter @teamagent/landing-adapter typecheck` exits 0.
+4. No edits required to root `pnpm-workspace.yaml` / `tsconfig.base.json` — existing `packages/*` glob already picks up the new package.
 
 ## What this PR did NOT deliver (explicit non-goals)
 
@@ -41,7 +41,7 @@ This report.md is written before squash-merge with placeholders; on merge the au
 
 ## Deviations from plan
 
-- (to be filled on merge — if zero deviations, write "none")
+- Initial PR-1 design assumed a separate Next.js Pages deploy and a different adapter shape. Mid-PR, repo search revealed conflicts with existing `apps/landing/` policy + Pages workflow; plan.md was edited to lock branch 2 (content bridge into existing static HTML) before merge. Adapter contract types in `packages/landing-adapter/src/index.ts` are unchanged from the original commit — they will either be extended or refactored in PR-3 once the content-extraction target is scoped.
 
 ## Follow-up issues to open after merge
 
@@ -62,4 +62,5 @@ Pivot locked at the plan.md / report.md level (commits append-only on this branc
 
 ## Risks observed during delivery
 
-- (to be filled on merge — capture anything that surprised the implementer)
+- **Skipped repo search before push.** I should have grepped for existing landing infrastructure (specifically `apps/landing/` and `landing-deploy.yml`) before adding the submodule. The miss was caught by the Stop hook's self-report requirement, not by anything intrinsic to the PR workflow. Mitigation going forward: any PR that introduces a new top-level concern ("landing", "deploy", "ingest", etc.) starts with `find . -maxdepth 3 -name '*<concern>*'` + reading any matching README before touching code.
+- **Bash cwd persistence trap.** `cd landing/rocketteam` in one Bash call persisted across subsequent calls, causing a subsequent `mkdir -p docs/plans/...` to create directories inside the submodule instead of the worktree root. Write tool's absolute paths saved the actual content from the bug; the empty leftover dirs were caught because git submodule porcelain stayed clean. Mitigation: prefer absolute paths in Bash too, or open each Bash with `cd /Users/m1/...worktree-root && ...` explicitly.
