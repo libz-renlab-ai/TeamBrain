@@ -44,7 +44,13 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "sharp"
+      "@anthropic-ai/claude-code",
+      "esbuild",
+      "protobufjs",
+      "sharp",
+      "tree-sitter-javascript",
+      "tree-sitter-python",
+      "tree-sitter-typescript"
     ]
   }
 }

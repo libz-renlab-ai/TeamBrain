@@ -1,4 +1,12 @@
-import { existsSync, copyFileSync, mkdirSync, writeFileSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  copyFileSync,
+  mkdirSync,
+  writeFileSync,
+  statSync,
+  openSync,
+  closeSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { homedir as osHomedir, platform as osPlatform, arch as osArch, hostname } from 'node:os';
 import { spawn as nodeSpawn } from 'node:child_process';
@@ -149,13 +157,37 @@ export function tapSession(
     // is responsible for resolving + self-installing the binary; we only
     // spawn what was passed in. Spawn failure is silent — the queue file
     // persists for later daemon runs to pick up.
+    //
+    // Issue #368: capture the daemon's stdout+stderr into uploader.log instead
+    // of `stdio: 'ignore'`, so a `MODULE_NOT_FOUND` / auth-failure / crash is
+    // recorded (visible via `teamagent digital-twin status` / `teamagent
+    // doctor`) rather than swallowed. If the log can't be opened we fall back
+    // to `'ignore'` — the daemon must still spawn.
     if (deps.daemonBin && existsSync(deps.daemonBin)) {
       const spawnFn = deps.spawn ?? nodeSpawn;
+      let logFd: number | undefined;
+      try {
+        const logPath = paths.uploaderLogFile;
+        // Single-file rotation-by-truncation: the tap fires once per Stop, so
+        // an append-only log would grow unbounded over a machine's lifetime.
+        try {
+          if (existsSync(logPath) && statSync(logPath).size > 1_000_000) {
+            writeFileSync(logPath, '', 'utf-8');
+          }
+        } catch {
+          /* best-effort cap; ignore */
+        }
+        logFd = openSync(logPath, 'a');
+      } catch {
+        logFd = undefined;
+      }
+      const stdio: 'ignore' | ['ignore', number, number] =
+        logFd === undefined ? 'ignore' : ['ignore', logFd, logFd];
       try {
         const nodeBin = deps.nodeBin ?? process.execPath;
         const child = spawnFn(nodeBin, [deps.daemonBin], {
           detached: true,
-          stdio: 'ignore',
+          stdio,
           windowsHide: true,
           cwd: paths.digitalTwinDir,
         });
@@ -165,6 +197,15 @@ export function tapSession(
         child.unref();
       } catch {
         // spawn failure must not block tap-session result
+      } finally {
+        // The child has its own dup'd handle on the log fd; close the parent's.
+        if (logFd !== undefined) {
+          try {
+            closeSync(logFd);
+          } catch {
+            /* already closed / never opened */
+          }
+        }
       }
     }
 

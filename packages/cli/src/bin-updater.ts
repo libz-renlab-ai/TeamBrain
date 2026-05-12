@@ -54,6 +54,7 @@ import { fetchLatestVersion } from "./update/fetch-latest.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
 import { withUpdateStateLock } from "./lib/update-state-lock.js";
 import { emitUpgradeEvent } from "./lib/upgrade-event-emitter.js";
+import { gatherLocalIdentity } from "./lib/local-identity.js";
 
 function teamagentHome(): string {
   return process.env["TEAMAGENT_HOME"] ?? path.join(os.homedir(), ".teamagent");
@@ -332,6 +333,12 @@ async function main(): Promise<void> {
             eventsDbPath: path.join(teamagentHome(), "events.db"),
           });
         },
+        // Post-merge PR-creator force-update feature: collect local identity
+        // (gh login / git email / env) so runUpdater can stamp the 🎯 banner
+        // when latest.json marks the user as the PR author. Lazy invocation:
+        // runUpdater only calls this when latest.json carries pr_creator_login,
+        // so machines without `gh` / `git` aren't penalized.
+        gatherIdentity: () => gatherLocalIdentity(),
       });
       log("updater exit");
       return undefined;

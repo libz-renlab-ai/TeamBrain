@@ -203,6 +203,49 @@ Error: secure crypto unusable, insecure Math.random not allowed
 
 ---
 
+## 装机踩坑清单（issue #368）
+
+下面这几条都真的把一个 teammate 卡住过——按顺序对照即可。
+
+### a) `pnpm: command not found`
+
+`pnpm install` 报 `command not found` / `pnpm: No such file`：先全局装 pnpm，再回到 step-1。
+
+```bash
+npm install -g pnpm
+pnpm install
+```
+
+### b) 中国大陆网络 — `pnpm install` 卡死 / `sharp` / `vips` 下载超时
+
+走镜像源，但**只用临时环境变量，不要动全局 `~/.npmrc`**（污染全局会影响别的项目）：
+
+```bash
+npm_config_registry=https://registry.npmmirror.com \
+npm_config_sharp_libvips_binary_host=https://npmmirror.com/mirrors/sharp-libvips \
+npm_config_sharp_binary_host=https://npmmirror.com/mirrors/sharp \
+pnpm install
+```
+
+（Windows PowerShell：用 `$env:npm_config_registry='https://registry.npmmirror.com'; ...; pnpm install`，跑完后 `Remove-Item Env:npm_config_registry` 等清掉。）
+
+### c) `teamagent init` 报 `Hook bundle not found` / `bin-pre-tool-use.cjs`
+
+hook bundle 没 build 出来。先单独 build hook bundle，再重跑 init：
+
+```bash
+pnpm --filter @teamagent/cli build:hook
+pnpm teamagent init
+```
+
+### d) 装完没数据上来？先**完全重启 Claude Code**
+
+Stop hook（数字孪生 transcript 上传 + 学习管道）是在 Claude Code **下次启动**时才挂上的。`pnpm teamagent init` 之后必须**彻底退出并重开** Claude Code（关窗口重开，不是 `/clear`），Stop hook 才生效。
+
+> 如果重启之后 dashboard 上还是看不到本机数据，跑 `teamagent doctor` 看 `digital-twin-uploader:` 那一行；显示 `BROKEN` 会附带具体原因，`teamagent digital-twin status` 的 `uploader log:` 段会给出 daemon 最近一次崩溃的错误行。
+
+---
+
 ## 遇到没见过的报错？
 
 如果遇到上面 `common_errors` 里没有覆盖的错误，请：

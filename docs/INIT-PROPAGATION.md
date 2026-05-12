@@ -77,13 +77,20 @@ The **intent** going forward is to also propagate:
   open work in `docs/INIT-PROPAGATION-IMPL.md` (TODO).
 - ⏳ Project-level `.codex/skills/<name>/` static skills →
   `~/.codex/skills/<name>/`.
-- ⏳ Claude main settings keys (`permissions`, `env`, MCP servers) merged
-  from `.claude/settings.json` (project) → `~/.claude/settings.json` (user).
+
+Out of scope (intentionally not propagated by `teamagent init`):
+
+- Claude main settings keys beyond hooks (`permissions`, `env`, MCP servers).
+  Current code merges only hook entries from `.claude/settings.json` (project)
+  into `~/.claude/settings.json` (user); other top-level keys are owned by
+  the user and not diffed/merged. Project-level permission / env / MCP needs
+  belong in the project's own `.claude/settings.json`, not the user's.
 
 The canonical statement that holds whether or not every checkbox is shipped:
 **install the skills/plugins/hooks/claude main settings via teamagent init
 to teamagent users.** That is what `teamagent init` exists to do at the
-user-config-propagation level.
+user-config-propagation level. "Claude main settings" here means the **hook**
+entries; other top-level keys are deliberately user-owned (see above).
 
 ## What does NOT propagate (intentionally)
 

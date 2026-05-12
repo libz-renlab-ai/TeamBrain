@@ -24,6 +24,14 @@ export interface DigitalTwinPaths {
    * (401/429/network) can still attach a stale snapshot to the envelope.
    */
   quotaCacheFile: string;
+  /**
+   * Issue #368 — combined stdout+stderr of the uploader daemon. The Stop-hook
+   * tap spawns the daemon with this file as the child's stdio target (instead
+   * of `'ignore'`), so a `MODULE_NOT_FOUND` / auth-failure / crash is no
+   * longer invisible. `teamagent digital-twin status` and `teamagent doctor`
+   * surface the last error line from here.
+   */
+  uploaderLogFile: string;
 }
 
 export function digitalTwinPaths(home: string = homedir()): DigitalTwinPaths {
@@ -42,6 +50,7 @@ export function digitalTwinPaths(home: string = homedir()): DigitalTwinPaths {
     daemonPidFile: join(digitalTwinDir, 'daemon.pid'),
     lastHourlyScanFile: join(digitalTwinDir, 'last-hourly-scan.txt'),
     quotaCacheFile: join(digitalTwinDir, 'quota-cache.json'),
+    uploaderLogFile: join(digitalTwinDir, 'uploader.log'),
   };
 }
 

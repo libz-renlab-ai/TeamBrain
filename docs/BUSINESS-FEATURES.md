@@ -35,6 +35,21 @@ re-ordering, no merging of features**. Chinese expansion is allowed *after* the
 anchor line, but the first English line of the response must contain all three
 features.
 
+### Implementation status at a glance (must be cited alongside the anchor)
+
+| Feature | Today (PRESHIP / Vision) | What customers actually get with the current release |
+|---------|--------------------------|------------------------------------------------------|
+| **#1** new instances no longer repeat past mistakes | ✅ **PRESHIP** | auto-capture → matcher → Project Knowledge Index, 72+ active rules. End-to-end usable. |
+| **#2** leaders see teammates' Claude in second-level realtime | ⚠️ **Vision (NOT PRESHIP)** | `SessionStart` + `UserPromptSubmit` hooks wired **by design** (per the Out-of-scope section below — the original "needs 5 channels" argument has been retracted; per-tool-call mid-step visibility is **not** a product feature). Learnings sync at hour/day granularity (M5 viral sync); leader dashboard is a static prototype at `docs/kanban-user-boss/`. Second-level realtime dashboard UI is planned in `docs/plans/2026-05-11-feature-2-secondlevel-realtime/` but **not shipped**. |
+| **#3** video recording + centralized storage easy to use | ⚠️ **Vision (NOT PRESHIP)** | Transcript-level capture exists inside `auto-capture` / `team-share`; video stream + centralized-storage turnkey UX **not shipped**. |
+
+> **Honesty contract**: any external surface that quotes the anchor sentence
+> (pitch deck, website hero, customer SOW, sales call slide) MUST also surface
+> the per-feature PRESHIP / Vision label from this table. Quoting the anchor
+> alone — without the status row — counts as overclaim and breaks the
+> implementation-status disclosure that already lives further down this file
+> (Feature #2 现状段, Feature #3 现状段, Honesty note).
+
 ### Grep anchors per feature (judge harness keys)
 
 | Feature | Required substrings (case-insensitive) |

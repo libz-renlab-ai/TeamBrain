@@ -177,7 +177,7 @@ describe('tapSession', () => {
     expect(spawnCalled).toBe(false);
   });
 
-  it('spawns daemon detached when daemonBin exists, ignoring stdio', () => {
+  it('spawns daemon detached when daemonBin exists, capturing stdio to uploader.log (issue #368)', () => {
     const cwd = '/Users/test/proj3';
     const sessionId = 'sess-d';
     const dir = join(home, '.claude', 'projects', projectDirForCwd(cwd));
@@ -211,9 +211,19 @@ describe('tapSession', () => {
     expect(observed.cmd).toBe('/path/to/node');
     expect(observed.args).toEqual([daemonBin]);
     expect(observed.opts?.detached).toBe(true);
-    expect(observed.opts?.stdio).toBe('ignore');
     expect(observed.opts?.windowsHide).toBe(true);
     expect(unrefCalled).toBe(true);
+
+    // Issue #368: stdout/stderr go to uploader.log (an fd), not 'ignore'.
+    const stdio = observed.opts?.stdio;
+    expect(Array.isArray(stdio)).toBe(true);
+    const [inSpec, outSpec, errSpec] = stdio as [unknown, unknown, unknown];
+    expect(inSpec).toBe('ignore');
+    expect(typeof outSpec).toBe('number'); // a file descriptor
+    expect(outSpec).toBe(errSpec); // same fd for stdout + stderr
+    // The log file itself was created under ~/.teamagent/digital-twin/.
+    const logPath = join(home, '.teamagent', 'digital-twin', 'uploader.log');
+    expect(existsSync(logPath)).toBe(true);
   });
 
   it('returns error status when the queue dir cannot be created (best-effort)', () => {

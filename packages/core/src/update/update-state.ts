@@ -3,6 +3,20 @@ export interface PendingBanner {
   to: string;
   at: number;
   shown: boolean;
+  /**
+   * Post-merge PR-creator force-update feature. When true, the SessionStart
+   * banner uses a distinct "🎯 你的 PR 已 merge" template instead of the
+   * neutral "✨ 已自动更新" one. Set by `runUpdater` when the local user
+   * matches `latest.json::pr_creator_login`. Optional — old state files
+   * (pre-feature) and non-creator updates leave it absent.
+   */
+  pr_creator?: boolean;
+  /**
+   * PR number that triggered this update (only set when pr_creator===true).
+   * Rendered in the banner so the user can recognise their own PR. Optional
+   * for the same backwards-compat reason as `pr_creator`.
+   */
+  pr_number?: number;
 }
 
 export interface UpdateState {
@@ -113,7 +127,9 @@ export function parseUpdateState(raw: string): UpdateState {
       installed_at: typeof obj.installed_at === "number" ? obj.installed_at : def.installed_at,
       consecutive_install_failures: typeof obj.consecutive_install_failures === "number" ? obj.consecutive_install_failures : def.consecutive_install_failures,
       last_install_error: typeof obj.last_install_error === "string" ? obj.last_install_error : null,
-      pending_banner: isPendingBanner(obj.pending_banner) ? obj.pending_banner : null,
+      pending_banner: isPendingBanner(obj.pending_banner)
+        ? normalizePendingBanner(obj.pending_banner)
+        : null,
       reinstall_banner_shown_at:
         typeof obj.reinstall_banner_shown_at === "number" ? obj.reinstall_banner_shown_at : def.reinstall_banner_shown_at,
       last_branch_etag: typeof obj.last_branch_etag === "string" ? obj.last_branch_etag : def.last_branch_etag,
@@ -149,4 +165,23 @@ function isPendingBanner(v: unknown): v is PendingBanner {
     && typeof o.to === "string"
     && typeof o.at === "number"
     && typeof o.shown === "boolean";
+}
+
+/**
+ * Build a PendingBanner from a parsed JSON object, copying the required four
+ * fields and additively copying optional `pr_creator` / `pr_number` only when
+ * their types are correct. Wrong-type values are dropped silently (parser
+ * defaults are forgiving — see existing wrong-type handling in parseUpdateState).
+ */
+function normalizePendingBanner(raw: PendingBanner): PendingBanner {
+  const out: PendingBanner = {
+    from: raw.from,
+    to: raw.to,
+    at: raw.at,
+    shown: raw.shown,
+  };
+  const o = raw as unknown as Record<string, unknown>;
+  if (typeof o.pr_creator === "boolean") out.pr_creator = o.pr_creator;
+  if (typeof o.pr_number === "number") out.pr_number = o.pr_number;
+  return out;
 }

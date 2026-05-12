@@ -1,11 +1,13 @@
 import {
   type UpdateState,
   type PendingBanner,
+  isLocalUserPrCreator,
   makeUpdateInstalledEvent,
 } from "@teamagent/core";
 import type { UpdateInstalledEvent } from "@teamagent/types";
 import type { FetchShaResult } from "./github-api.js";
 import type { FetchLatestResult } from "./update/fetch-latest.js";
+import type { LocalIdentity } from "./lib/local-identity.js";
 
 // Node prints ERR_UNKNOWN_FILE_EXTENSION as:
 //   TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".ts" for /path/to/foo.ts
@@ -60,6 +62,17 @@ export interface UpdaterDeps {
    * lands (same lifetime concern as the snooze/never CLI commands).
    */
   emitInstalled?: (event: UpdateInstalledEvent) => void | Promise<void>;
+
+  /**
+   * Post-merge PR-creator force-update feature. Returns the local user's
+   * identity signals (ghLogin / gitEmail / env) so runUpdater can decide
+   * whether to stamp a `pr_creator: true` banner.
+   *
+   * Optional — when omitted, runUpdater behaves as before (never stamps
+   * the PR-creator banner, no change to existing tests). The real bin-updater
+   * wires this to `gatherLocalIdentity()` from lib/local-identity.ts.
+   */
+  gatherIdentity?: () => LocalIdentity;
 }
 
 export async function runUpdater(deps: UpdaterDeps): Promise<void> {
@@ -169,6 +182,30 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
 
     const fromVersion = state.last_installed_version;
     const installedAtMs = deps.now();
+    // Post-merge PR-creator force-update feature. When latest.json carries
+    // a pr_creator_login AND the local user matches (any of: gh login, env,
+    // noreply email), stamp the banner with pr_creator:true + pr_number so
+    // session-start-logic renders the 🎯 distinct template. Non-matching
+    // users (or absent latest.json fields) get the legacy banner shape.
+    let prCreatorBanner: { pr_creator: true; pr_number?: number } | undefined;
+    if (result.ok && result.pr_creator_login && deps.gatherIdentity) {
+      const identity = deps.gatherIdentity();
+      const matched = isLocalUserPrCreator({
+        prCreatorLogin: result.pr_creator_login,
+        ghLogin: identity.ghLogin,
+        env: identity.env,
+        gitEmail: identity.gitEmail,
+      });
+      if (matched) {
+        prCreatorBanner = {
+          pr_creator: true,
+          ...(typeof result.pr_number === "number" ? { pr_number: result.pr_number } : {}),
+        };
+        deps.log(
+          `PR-creator match (${result.pr_creator_login}) — stamping banner with PR #${result.pr_number ?? "?"}`,
+        );
+      }
+    }
     // PendingBanner.from / .to are now version strings (with SHA fallback for
     // pre-#313 state files that only had SHAs persisted). Display layer in
     // session-start-logic uses these as-is.
@@ -177,6 +214,7 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
       to: remoteVersion,
       at: installedAtMs,
       shown: false,
+      ...(prCreatorBanner ?? {}),
     };
     const success: UpdateState = {
       ...state,
