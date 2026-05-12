@@ -44,47 +44,45 @@ gate to dispatch on issues in the other track's state.
 
 ## §1. Label mutex matrix
 
-Fixed-flow lifecycle labels (`grill-ready`, `grilling`, `docs-grill-ready`,
-`grill-working`) and the Symphony lifecycle labels (`track:symphony`,
-`symphony-working`, `symphony-human-reviewed`, `symphony-blocked`) are
-**mutually exclusive on a single issue**.
+Fixed-flow labels (`grill-ready`, `grilling`, `docs-grill-ready`,
+`grill-working`) and Symphony labels (`track:symphony`, `symphony-working`,
+`symphony-human-reviewed`, `symphony-blocked`) are **mutually exclusive on
+a single issue**.
 
-| Label A | Label B | Allowed together? | Resolution |
-|---------|---------|-------------------|------------|
-| `track:symphony` | `grill-ready` | ❌ NO | Maintainer removes one |
-| `track:symphony` | `grilling` | ❌ NO | Maintainer removes one |
-| `track:symphony` | `docs-grill-ready` | ❌ NO | Maintainer removes one |
-| `track:symphony` | `grill-working` | ❌ NO | Maintainer removes one |
-| `track:symphony` | `ready-for-human` | ❌ NO | Symphony track uses `symphony-blocked` |
-| `track:symphony` | `epic` | ❌ NO | `epic` issues are tracking-only, never dispatched |
-| `track:symphony` | `non-conformant` | ✅ allowed | Conformance still applies (D5) |
-| `track:symphony` | `bypass-fixed-flow` | ✅ allowed | See §5 |
-| `symphony-human-reviewed` | (on PR) | n/a — PR-only label | See §4 |
+| `track:symphony` + ... | Allowed? | Resolution |
+|---|---|---|
+| `grill-ready` / `grilling` / `docs-grill-ready` / `grill-working` | ❌ | Maintainer removes one |
+| `ready-for-human` | ❌ | Symphony track uses `symphony-blocked` |
+| `epic` | ❌ | `epic` is tracking-only, never dispatched |
+| `non-conformant` | ✅ coexist | Conformance still blocks dispatch (D5) |
+| `bypass-fixed-flow` | ✅ coexist | See §5 (bypass-all-drivers) |
+| `symphony-human-reviewed` | n/a — PR-only | See §4 |
 
-**Track switches** must use a single `gh issue edit <N> --remove-label X
---add-label Y` atomic call; two-step (remove then add) leaves a race window
-the wrong driver can claim through.
+**Track switches** use a single `gh issue edit <N> --remove-label X
+--add-label Y` atomic call; two-step (remove then add) leaves a race window.
 
 ## §2. Driver §0 sanity gate — refusal contract
 
-Each driver's first action upon being invoked on an issue MUST be:
-
-```
-1. Fetch issue labels via `gh issue view <N> --json labels`.
-2. Apply the refusal rules below.
-3. If any refusal triggers: post a 1-line comment naming the violation,
-   add the appropriate "needs-*" label, and exit WITHOUT any worktree /
-   branch / code change.
-```
+Each driver's first action MUST be: (1) fetch issue labels via
+`gh issue view <N> --json labels`; (2) apply the refusal rules below;
+(3) if any rule triggers, post a 1-line comment naming the violation,
+add the appropriate `needs-*` label, exit WITHOUT any worktree / branch
+/ code change.
 
 **`/fixed-flow-driver` §0 refusal — refuses to dispatch when**:
 - `track:symphony` label present → comment `refusing: track:symphony issue
   is owned by Symphony; see TWO-DRIVER-COEXISTENCE.md §1`; exit.
 - `symphony-working` label present → same comment + exit.
 - `symphony-blocked` label present → same comment + exit.
-- (existing) `grill-ready` missing, `docs-grill-ready` missing, or
-  `ready-for-human` / `epic` present → existing FIXEDFLOW §Dispatch policy
-  rules apply unchanged.
+- **A Symphony PR already exists for this issue** —
+  `gh pr list --search "Closes #<N> in:body" --label "track:symphony"`
+  returns non-empty → comment `refusing: track:symphony PR <#PR> already
+  open for this issue; see §2 cross-PR check`; exit. Catches the case
+  where `track:symphony` got stripped from the issue but a Symphony PR
+  is mid-flight (zombie scenario; see §5b Stale recovery).
+- (existing FIXEDFLOW §Dispatch policy rules — `grill-ready` /
+  `docs-grill-ready` missing, `ready-for-human` / `epic` present — apply
+  unchanged.)
 
 **Symphony §0 refusal — refuses to dispatch when**:
 - `track:symphony` label **missing** → not Symphony's track; do not touch.
@@ -98,6 +96,11 @@ Each driver's first action upon being invoked on an issue MUST be:
   conformance check`; exit. (D5 — same bar as fixed-flow.)
 - `symphony-blocked` present → already in human-handoff state; only a
   human can clear the block.
+- **`symphony-human-reviewed` label on the issue (misapplication)** —
+  that label is PR-only by spec; on an issue it's meaningless. Comment
+  `refusing: symphony-human-reviewed is PR-only; stripping from issue
+  and continuing`, `gh issue edit <N> --remove-label
+  symphony-human-reviewed`, then proceed.
 
 ## §3. Branch / workspace namespacing
 
@@ -133,33 +136,44 @@ happens.
 the issue. The issue auto-closes via `Closes #N` in the PR body, identical
 to fixed-flow.
 
-## §5. `bypass-fixed-flow` — semantically extended to bypass BOTH drivers
+## §5. `bypass-fixed-flow` — extended to bypass BOTH drivers
 
-To avoid label proliferation, the existing `bypass-fixed-flow` label
-(repo-admin-only) is reinterpreted as **bypass-all-drivers**: an issue
-carrying this label is exempt from BOTH `/fixed-flow-driver` dispatch AND
-Symphony dispatch. The label name stays for backward-compatibility; its
-description is updated in `docs/ISSUE-LIFECYCLE.md` §4.
+`bypass-fixed-flow` (repo-admin-only) is reinterpreted as bypass-all-drivers:
+exempts issue from BOTH dispatchers. Label name stays for backward compat;
+description updated in `docs/ISSUE-LIFECYCLE.md` §4.
+
+## §5b. Stale recovery — when labels drift out of sync
+
+Failure mode: `track:symphony` gets stripped from an issue but
+`symphony-working` lingers (Symphony crashed before §7 cleanup, or human
+stripped the routing label by mistake). Result: fixed-flow §0 refuses
+(sees `symphony-working`); Symphony §0 also refuses (sees `track:symphony`
+missing). Issue is zombie — both drivers refuse to touch it.
+
+**Recovery (human maintainer only — never automation, per `ready-for-human`
+hard-rule pattern in FIXEDFLOW.md)**:
+1. Decide which track the issue should end up on.
+2. If Symphony track: re-add `track:symphony`; verify Symphony picks it up.
+3. If fixed-flow track: strip `symphony-working` **first**, then
+   `track:symphony`, then add fixed-flow lifecycle labels (`grilling`
+   for fresh grill, or `grill-ready` + `docs-grill-ready` if grill comments
+   already exist). Order matters — Symphony's atomic mutex assumes the
+   work label is the last thing stripped.
+4. Post a `--- recovery: <one-line reason> ---` comment so the audit trail
+   names the human action.
+
+**Prevention**: when reverting a track decision, always strip the lifecycle
+label (`symphony-working` or `grill-working`) BEFORE stripping the routing
+label (`track:symphony`). Reverse order opens the zombie window.
 
 ## §6. Triage decision tree
 
-When a new issue arrives, maintainer at first triage:
-
-```
-Is this issue suitable for autonomous, no-human-grill execution?
-│
-├── YES → add `track:symphony` label.
-│         Symphony will pick it up (once its GitHub adapter ships).
-│         Human reviews the resulting PR and adds `symphony-human-reviewed`
-│         to authorize squash-merge.
-│
-└── NO  → leave `track:symphony` OFF.
-          Issue goes through FIXEDFLOW: grill → docs-grill → driver →
-          /review PASS → squash-merge. Human gate is at the front.
-```
-
-Default = NO `track:symphony` (per design choice D2). All historical
-issues stay on the fixed-flow track without migration.
+At triage, maintainer asks: suitable for autonomous, no-human-grill
+execution? **YES** → add `track:symphony`; human reviews resulting PR
+and adds `symphony-human-reviewed` to authorize merge. **NO** → leave
+`track:symphony` OFF; issue goes through FIXEDFLOW (grill → docs-grill
+→ driver → `/review` PASS → squash-merge). Default = NO (D2; zero
+migration of historical issues).
 
 **Prefer Symphony**: well-bounded mechanical task, unambiguous body, low
 revert cost, reporter willing to PR-review carefully.
@@ -170,27 +184,17 @@ anything that needs `/review`'s adversarial pass.
 
 ## §7. Related docs
 
-- `docs/FIXEDFLOW.md` — fixed-flow track lifecycle (P0-P6 in
-  `docs/ISSUE-LIFECYCLE.md`). §Dispatch policy contains the refusal rule
-  for `track:symphony`.
-- `docs/SYMPHONY-FLOW.md` — Symphony track lifecycle (Q0-Q5 in
-  `docs/ISSUE-LIFECYCLE.md` §1.5). Contains the label-create script.
+- `docs/FIXEDFLOW.md` — fixed-flow lifecycle (P0-P6); §Dispatch policy has
+  the `track:symphony` refusal.
+- `docs/SYMPHONY-FLOW.md` — Symphony lifecycle (Q0-Q5); label-create script.
 - `docs/ISSUE-LIFECYCLE.md` — both tracks' state machines side-by-side.
-- `docs/PRE-IMPLEMENT-CLAIM.md` — `grill-working` cross-host mutex for
-  fixed-flow. Symphony has its own analog `symphony-working` documented
-  in `docs/SYMPHONY-FLOW.md`.
-- `docs/POSTPR.md` — squash-merge + cleanup; applies to PRs from both
-  tracks identically.
-- `docs/plans/2026-05-12-two-drivers/` — plan / research / judge harness
-  for this contract.
+- `docs/PRE-IMPLEMENT-CLAIM.md` — `grill-working` mutex (Symphony's
+  `symphony-working` mirrors this).
+- `docs/POSTPR.md` — squash-merge + cleanup, identical for both tracks.
+- `docs/plans/2026-05-12-two-drivers/` — plan / research / judge harness.
 
 ## §8. Verification
 
-`!claudefast -p "can a single TeamBrain issue have both grill-ready and
-track:symphony labels?"` must answer NO with citation to this file §1.
-
-`!claudefast -p "if I label an issue track:symphony, will
-/fixed-flow-driver still try to claim it?"` must answer NO with citation
-to `docs/FIXEDFLOW.md` §Dispatch policy + this file §2.
-
-Full probe suite in `docs/plans/2026-05-12-two-drivers/judge.md` (P1-P5).
+P2 (mutex) and P3 (refusal) probes in
+`docs/plans/2026-05-12-two-drivers/judge.md` cover §1 and §2; P1-P5 is
+the full suite.
