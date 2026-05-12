@@ -44,6 +44,24 @@ For the multi-tool channel design, see [`docs/features/multi-tool.md`](./multi-t
 
 **Total**: 11 production assets. Coverage by `teamagent init`: **10/11 ≈ 91%** — only `bin-updater.ts` is excluded by design. After v0.11.0 (2026-05-09 cleanup PR), `digital-twin-tap.cjs` is the SOLE digital-twin path on every machine: TeamBrain itself receives one tap (via the user-level `.cjs`) and other projects also receive one tap (also via the user-level `.cjs`). The previous in-TeamBrain double-tap risk — where `digital-twin-tap.sh` from committed settings AND `bin-digital-twin-tap.cjs` from user-level both fired against `tapSession`'s idempotent (cwd, session_id) dedup — is eliminated entirely, not merely deduped.
 
+## Master kill switch — `TEAMAGENT_DISABLED=1`
+
+Set in the shell environment, this env disables every TeamAgent hook handler at handler entry, **without** uninstalling. Added in issue #343 PR-1 to support paired TB-ON vs TB-OFF token-cost ablation runs.
+
+| Hook | Behaviour when `TEAMAGENT_DISABLED=1` |
+|------|---------------------------------------|
+| `bin-session-start.cjs` | Returns minimal envelope; no embedder daemon spawn, no wiki residue cleanup, no schema-migration backup prune, no M5 pipeline |
+| `bin-pre-tool-use.cjs` | Returns `{permissionDecision: "allow"}`; no matcher, retriever, attribution |
+| `bin-stop.cjs` | Returns; no singleton lock claim, no detached self-spawn, no sync pipeline; covers all three internal paths (detached / async / sync) via a single check at handler entry |
+
+**Activation contract**: opt-in by exact string match — only `TEAMAGENT_DISABLED=1` activates the kill switch. Any other value (including unset, `"0"`, `"true"`, `"yes"`) leaves all hooks fully enabled.
+
+**Not affected**: statusline rendering (separate subprocess, reads `settings.local.json` directly); `pnpm teamagent compile / init / doctor / update` CLI subcommands (only hook *handlers* are gated); auto-update / postinstall warmup. CLI subcommands run normally even when the env is set — `TEAMAGENT_DISABLED` does NOT mean "TB does nothing at all", it means "TB hooks add zero work to a Claude Code conversation".
+
+**ADR-0010 / ADR-0012 fixture-replay**: tests run with the env unset (default); the kill switch will not false-negative regression tests.
+
+Integration test: `packages/cli/src/__tests__/disabled-env.test.ts` spawns each built hook bundle with the env set and asserts exit 0 + no TB runtime noise (matcher / M5 / analyze / embedder / attribution) in stderr.
+
 ## Channel-by-channel
 
 ### 1. SessionStart  
