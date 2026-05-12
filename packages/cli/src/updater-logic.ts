@@ -108,15 +108,27 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
     }
 
     // Success: persist version + (when Pages provided) SHA. Reset legacy
-    // backoff counters so old state files heal.
+    // backoff counters so old state files heal. CRITICAL: also clear
+    // last_install_error if it carries the Tier-3 "version-check failed:"
+    // prefix — otherwise the Tier-3 SessionStart banner would keep firing
+    // forever after Pages/npm recovered (success path overwrites everything
+    // else but the stale error string would persist if we early-returned
+    // on the "up-to-date" branch below). Real npm-install / migrate errors
+    // (different prefix) are preserved untouched so the existing reinstall
+    // banner still surfaces them.
     const remoteVersion = result.version;
     const remoteSha = result.sha ?? "";
+    const clearedError =
+      state.last_install_error?.startsWith("version-check failed:")
+        ? null
+        : state.last_install_error;
     deps.writeState({
       ...state,
       consecutive_rate_limits: 0,
       next_check_after_ts: 0,
       last_branch_etag: "",
       last_branch_sha: remoteSha || state.last_branch_sha,
+      last_install_error: clearedError,
     });
 
     if (remoteVersion === state.last_installed_version) {
