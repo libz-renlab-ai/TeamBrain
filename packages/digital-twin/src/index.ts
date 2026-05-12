@@ -150,6 +150,8 @@ export {
 
 export { runDaemon } from './bin-uploader.js';
 
+export { readLastUploaderError, type UploaderLogError } from './daemon/uploader-log.js';
+
 export {
   buildRecordingEnvelope,
   isRecordingMetadata,
