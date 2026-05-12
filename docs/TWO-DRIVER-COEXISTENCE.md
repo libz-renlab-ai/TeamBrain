@@ -109,14 +109,10 @@ same branch:
 | fixed-flow | `feat/issue-<N>` (or `worktree-issue-<N>+pr-<i>` per FIXEDFLOW.md) | `.codex/worktrees/issue-<N>/` (in-repo git worktree) |
 | Symphony | `symphony/issue-<N>` | `~/code/teambrain-workspaces/<N>/` (separate clone, NOT a worktree of the maintainer's checkout) |
 
-The branch prefix `symphony/` is reserved for Symphony; `feat/` and
-`worktree-` prefixes remain reserved for fixed-flow.
-
-The workspace separation is deliberate: Symphony's published design clones
-the repo into its workspace root, which would collide with an in-repo
-worktree. Keeping Symphony's workspace **outside** the TeamBrain checkout
-eliminates filesystem collisions even if both drivers run on the same
-machine.
+`symphony/` is reserved for Symphony; `feat/` and `worktree-` stay
+reserved for fixed-flow. Symphony's workspace is **outside** the
+TeamBrain checkout (it clones the repo itself) so filesystem paths
+never collide with fixed-flow's in-repo worktrees.
 
 ## §4. PR-side routing — which merge gate applies
 
