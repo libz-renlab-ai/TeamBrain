@@ -149,6 +149,45 @@ driver 启动时会同时校验 grill comment + docs-grill comment + 两个 labe
 
 `bypass-fixed-flow` 仅 repo admin 可加；conformance Action 通过 `gh api repos/:owner/:repo/collaborators/:user/permission` 校验来源用户的 permission，不是 admin 直接忽略 label。
 
+## Human-ready issues — never auto-close
+
+策略由 issue #338 codify。`ready-for-human` label 的官方描述是 `Needs human judgment / external access / design decision`——「该不该 close」本身就是一次 human-judgment 事件。因此：
+
+**带 `ready-for-human` label 的 issue 只能由真人 maintainer 手动 close。禁止 agent / bot 调用 `gh issue close`。**
+
+### 适用范围
+
+- ❌ Claude Code / Codex / `/fixed-flow-driver` / `/claim-to-merge` / 任何 autonomous worker / 任何 bot / 任何 watcher / 任何 cron / 任何 stale-bot / 任何 GitHub Action 在 `pull_request: closed` 或 `schedule:` 触发下调用 `gh issue close` 关闭带 `ready-for-human` label 的 issue —— 一律禁止。
+- ❌ 即使 agent 判断该 issue 已被某 merged PR 解决 / 已过期 / 是 duplicate / 已被另一条 issue 覆盖 —— 只能贴评论说明，**不许自己 close**。
+- ❌ 即使 agent 读到本规则后口头同意 —— 本规则本身也不许被 agent close（issue #338 自身就是它的 self-test case）。
+- ✅ 只有真人 maintainer（libz 的任一 GitHub 账号 / 其它有 maintain 权限的真人）在浏览器 / CLI 里手动按 close，才是合法路径。
+- ✅ **PR 关键字 auto-close 例外**：若真人 maintainer 已经手动判定该 issue 「等 PR fix 即可结案」（即 human-judgment gate 已通过），可以在 PR body 写 `Closes #N`，让 GitHub 在 squash-merge 时 auto-close。这是 PR merge 的副作用，不算 agent 主动 close。但需要前置 human-judgment：维护者要么先 remove `ready-for-human` label、要么显式在 issue 评论 ack PR 走向。
+
+### 与 `grill-ready` 互斥
+
+`ready-for-human` 与 `grill-ready` 是**互斥**的 dispatch 标签：
+
+| Label | Dispatcher | Close 路径 |
+|---|---|---|
+| `grill-ready` + `docs-grill-ready` | `/fixed-flow-driver`（maintainer 手动启动） | PR squash-merge 含 `Closes #N` 触发 GitHub auto-close（PR 关闭副作用，非 agent 主动） |
+| `ready-for-human` | **没有自动 dispatcher** | **只能真人手动 close**（或 maintainer 先 remove label 后才允许 PR-keyword auto-close） |
+
+如果同一条 issue 同时挂 `ready-for-human` 与 `grill-ready`：**先 remove `grill-ready`** 再让 driver 介入；如果反向决策（升级为人手处理），先 remove `grill-ready` + `docs-grill-ready` 再贴 `ready-for-human`。driver 看到 `ready-for-human` label 一律拒绝 dispatch（参见 §Dispatch policy）。
+
+### 与 refusal layer 的关系
+
+`.github/workflows/issue-conformance.yml` 在 enforce 期会对「24h 内无 `grill-ready` label」的 issue 评论 + close（§refusal layer）。**此 close 路径必须 whitelist `ready-for-human`**：conformance Action 与任何未来的 stale-bot / cleanup watcher / repo-wide sweep 一律不得 close 带 `ready-for-human` label 的 issue。docs 在此提前 codify 这条约束；workflow yaml 的实装在另行 issue 跟进，不在本规则的 docs PR 范围。
+
+### 落地建议（不强制 — issue #338 自身留给 maintainer 决定）
+
+1. 给 stale-issue / cleanup watcher 加白名单：`ready-for-human` 永不自动 close（与 §与 refusal layer 的关系 段对齐）。
+2. 可选 pre-close hook：检测 `gh issue close` actor 是 bot/agent + issue 含 `ready-for-human` label → reject。
+3. driver / `/claim-to-merge` 看到 `ready-for-human` label 时只能贴评论并退出，不得触发任何 close 调用（已由 §Dispatch policy 的 refusal 路径覆盖）。
+
+### 与 retroactive ban 的关系
+
+本节只规定「已经带 `ready-for-human` label 的 issue 谁可以 close」。「label 谁可以贴 / 何时可以贴」由 `docs/HOW-TO-CLAIM-ISSUE.md` "ready-for-human label" 段 + `docs/POSTMORTEM.md` hard rule #6 + `docs/TRIAGE-AND-SPLIT.md` 共同 codify（核心：创建时点贴合法；ship 后 retroactive 补贴无约束效力）。两条规则不重叠：贴 label 是入口约束，close 是出口约束。
+
 ## driver 行为细则
 
 driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skills/`）。
@@ -184,6 +223,7 @@ driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skil
 - `docs/POSTMORTEM.md` — multi-PR recap comment 规则；epic 类 issue 的复盘叙事约束在那里（hard rule #6 + #7）。
 - `docs/HOW-TO-CLAIM-ISSUE.md` — claim 前必须看到两个 label；`ready-for-human` + AI-triage retroactive ban；epic carve-out 引用。
 - `docs/TRIAGE-AND-SPLIT.md` — grill 完发现 issue 太大时的 triage 入口（人手 maintainer 判断瞬间）。
+- 本文 §Human-ready issues — never auto-close — codify by issue #338；规定带 `ready-for-human` label 的 issue 只能由真人手动 close、所有 agent / bot 禁止 `gh issue close`、`grill-ready` 互斥关系、refusal-layer whitelist 要求。
 
 ## 验证（语义 probe，不写 canned-answer block）
 
