@@ -65,6 +65,7 @@ import { findTeamagentRoot } from "./lib/walk-up.js";
 import { tryDetachedSpawn } from "./daemon-first-embedder.js";
 import { defaultEmbedderStatePath } from "./embedder-state.js";
 import { postRegister } from "./embedder-client.js";
+import { emitCcStatus } from "./realtime-emit.js";
 
 /**
  * SessionStart accepts a Claude Code SessionStart payload (or empty stdin
@@ -122,6 +123,20 @@ async function main(): Promise<void> {
       if (ctx.env.TEAMAGENT_DISABLED === "1") {
         return undefined;
       }
+
+      // Feature #2 v3: fire-and-forget cc-status push to the team receiver.
+      // No-op when TEAMAGENT_REALTIME_URL is unset, so this is silent until a
+      // teammate opts in by exporting the env var (see docs/features/team-realtime.md).
+      // Wrapped in try/catch even though emitCcStatus already swallows everything
+      // — the SessionStart path must never propagate a failure here.
+      try {
+        const sessionId = (ctx.input as { session_id?: unknown }).session_id;
+        emitCcStatus({
+          event: "session_start",
+          ...(typeof sessionId === "string" ? { sessionId } : {}),
+          cwd: ctx.cwd,
+        });
+      } catch { /* never propagate */ }
 
       // Issue #164: kick off the embedder daemon if it's not already running.
       // Fire-and-forget detached spawn so SessionStart returns immediately;
