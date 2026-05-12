@@ -1051,7 +1051,16 @@ function buildStatusLineCommand(
   if (!userCmd) return teamCmd;
   const u = escapeForBashSingleQuote(userCmd);
   const t = escapeForBashSingleQuote(teamCmd);
-  return `bash -c '${u}; echo; ${t}'`;
+  // issue #331: Claude Code pipes JSON to stdin of the statusLine.command,
+  // and we have **two** segments sharing that pipe. If we naively run
+  //   bash -c '<user>; echo; <teamagent>'
+  // the first segment's `cat` / `jq` will drain stdin and the second segment
+  // sees EOF — so all CC-derived fields (模型/上下文/用量/5h/7d/会话) silently
+  // come up empty. Fix: snapshot stdin into a shell variable once at the top
+  // of the wrapper, then feed BOTH segments via `printf %s "$_TS_IN" | ...`.
+  // No tmpfiles; no fifo; works with the user's existing `input=$(cat)`
+  // pattern because each segment still reads from its own stdin.
+  return `bash -c '_TS_IN=$(cat); printf "%s" "$_TS_IN" | { ${u}; }; echo; printf "%s" "$_TS_IN" | { ${t}; }'`;
 }
 
 /** 移除 TeamAgent hook 注册（PreToolUse + PostToolUse 一并）。 */

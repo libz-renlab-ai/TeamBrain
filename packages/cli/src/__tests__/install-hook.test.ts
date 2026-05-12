@@ -287,6 +287,44 @@ describe("installHook — statusLine", () => {
     expect(content.statusLine._teamagentOriginalScope).toBe("project");
   });
 
+  it("fans out stdin to BOTH chained segments so CC JSON reaches teamagent (#331)", () => {
+    // Pre-existing user statusLine that drains stdin via `input=$(cat)` — the
+    // realworld shape from ~/.claude/statusline-command.sh on the maintainer's
+    // box. Before #331, the second segment (our cjs) saw EOF on stdin and all
+    // CC-derived fields (model / context / cost) silently vanished. The
+    // wrapper must snapshot stdin once at the top and replay it to both
+    // segments via `printf %s | ...`.
+    const settingsPath = path.join(tmp.cwd, ".claude", "settings.local.json");
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    const preExisting = {
+      statusLine: { type: "command", command: 'input=$(cat); echo USER_OUT' },
+    };
+    fs.writeFileSync(settingsPath, JSON.stringify(preExisting));
+
+    installHook({
+      cwd: tmp.cwd,
+      hookEntry: FAKE_HOOK_ENTRY,
+      statusLineEntry: FAKE_HOOK_ENTRY,
+      homeDir: tmp.cwd,
+      userLevel: false,
+    });
+
+    const cmd = (JSON.parse(fs.readFileSync(settingsPath, "utf-8")) as {
+      statusLine: { command: string };
+    }).statusLine.command;
+    // The new chain wrap snapshots stdin into `_TS_IN` once, then replays it
+    // to BOTH segments via `printf %s "$_TS_IN" | { ... }`.
+    expect(cmd).toContain("_TS_IN=$(cat)");
+    // `printf %s "$_TS_IN" | {` must appear at least twice — once per segment.
+    const fanOutCount = (cmd.match(/printf "%s" "\$_TS_IN" \| \{/g) ?? []).length;
+    expect(fanOutCount).toBe(2);
+    // Both the user cmd and the teamagent cmd are still present.
+    expect(cmd).toContain("input=$(cat); echo USER_OUT");
+    expect(cmd).toContain("node");
+    // Cosmetic newline separator preserved (legacy contract from PR #124).
+    expect(cmd).toContain("; echo;");
+  });
+
   it("wraps user-level ~/.claude/settings.json statusLine (#104)", () => {
     // 模拟 ~/.claude/settings.json
     const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "fake-home-"));
