@@ -198,16 +198,32 @@ export function spawnUpdater(): void {
 /**
  * If a pending banner exists and not yet shown, write to stderr (visible on
  * first turn) and mark shown.
+ *
+ * Post-merge PR-creator force-update feature: when `pending_banner.pr_creator`
+ * is true (set by runUpdater after matching latest.json::pr_creator_login
+ * against the local user's identity signals), render a distinct 🎯 template
+ * naming the PR number. Otherwise render the legacy ✨ template unchanged
+ * so non-creator updates look exactly as before.
  */
 export function maybeShowPendingBanner(
   stderr: (s: string) => void = (s) => process.stderr.write(s),
 ): void {
   const state = readUpdateState();
   if (!state.pending_banner || state.pending_banner.shown) return;
-  const { from, to } = state.pending_banner;
+  const { from, to, pr_creator, pr_number } = state.pending_banner;
   const fromShort = from ? from.slice(0, 7) : "(初装)";
-  stderr(`✨ TeamAgent: 已自动更新 ${fromShort} → ${to.slice(0, 7)}\n`);
-  stderr(`   本次会话生效。详情: teamagent update --status\n`);
+  const toShort = to.slice(0, 7);
+  if (pr_creator) {
+    const prTag =
+      typeof pr_number === "number" ? `PR #${pr_number}` : "你刚 merge 的 PR";
+    stderr(
+      `🎯 TeamAgent: 你的 ${prTag} 已 merge — 自动更新到 ${toShort} (强制刷新)\n`,
+    );
+    stderr(`   本次会话生效。详情: teamagent update --status\n`);
+  } else {
+    stderr(`✨ TeamAgent: 已自动更新 ${fromShort} → ${toShort}\n`);
+    stderr(`   本次会话生效。详情: teamagent update --status\n`);
+  }
   state.pending_banner.shown = true;
   writeUpdateState(state);
 }
