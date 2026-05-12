@@ -157,7 +157,12 @@ gh issue edit <N> --remove-label grill-working
 
 可选 audit 补充：`host=<machine-id>` / `branch=feat/issue-<N>` 或 `branch=worktree-issue-<N>+pr-<i>` / `evidence=<gh issue view excerpt>` / `ack=<comment-url>`。
 
-贴完评论后，maintainer **自己**给 issue 加 `grill-working` label（和 driver 自动加的**同一个 label**——见下节）。
+贴完评论后，maintainer **自己**：
+
+1. `gh issue edit <N> --add-label grill-working`（和 driver 自动加的**同一个 label**——见下节）；
+2. `gh issue edit <N> --remove-label grill-ready`（与 driver §1 行为对称——让 label 单峰，避免下次 driver `gh issue list --label grill-ready` 误捞已被 takeover 的 issue）。
+
+两条 label 编辑命令**同时**做，等价于 driver §1 一次性的 `--add-label grill-working --remove-label grill-ready` 原子操作。
 
 ### 同一 label，两种来源
 
