@@ -257,7 +257,7 @@
       <tr>
         <td><code>teamagent init --target=codex/both</code></td>
         <td><span class="badge gap">GAP</span></td>
-        <td>Issue #291. Parameterize <code>installHook</code> for Codex target; today <code>init.ts</code> accepts <code>target: "claude" | "codex" | "both"</code> in the type signature but only Claude branch is wired.</td>
+        <td>Issue #291. <code>init.ts:55,197,1549</code> already accepts <code>target: "claude" | "codex" | "both"</code> and branches on it, but the codex branch only <em>skips</em> Claude hook registration (<code>init.ts:282</code>) &mdash; no Codex-side hook installer exists yet. <code>installHook</code> needs a real codex code path.</td>
       </tr>
       <tr>
         <td>Codex install idempotency tests</td>
@@ -391,7 +391,7 @@ $ ls .teamagent/knowledge.db</pre>
   <ul class="bullets">
     <li><code>npm install -g teamagent</code> from a clean prefix (≤3s budget per PR #147).</li>
     <li><code>teamagent init</code> in an empty repo + <code>--target=claude</code> (default).</li>
-    <li><code>teamagent init --target=codex</code> &mdash; <b>currently fails / no-op</b>, pending #291.</li>
+    <li><code>teamagent init --target=codex</code> &mdash; <b>flag is accepted today</b> (<code>init.ts:282</code> skips Claude hook registration) but installs no Codex-side hooks; pending #291 for the real Codex installer branch.</li>
     <li><code>teamagent doctor</code> exit code = 0 with all rows green.</li>
     <li>Re-running <code>init</code> is idempotent (no duplicate hook entries, no settings rewrite).</li>
   </ul>
