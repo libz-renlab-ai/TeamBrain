@@ -55,17 +55,15 @@ Fixed-flow lifecycle labels (`grill-ready`, `grilling`, `docs-grill-ready`,
 | `track:symphony` | `grilling` | ❌ NO | Maintainer removes one |
 | `track:symphony` | `docs-grill-ready` | ❌ NO | Maintainer removes one |
 | `track:symphony` | `grill-working` | ❌ NO | Maintainer removes one |
-| `symphony-working` | `grill-working` | ❌ NO | Cannot occur (drivers refuse at §0) |
 | `track:symphony` | `ready-for-human` | ❌ NO | Symphony track uses `symphony-blocked` |
 | `track:symphony` | `epic` | ❌ NO | `epic` issues are tracking-only, never dispatched |
 | `track:symphony` | `non-conformant` | ✅ allowed | Conformance still applies (D5) |
 | `track:symphony` | `bypass-fixed-flow` | ✅ allowed | See §5 |
 | `symphony-human-reviewed` | (on PR) | n/a — PR-only label | See §4 |
 
-**Operational rule**: maintainers and drivers must use a single
-`gh issue edit <N> --remove-label X --add-label Y` atomic call when switching
-an issue from one track to the other. Two-step (remove then add) leaves a
-race window the wrong driver can claim through.
+**Track switches** must use a single `gh issue edit <N> --remove-label X
+--add-label Y` atomic call; two-step (remove then add) leaves a race window
+the wrong driver can claim through.
 
 ## §2. Driver §0 sanity gate — refusal contract
 
@@ -167,17 +165,12 @@ Is this issue suitable for autonomous, no-human-grill execution?
 Default = NO `track:symphony` (per design choice D2). All historical
 issues stay on the fixed-flow track without migration.
 
-**When to prefer Symphony track**:
-- Well-bounded, mechanical task where the issue body is unambiguous.
-- Low risk if the implementation is incorrect (easy to revert).
-- The reporter is willing to review the PR carefully (since that's the
-  only human gate).
+**Prefer Symphony**: well-bounded mechanical task, unambiguous body, low
+revert cost, reporter willing to PR-review carefully.
 
-**When to prefer fixed-flow track**:
-- Architectural / cross-cutting changes.
-- Ambiguous requirements that benefit from a grill conversation.
-- Touching policy-load-bearing code (skill source, CLAUDE.md anchors).
-- Any change that needs `/review` skill's adversarial pass.
+**Prefer fixed-flow**: architectural / cross-cutting, ambiguous
+requirements, policy-load-bearing code (skills, CLAUDE.md anchors), or
+anything that needs `/review`'s adversarial pass.
 
 ## §7. Related docs
 
