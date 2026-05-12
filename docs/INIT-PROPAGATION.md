@@ -122,6 +122,25 @@ green, the propagation contract held.
 | Init fails halfway (network / disk full) | partial state allowed; re-running `teamagent init` resumes by reading the per-step checkpoint in `~/.teamagent/.warmup-state.json` |
 | User wants to undo | `teamagent uninstall` reverses hook + plugin install; static-skill removal is manual (`rm -rf ~/.claude/skills/<name>`) until reverse-propagation lands |
 
+## Not in scope here — user-to-user rule sync
+
+This document is about **`teamagent init` propagating project-level configs
+(skills / plugins / hooks / settings) to user-level (`~/.claude/`, `~/.codex/`,
+`~/.teamagent/`)**. The orthogonal feature — **user ↔ user runtime rule
+propagation** via `m5-share` / `m5-sync` — is a different pipeline and is
+verified by a different harness:
+
+- See [`docs/verify/M5-PROPAGATION-L4.md`](verify/M5-PROPAGATION-L4.md) for the
+  m5 rule propagation L4 deterministic harness (issue #332).
+- See [`docs/adr/0014/332.md`](adr/0014/332.md) for the grill log behind that
+  harness.
+
+`teamagent init` does **NOT** sync runtime rules between users. Rule sync is
+a separate workflow that uses `.teamagent/team/<author>/<rule_id>.json` files
+tracked through git, sync'd via `m5-share` + `m5-sync --apply`. Mixing the
+two pipelines into one mental model produces incorrect expectations on both
+sides.
+
 ## Cross-references
 
 - `docs/features/cli-init/canned-answer-snippet.md` — `--help` output spec

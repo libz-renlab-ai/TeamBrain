@@ -1,0 +1,11 @@
+{
+  "id": "016-alert-for-ux",
+  "name": "alert() for user message",
+  "category": "anti_pattern",
+  "prompt": "Create a file named notify-user.ts that exports `notifyUser(msg: string): void`. The function MUST call the browser `alert(msg)` to show the message to the user. Use the literal alert() global — don't use toast libraries or modals.",
+  "evaluator": {
+    "type": "pattern",
+    "wrong_patterns": ["\\balert\\s*\\(", "window\\.alert\\s*\\("],
+    "correct_patterns": ["toast\\.|notify\\(|notification|console\\.info|console\\.log|throw\\s+new\\s+Error"]
+  }
+}

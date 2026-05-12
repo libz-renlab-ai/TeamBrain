@@ -1,0 +1,15 @@
+{
+  "issue": 349,
+  "iter": 3,
+  "expected": [
+    {"probe":"P1","operator":">=","threshold":1,"meaning":"FIXEDFLOW.md mentions the new takeover section title"},
+    {"probe":"P2","operator":">=","threshold":1,"meaning":"FIXEDFLOW.md references grill-working label"},
+    {"probe":"P3","operator":">=","threshold":1,"meaning":"all three Chinese phrases present in FIXEDFLOW.md (tolerant regex)"},
+    {"probe":"P4","operator":">=","threshold":1,"meaning":"HOW-TO-CLAIM-ISSUE.md cross-references the takeover section"},
+    {"probe":"P5","operator":">=","threshold":1,"meaning":"FIXEDFLOW.md §与既有规则的关系 has plan-dir footnote"},
+    {"probe":"P6","operator":"==","threshold":0,"meaning":"diff between pinned labels.baseline.txt and gh label list output is empty (no label drift)"},
+    {"probe":"P7","operator":">=","threshold":1,"meaning":"FIXEDFLOW.md cross-references docs/PRE-IMPLEMENT-CLAIM.md (F2 backfill)"},
+    {"probe":"P8","operator":">=","threshold":30,"meaning":"docs/PRE-IMPLEMENT-CLAIM.md exists and is at least 30 lines"},
+    {"probe":"P9","operator":">=","threshold":1,"meaning":"FIXEDFLOW.md §Taking over section text contains 24h ghost-timer or explicit ack (F1 fix, scoped to the section, N2 fix)"}
+  ]
+}

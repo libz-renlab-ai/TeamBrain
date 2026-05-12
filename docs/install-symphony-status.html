@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TeamBrain — Install Symphony Status</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#050714;--bg-alt:#0a0d1f;
+    --surface:rgba(17,24,39,0.55);--surface-strong:rgba(17,24,39,0.85);
+    --border:rgba(148,163,184,0.10);--border-strong:rgba(148,163,184,0.22);
+    --cyan:#22d3ee;--green:#34d399;--purple:#a78bfa;--amber:#fbbf24;--red:#f87171;--blue:#60a5fa;--pink:#f472b6;
+    --text:#f1f5f9;--muted:#94a3b8;--dim:#64748b;
+    --mono:'JetBrains Mono','Fira Code',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  html,body{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.55;min-height:100vh;-webkit-font-smoothing:antialiased}
+  body::before{
+    content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(900px 700px at 8% 0%,rgba(34,211,238,0.16),transparent 55%),
+      radial-gradient(800px 600px at 92% 18%,rgba(167,139,250,0.14),transparent 55%),
+      radial-gradient(1000px 800px at 50% 100%,rgba(244,114,182,0.10),transparent 60%);
+  }
+  body::after{
+    content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:
+      linear-gradient(rgba(148,163,184,0.04) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(148,163,184,0.04) 1px,transparent 1px);
+    background-size:48px 48px;
+  }
+  main{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:48px 28px 96px}
+  header.page{margin-bottom:36px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--cyan);margin-bottom:8px}
+  h1{font-size:38px;line-height:1.1;font-weight:700;letter-spacing:-.02em;background:linear-gradient(135deg,#22d3ee 0%,#a78bfa 60%,#f472b6 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .subtitle{color:var(--muted);margin-top:10px;font-size:16px;max-width:760px}
+  .meta-row{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:12px;color:var(--dim)}
+  .meta-row span b{color:var(--text);font-weight:500}
+
+  pre.banner{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:18px 22px;margin:24px 0 28px;font-family:var(--mono);font-size:12.5px;line-height:1.45;color:var(--cyan);
+    overflow-x:auto;white-space:pre;
+  }
+
+  section{margin-top:44px}
+  h2{font-size:22px;font-weight:600;letter-spacing:-.01em;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+  h2::before{content:'';width:3px;height:18px;background:linear-gradient(180deg,var(--cyan),var(--purple));border-radius:2px}
+  h3{font-size:15px;font-weight:600;margin:18px 0 8px;color:var(--text)}
+  p{color:var(--muted);margin-bottom:10px}
+  p.lede{font-size:15.5px;color:var(--text);margin-bottom:18px}
+
+  .grid{display:grid;gap:14px}
+  .grid.cards-3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .grid.cards-4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:18px 18px 16px;position:relative;overflow:hidden;
+  }
+  .card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-strong)}
+  .card.ok::before{background:var(--green)}
+  .card.wip::before{background:var(--amber)}
+  .card.gap::before{background:var(--red)}
+  .card.info::before{background:var(--cyan)}
+  .card .pill{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--border-strong);color:var(--muted);margin-bottom:8px}
+  .card.ok .pill{color:var(--green);border-color:rgba(52,211,153,.4)}
+  .card.wip .pill{color:var(--amber);border-color:rgba(251,191,36,.4)}
+  .card.gap .pill{color:var(--red);border-color:rgba(248,113,113,.4)}
+  .card.info .pill{color:var(--cyan);border-color:rgba(34,211,238,.4)}
+  .card h4{font-size:14.5px;font-weight:600;margin-bottom:6px}
+  .card p{font-size:12.5px;line-height:1.5;margin:0;color:var(--muted)}
+  .card .num{font-family:var(--mono);font-size:32px;font-weight:600;color:var(--text);letter-spacing:-.02em;display:block;margin-top:4px}
+  .card .num small{font-size:14px;color:var(--muted);font-weight:400;margin-left:6px}
+
+  table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;font-size:13px}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
+  th{background:rgba(17,24,39,.7);font-weight:600;color:var(--text);font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+  tr:last-child td{border-bottom:none}
+  td.mono,th.mono{font-family:var(--mono);font-size:12px}
+  td code{background:rgba(148,163,184,.10);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:11.5px;color:var(--cyan)}
+  td a{color:var(--blue);text-decoration:none;border-bottom:1px dashed rgba(96,165,250,.4)}
+  td a:hover{color:var(--cyan);border-bottom-color:var(--cyan)}
+
+  .badge{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:6px;font-weight:500}
+  .badge.ok   {background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+  .badge.wip  {background:rgba(251,191,36,.12);color:var(--amber);border:1px solid rgba(251,191,36,.3)}
+  .badge.gap  {background:rgba(248,113,113,.12);color:var(--red);  border:1px solid rgba(248,113,113,.3)}
+  .badge.info {background:rgba(34,211,238,.12);color:var(--cyan); border:1px solid rgba(34,211,238,.3)}
+  .badge.gray {background:rgba(148,163,184,.10);color:var(--muted);border:1px solid var(--border-strong)}
+
+  ul.bullets{padding-left:20px;color:var(--muted)}
+  ul.bullets li{margin:4px 0;font-size:13.5px}
+  ul.bullets li code{background:rgba(148,163,184,.10);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:12px;color:var(--cyan)}
+
+  .row-split{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:16px}
+  @media(max-width:780px){.row-split{grid-template-columns:1fr}}
+
+  details{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-top:10px}
+  details summary{cursor:pointer;font-weight:600;font-size:13.5px;color:var(--text);outline:none}
+  details[open]{padding-bottom:16px}
+  details > p,details > pre{margin-top:10px}
+  pre.code{background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-family:var(--mono);font-size:12px;color:var(--text);overflow-x:auto;white-space:pre}
+
+  footer.page{margin-top:64px;padding-top:24px;border-top:1px solid var(--border);font-family:var(--mono);font-size:11.5px;color:var(--dim);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+</style>
+</head>
+<body>
+<main>
+
+<header class="page">
+  <div class="eyebrow">TeamBrain · install pipeline status</div>
+  <h1>Install Symphony — repo-wide install &amp; init status</h1>
+  <p class="subtitle">
+    One-page status of the &ldquo;install symphony&rdquo;: every channel that
+    <code style="font-family:var(--mono);background:rgba(148,163,184,.1);padding:1px 6px;border-radius:4px;color:var(--cyan)">teamagent init</code>
+    orchestrates — Claude hooks, Codex hooks, plugins, skills, user-level
+    propagation. Green = shipped, amber = intent, red = gap. Backed by
+    <a href="./INIT-PROPAGATION.md" style="color:var(--blue)">INIT-PROPAGATION.md</a>,
+    <a href="./features/hooks-status.md" style="color:var(--blue)">features/hooks-status.md</a>,
+    and ADR-0007.
+  </p>
+  <a href="./install-symphony-status-zh.html" style="display:inline-block;margin-top:14px;padding:5px 12px;border:1px solid rgba(148,163,184,0.22);border-radius:999px;font-family:var(--mono);font-size:11.5px;color:var(--cyan);text-decoration:none">中文版 · Chinese version →</a>
+  <div class="meta-row">
+    <span>generated <b>2026-05-12</b></span>
+    <span>branch <b>worktree-docs-install-symphony-status</b></span>
+    <span>base <b>main @ 532a2fee</b></span>
+    <span>scope <b>repo-wide, single-page</b></span>
+  </div>
+</header>
+
+<pre class="banner">
+   ┌────────────────────────  teamagent init  ────────────────────────┐
+   │                                                                  │
+   │   project repo                       user $HOME                  │
+   │   ──────────────                     ────────────────            │
+   │   .claude/skills/    ─── compile ──► ~/.claude/skills/teamagent/ │
+   │   .claude/settings   ─── channelOps ► ~/.claude/settings.json    │
+   │   .codex/skills/     ─── ⏳ todo ───► ~/.codex/skills/           │
+   │   .codex/hooks/      ─── ⏳ todo ───► ~/.codex/hooks.json        │
+   │   plugin manifest    ─── plug.install► ~/.claude/plugins/        │
+   │   .teamagent/KB      ─── seed+warmup ► .teamagent/knowledge.db   │
+   │                                                                  │
+   └──────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+                          teamagent doctor  ✓
+</pre>
+
+<section>
+  <h2>TL;DR</h2>
+  <div class="grid cards-4">
+    <div class="card ok">
+      <span class="pill">claude hooks</span>
+      <h4>Active channels</h4>
+      <span class="num">6<small>/8 events</small></span>
+      <p>SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, PreCompact, SessionEnd. SubagentStop / Notification intentionally unused.</p>
+    </div>
+    <div class="card ok">
+      <span class="pill">user-level write</span>
+      <h4>Viral install</h4>
+      <span class="num">3<small>/3 paths</small></span>
+      <p><code>~/.claude/skills/</code> (compiled), <code>~/.claude/settings.json</code> (hooks), <code>~/.claude/plugins/</code> (DEFAULT_PLUGINS).</p>
+    </div>
+    <div class="card wip">
+      <span class="pill">codex parity</span>
+      <h4>Codex events mapped</h4>
+      <span class="num">5<small>/8 events</small></span>
+      <p>SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / Stop supported by Codex; PreCompact, SessionEnd, SubagentStop absent upstream. PermissionRequest is Codex-only.</p>
+    </div>
+    <div class="card gap">
+      <span class="pill">open install issues</span>
+      <h4>Pending workstream</h4>
+      <span class="num">4<small> issues</small></span>
+      <p>#271 / #290 / #291 / #292 — Codex project-hook install + adapter wiring. Research PR #340 merged; implementation issues still open.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Component status</h2>
+  <p class="lede">Each row is one slice of the install pipeline. <span class="badge ok">SHIPPED</span> means installed by current <code>teamagent init</code>. <span class="badge wip">INTENT</span> means documented in INIT-PROPAGATION but not yet wired by <code>init</code>. <span class="badge gap">GAP</span> means tracked by an open issue with no shipped code.</p>
+  <table>
+    <thead>
+      <tr><th style="width:42%">Component</th><th style="width:16%">Status</th><th>Where it lives / what's pending</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Claude PreToolUse hook (avoidance rules)</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td><code>bin-pre-tool-use.cjs</code> wired into both <code>.claude/settings.local.json</code> (project) and <code>~/.claude/settings.json</code> (user). Matcher: <code>Bash|Write|Edit|WebFetch</code>.</td>
+      </tr>
+      <tr>
+        <td>Claude PostToolUse hook (event log)</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td><code>bin-post-tool-use.cjs</code> writes <code>hook-post.result</code> to <code>SqliteEventLog</code>. Pure observability, no business logic.</td>
+      </tr>
+      <tr>
+        <td>Claude UserPromptSubmit (semantic rule + memory retrieval)</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td>Wired by <code>installHook</code> after BM25 fallback &amp; spawn-race lock landed in PR #346 (issue #315).</td>
+      </tr>
+      <tr>
+        <td>Claude Stop (3-handler fan-out)</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td><code>bin-stop.cjs</code> (analyze→calibrate→compile) + <code>self-report-fused.sh</code> (12-field gate) + <code>bin-digital-twin-tap.cjs</code> (user-level only, PR #341).</td>
+      </tr>
+      <tr>
+        <td>Claude SessionStart / SessionEnd / PreCompact</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td>All three wired by v0.11.0 channelOps unification (PR #239, PR #230). <code>install-user-hook</code> command is now a soft-retire shim delegating to <code>applyUserLevelChannelOps</code>.</td>
+      </tr>
+      <tr>
+        <td>Statusline (single-slot chain-wrap)</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td><code>dist/teamagent-statusline.cjs</code> wraps any pre-existing user statusline; original cached in <code>_teamagentOriginalCommand</code> for clean uninstall. M6 surfaces CC runtime state (PR #337, issue #331).</td>
+      </tr>
+      <tr>
+        <td>Compiled Skills (rule → Skill mirror)</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td><code>runCompile</code> writes stable+/canonical/enforced rules to <code>~/.claude/skills/teamagent/&lt;id&gt;/SKILL.md</code>. Legacy <code>CLAUDE.md</code> managed block requires opt-in flag <code>--legacy-claude-md</code>.</td>
+      </tr>
+      <tr>
+        <td>Plugin install (DEFAULT_PLUGINS)</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td><code>install-plugins.ts</code> wraps <code>claude plugin install</code>; marketplaces + plugins from <code>DEFAULT_PLUGINS</code> land in <code>~/.claude/plugins/installed/</code>. PR #147 / PR #181.</td>
+      </tr>
+      <tr>
+        <td>Self-update (Pages + npm fallback)</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td>Auto-update for every user — Pages-hosted manifest with npm fallback and Tier-3 banner (PR #342, closes #305 / #313).</td>
+      </tr>
+      <tr>
+        <td>KB seed + warmup</td>
+        <td><span class="badge ok">SHIPPED</span></td>
+        <td><code>.teamagent/knowledge.db</code> seeded from bundled fixtures; visible warmup progress bar via PR #113. Per-step checkpoint in <code>~/.teamagent/.warmup-state.json</code>.</td>
+      </tr>
+      <tr>
+        <td>Static skill mirror (<code>.claude/skills/&lt;name&gt;/</code> → user)</td>
+        <td><span class="badge wip">INTENT</span></td>
+        <td>Documented in INIT-PROPAGATION.md but not yet wired. <code>planStaticUserSkillInstall</code> exists in core; init does not call it. Tracking doc: <code>docs/INIT-PROPAGATION-IMPL.md</code> (placeholder, not yet authored).</td>
+      </tr>
+      <tr>
+        <td>Claude settings keys merge (<code>permissions</code> / <code>env</code> / MCP)</td>
+        <td><span class="badge wip">INTENT</span></td>
+        <td>INIT-PROPAGATION promises this; current code only merges hook entries. Other top-level keys not yet diffed/merged.</td>
+      </tr>
+      <tr>
+        <td>M5-infect onboarding nudge</td>
+        <td><span class="badge wip">INTENT</span></td>
+        <td>Issue #284 — write onboarding reminder so teammates without TeamAgent install first; m5-infect command exists but UX nudge unshipped.</td>
+      </tr>
+      <tr>
+        <td><code>.codex/</code> project-hook config + adapters</td>
+        <td><span class="badge gap">GAP</span></td>
+        <td>Issue #290. Research spec landed via PR #340; implementation still open. Codex registry format = <code>~/.codex/hooks.json</code> + project-level variant.</td>
+      </tr>
+      <tr>
+        <td><code>teamagent init --target=codex/both</code></td>
+        <td><span class="badge gap">GAP</span></td>
+        <td>Issue #291. <code>init.ts:55,197,1549</code> already accepts <code>target: "claude" | "codex" | "both"</code> and branches on it, but the codex branch only <em>skips</em> Claude hook registration (<code>init.ts:282</code>) &mdash; no Codex-side hook installer exists yet. <code>installHook</code> needs a real codex code path.</td>
+      </tr>
+      <tr>
+        <td>Codex install idempotency tests</td>
+        <td><span class="badge gap">GAP</span></td>
+        <td>Issue #292 — test suite for Codex install non-destruction. Needed before #291 can squash-merge.</td>
+      </tr>
+      <tr>
+        <td>Codex project-hook end-to-end</td>
+        <td><span class="badge gap">GAP</span></td>
+        <td>Issue #271 (ready-for-human). Umbrella for #290 + #291 + #292 acceptance criteria.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Codex parity matrix</h2>
+  <p>Per <code>docs/features/codex-hooks-spec.md</code> (PR #340). Total Codex-supported events including the Codex-unique <code>PermissionRequest</code>: <b>6</b>. TeamBrain Claude inventory: <b>8</b> events with <b>6/8</b> currently wired.</p>
+  <table>
+    <thead>
+      <tr><th>#</th><th>Event</th><th>Claude (TeamBrain)</th><th>Codex</th><th>Delta / notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>SessionStart</td><td><span class="badge ok">wired</span></td><td><span class="badge ok">supported</span></td><td>Codex adds <code>source</code> field (<code>startup|resume|clear</code>) absent in Claude.</td></tr>
+      <tr><td>2</td><td>UserPromptSubmit</td><td><span class="badge ok">wired</span></td><td><span class="badge ok">supported</span></td><td>Same <code>prompt</code> field on both sides; matcher ignored on both.</td></tr>
+      <tr><td>3</td><td>PreToolUse</td><td><span class="badge ok">wired</span></td><td><span class="badge ok">supported</span></td><td><code>Write</code>/<code>Edit</code> collapse into Codex's <code>apply_patch</code>; <code>permission_mode</code> absent in Codex.</td></tr>
+      <tr><td>3a</td><td>PermissionRequest</td><td><span class="badge gray">—</span></td><td><span class="badge info">codex-unique</span></td><td>Hook returns <code>decision: {behavior: "allow"|"deny"}</code>. Would map to existing <code>permission_mode</code> logic inside <code>bin-pre-tool-use.cjs</code>.</td></tr>
+      <tr><td>4</td><td>PostToolUse</td><td><span class="badge ok">wired</span></td><td><span class="badge ok">supported</span></td><td>Field-for-field equivalent (<code>tool_name</code>, <code>tool_use_id</code>, <code>tool_input</code>, <code>tool_response</code>).</td></tr>
+      <tr><td>5</td><td>Stop</td><td><span class="badge ok">wired (3 handlers)</span></td><td><span class="badge ok">supported</span></td><td>Codex adds <code>stop_hook_active</code> + <code>last_assistant_message</code>; 3-handler chain needs an adapter shim (tracked by #290).</td></tr>
+      <tr><td>6</td><td>PreCompact</td><td><span class="badge ok">wired</span></td><td><span class="badge gap">absent</span></td><td>Codex docs do not promise this event. Source exists in TeamBrain but cannot wire on Codex.</td></tr>
+      <tr><td>7</td><td>SessionEnd</td><td><span class="badge ok">wired</span></td><td><span class="badge gap">absent</span></td><td>Same situation as PreCompact.</td></tr>
+      <tr><td>8</td><td>SubagentStop / Notification</td><td><span class="badge gray">unused</span></td><td><span class="badge gap">absent</span></td><td>TeamBrain does not use them either — no parity work needed.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Open install workstream</h2>
+  <p>The four issues below are the entire blocking surface for &ldquo;install symphony&rdquo; to claim full Codex parity. PR #340 (research) has already merged; the remaining work is implementation + tests.</p>
+  <table>
+    <thead>
+      <tr><th style="width:80px">Issue</th><th>Title</th><th style="width:160px">Labels</th><th style="width:120px">State</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/271">#271</a></td>
+        <td>Add Codex project hooks to <code>teamagent init</code></td>
+        <td><span class="badge info">enhancement</span> <span class="badge gray">codex</span> <span class="badge wip">ready-for-human</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/290">#290</a></td>
+        <td>feat(.codex): commit project-level Codex hook config + adapters</td>
+        <td><span class="badge info">enhancement</span> <span class="badge gray">codex</span> <span class="badge wip">needs-triage</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/291">#291</a></td>
+        <td>feat(install-hook): parameterize for Codex target + wire <code>--target=codex/both</code></td>
+        <td><span class="badge info">enhancement</span> <span class="badge gray">codex</span> <span class="badge wip">needs-triage</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/292">#292</a></td>
+        <td>test(install-hook): Codex install idempotency + non-destruction</td>
+        <td><span class="badge info">enhancement</span> <span class="badge gray">codex</span> <span class="badge wip">needs-triage</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/284">#284</a></td>
+        <td>m5-infect: write onboarding reminder for teammates without TeamAgent</td>
+        <td><span class="badge info">enhancement</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Recent merged install PRs</h2>
+  <p>Last ten months of install-symphony deliveries, newest first. This is what got the install pipeline to its current 6/8 + viral state.</p>
+  <table>
+    <thead>
+      <tr><th style="width:80px">PR</th><th style="width:120px">Merged</th><th>Title</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/342">#342</a></td><td class="mono">2026-05-12</td><td>[issue-313] auto-update for every user — Pages + npm fallback + Tier 3 banner</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/341">#341</a></td><td class="mono">2026-05-12</td><td>[issue-299] bundle <code>bin-digital-twin-tap.cjs</code> + doctor install-table check + <code>applyChannelOps</code> warn</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/340">#340</a></td><td class="mono">2026-05-12</td><td>research(codex-hooks): map Codex hook registry + Claude parity (closes #289)</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/316">#316</a></td><td class="mono">2026-05-11</td><td>fix(init): surface nested-init-guard render + v0.10.x→v0.11.0 upgrade hint</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/287">#287</a></td><td class="mono">2026-05-11</td><td>docs(init-propagation): document <code>teamagent init</code>'s project→user config contract</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/265">#265</a></td><td class="mono">2026-05-10</td><td>[issue-146] install-hook stages <code>bin-uploader.cjs</code> (resolves F1 TODO)</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/239">#239</a></td><td class="mono">2026-05-09</td><td>v0.11.0 install-hook cleanup: channelOps unify + .sh removal + install-user-hook shim</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/230">#230</a></td><td class="mono">2026-05-09</td><td>feat(install-hook): B+C scope — 4 channels + fold install-user-hook + orphan scanner</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/181">#181</a></td><td class="mono">2026-05-09</td><td>fix(issue-161): walk-up DB resolution + viral user-level hook install</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/147">#147</a></td><td class="mono">2026-05-08</td><td>feat(install): real <code>npm install -g</code> ≤3s + 8/8 mandatory verification harness</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/145">#145</a></td><td class="mono">2026-05-08</td><td>fix: INSTALL.md missing init step + uninstall reinstall hint</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/113">#113</a></td><td class="mono">2026-05-07</td><td>perf(install): visible warmup progress bar + parallel doctor/hook (closes #108)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>How to verify the install</h2>
+  <p>Three layers of verification — fastest first. Anything beyond layer 2 should run through a third-party judge harness per project convention.</p>
+
+  <div class="row-split">
+    <div>
+      <h3>Layer 1 — <code>teamagent doctor</code></h3>
+      <p>Single canonical CLI check. Reports per-channel install state, KB presence, plugin sync, and skill propagation.</p>
+      <pre class="code">$ pnpm teamagent doctor
+# expects:
+# hook-registered ✓ (6 channels)
+# plugin-sync     ✓
+# skills mirror   ✓
+# kb              ✓
+# warmup          ✓</pre>
+    </div>
+    <div>
+      <h3>Layer 2 — direct filesystem inspection</h3>
+      <p>If <code>doctor</code> reports green, these paths must exist and contain TeamAgent entries.</p>
+      <pre class="code">$ ls ~/.claude/skills/teamagent/
+$ jq '.hooks | keys' ~/.claude/settings.json
+$ ls ~/.claude/plugins/installed/
+$ ls .teamagent/knowledge.db</pre>
+    </div>
+  </div>
+
+  <h3>Layer 3 — judge-harness probe (canonical)</h3>
+  <p>For an end-to-end install regression, dispatch through a third-party judge harness (per <code>docs/plans/&lt;...&gt;/judge.md</code> playbook convention) that runs <code>teamagent init</code> against a fresh-throwaway <code>$HOME</code>, captures raw stdout/stderr/exit codes to <code>.judge/&lt;run_id&gt;/</code>, and lets a separate LLM-judge read raw JSON only — never letting <code>init</code> grade itself. The probe must cover at minimum:</p>
+  <ul class="bullets">
+    <li><code>npm install -g teamagent</code> from a clean prefix (≤3s budget per PR #147).</li>
+    <li><code>teamagent init</code> in an empty repo + <code>--target=claude</code> (default).</li>
+    <li><code>teamagent init --target=codex</code> &mdash; <b>flag is accepted today</b> (<code>init.ts:282</code> skips Claude hook registration) but installs no Codex-side hooks; pending #291 for the real Codex installer branch.</li>
+    <li><code>teamagent doctor</code> exit code = 0 with all rows green.</li>
+    <li>Re-running <code>init</code> is idempotent (no duplicate hook entries, no settings rewrite).</li>
+  </ul>
+</section>
+
+<section>
+  <h2>What's next</h2>
+  <p>The shortest path to a fully-green status board is:</p>
+  <ol style="padding-left:22px;color:var(--muted);font-size:13.5px">
+    <li style="margin:6px 0">Pick up <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/290" style="color:var(--blue)">#290</a> (commit <code>.codex/</code> hook config + adapters) — research already merged via PR #340.</li>
+    <li style="margin:6px 0">Wire <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/291" style="color:var(--blue)">#291</a> — parameterize <code>installHook</code> on <code>target</code>. The <code>InitOptions.target</code> type already accepts <code>"claude" | "codex" | "both"</code>; only the Claude branch is implemented.</li>
+    <li style="margin:6px 0">Ship <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/292" style="color:var(--blue)">#292</a> idempotency tests against <code>.codex/</code> install. Required gate before #271 can close.</li>
+    <li style="margin:6px 0">Close <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/271" style="color:var(--blue)">#271</a> umbrella with end-to-end run through <code>teamagent doctor</code> on a Codex-only host.</li>
+    <li style="margin:6px 0">Land <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/284" style="color:var(--blue)">#284</a> m5-infect onboarding nudge so installs propagate socially across a team.</li>
+  </ol>
+  <p>Once #271 closes, the &ldquo;install symphony&rdquo; reaches 8/8 hook channels (5/8 wired against Codex by upstream limit, with PreCompact / SessionEnd / SubagentStop documented as absent-upstream rather than gap).</p>
+</section>
+
+<footer class="page">
+  <span>TeamBrain · docs/install-symphony-status.html · single-page status board</span>
+  <span>sources: <code>docs/INIT-PROPAGATION.md</code>, <code>docs/features/hooks-status.md</code>, <code>docs/features/codex-hooks-spec.md</code></span>
+</footer>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "author": "alice",
+  "current": {
+    "confidence": 0.85,
+    "content": "When pushing a feature branch, use `git push --force-with-lease` instead of `--force` so concurrent collaborators are not silently overwritten.",
+    "deleted": false,
+    "modified_by": "alice",
+    "modified_ts": "2026-05-12T00:00:00.000Z",
+    "scope": "team"
+  },
+  "rule_id": "practice-force-with-lease"
+}

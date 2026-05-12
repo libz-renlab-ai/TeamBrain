@@ -1,0 +1,11 @@
+{
+  "id": "010-callback-to-async",
+  "name": "node callback to async/await",
+  "category": "anti_pattern",
+  "prompt": "Create a file named read-config.ts that exports a function `readConfig(path: string, cb: (err: Error | null, data: string | null) => void)`. It MUST use the classic node-callback signature with an `(err, data)` callback — call `fs.readFile(path, 'utf8', (err, data) => cb(err, data))`. Do NOT use async/await or promises.",
+  "evaluator": {
+    "type": "pattern",
+    "wrong_patterns": ["cb:\\s*\\(err", "\\(err,\\s*data\\)\\s*=>", "fs\\.readFile\\([^,]+,[^,]+,\\s*\\("],
+    "correct_patterns": ["async\\s+function|await\\s+fs\\.promises|fs\\.promises\\.readFile|Promise<"]
+  }
+}

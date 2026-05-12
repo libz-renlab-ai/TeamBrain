@@ -36,8 +36,8 @@
 ## TL;DR — 5+1 步铁律（step 2.5 docs gate）
 
 1. **写 issue（手动，<50 字）** — 通过仓库唯一 issue template 提交，body 限 50 字以内。
-2. **issue grill（手动，唯一入口 `/grill-via-web`）** — 在 ChatGPT / Claude.ai 跑 `/grill-via-web` 把 issue 一题一题问透；把整段输出贴回 issue 评论，末尾以 `--- end grill ---` 结束（或保持 60 秒不再编辑）；最后给 issue 加 `grill-ready` label。**`/grill-via-web` 是唯一允许的 issue-grill 入口**——不接受用 `/grill-me` / `/grill-with-docs` 作为 issue grill 入口。
-2.5. **docs gate（手动 `/grill-with-docs`，强制）** — `/grill-via-web` 落地后、driver 启动前，maintainer 在 Claude Code 里跑 `/grill-with-docs`，把 grill 结果对照项目代码、`docs/CONTEXT.md` 与 `docs/adr/` 检查一遍；需要落地的术语 / 决策 / 文档增量写到对应 docs + grill log（默认追加到 `docs/adr/0014-save-grilled-comments-to-adr.md`，大型 grill 落到 `docs/adr/0014/<issue-N>.md`）。`/grill-with-docs` 必须写回一条 docs-grill 评论，末尾以 `--- end docs grill ---` 结尾，并**自己**加上 `docs-grill-ready` label。
+2. **issue grill（手动，唯一入口 `/grill-via-web`）** — **开始之前**先按 `docs/PRE-GRILL-CLAIM.md` 跨主机互斥：`gh issue comment` 写 claim 评论 + `gh issue edit --add-label grilling`（看到 `grilling` 已存在则礼让退出，**不抢、不强删**）。然后在 ChatGPT / Claude.ai 跑 `/grill-via-web` 把 issue 一题一题问透；把整段输出贴回 issue 评论，末尾以 `--- end grill ---` 结束（或保持 60 秒不再编辑）；最后 `gh issue edit <N> --remove-label grilling --add-label grill-ready` 把锁换到下一阶段。**`/grill-via-web` 是唯一允许的 issue-grill 入口**——不接受用 `/grill-me` / `/grill-with-docs` 作为 issue grill 入口。
+2.5. **docs gate（手动 `/grill-with-docs`，强制）** — `/grill-via-web` 落地后、driver 启动前，maintainer 在 Claude Code 里跑 `/grill-with-docs`。**开始之前**同样按 `docs/PRE-GRILL-CLAIM.md` 加 claim 评论 + `grilling` label（若 step 2 已 swap 成 `grill-ready`，docs gate 重新加 `grilling`）。把 grill 结果对照项目代码、`docs/CONTEXT.md` 与 `docs/adr/` 检查一遍；需要落地的术语 / 决策 / 文档增量写到对应 docs + grill log（默认追加到 `docs/adr/0014-save-grilled-comments-to-adr.md`，大型 grill 落到 `docs/adr/0014/<issue-N>.md`）。`/grill-with-docs` 必须写回一条 docs-grill 评论，末尾以 `--- end docs grill ---` 结尾，并**自己**做 `gh issue edit <N> --remove-label grilling --add-label docs-grill-ready` 完成 label 同步。
 3. **手动跑 driver（人手）** — maintainer 看到 `grill-ready` + `docs-grill-ready` **同时存在**的 issue 后，在 Claude Code 里执行 `/fixed-flow-driver` skill 并传入 issue 编号；driver 在 `.codex/worktrees/issue-<N>/` 起 `feat/issue-<N>` 分支，按 grill 评论实现。
 4. **/review 循环（driver 内部自动 — never ends）** — driver 跑 `/review` skill，发现 finding 就更新 `docs/plans/<date>-pr-<N>-fix-plan.md` 并修；**`/review` loop never ends — 只有 PASS 能终止 driver**；`needs-human` label 不再退出 driver，仅作 informational signal。正常 flow 下用户**不**手动跑 `/review`。
 5. **开 PR + squash-merge（driver 内部自动 — keep trying until it failed）** — `gh pr create`（**普通 PR，非 draft**）→ `gh pr merge <N> --squash --auto`（**仅 squash**）；如果 squash-merge 失败 → rebase 重试 → rebase 再失败也不 bail，**keep trying until it failed**（详见 §冲突恢复）；merge 成功后清理 worktree、写 `report.md`。
@@ -77,6 +77,53 @@ The FIXEDFLOW driver may **only** be dispatched on **docs-gated grilled-issues**
 简记：**review good ⇒ review and give up；review bad ⇒ append fix commits to that PR + /review loop based on that PR ⇒ squash-merge 那个 PR。** 永远不为同一个 issue 维持两个并行 PR。
 
 鸭鸭说 (>ω<)：呷呷~ 如果发现别人已经把活儿干了，鸭鸭就先用 `/review` 给那个 PR 当裁判。判得过就放手让他去 squash-merge；判不过也别另起炉灶，直接把补丁推到那个 PR 的同一个 branch 上，循环 `/review` 到 PASS。一个 issue 永远只对应一个 squash-merged PR，绝不能有两条平行线哟~
+
+## Taking over someone else's grill-ready issue — pre-comment + label contract
+
+适用场景：你（maintainer）准备**接手别人开的 grill-ready issue**。本节只覆盖**两种**情形，**不**覆盖 hand-close 非合规 issue：
+
+- (a) **Unattended grill-ready**：原 reporter 已贴 grill 评论 + `grill-ready` label，但 24h 内没人 drive，maintainer 决定自己跑 `/grill-with-docs` + `/fixed-flow-driver`。
+- (b) **Stale in-progress claim**：issue 已有别人评论「我来开始干」或 self-assign，但**距离他们最后一次评论 / push 已 ≥ 24h** 无任何 commit / comment 推进，maintainer 想接过来。
+
+**显式 not in scope**：hand-close 一条非合规 issue（>50 字 body / 非 fixed-flow template / 24h 无 `grill-ready`）**不**走本节——这是 `.github/workflows/issue-conformance.yml` 自动 close 的工作。需要立即 hand-close 时用 `gh issue close <N> --reason "not planned"`，**不要** add `grill-working` label（否则违反 `docs/POSTMORTEM.md` hard rule #6 的 retroactive-labeling 禁令）。
+
+### 进入门禁 (必须满足之一，**不能跳过**)
+
+1. **Ghost-timer ≥ 24h**：previous claimant 的 last comment 或 last commit 已经 ≥ 24h。**必须**在 takeover 评论里粘一行 `gh issue view <N> --json updatedAt,comments` 的截取证明这条 24h 间隔。
+2. **Explicit ack**：previous claimant 在 issue 评论里**写一句**说同意 takeover（`+1` reaction **不算**）。**必须**在 takeover 评论里贴他们 ack 那条评论的链接。
+
+两条都不满足而擅自 takeover 视为 griefing，任何其他 maintainer 都可以 revert label 并 ping 你回滚。
+
+### Takeover 评论格式
+
+进入门禁满足后，在 issue 评论里贴下面三段 **verbatim 中文声明**（顺序固定，禁翻译、禁 paraphrase、禁简写），并跟一行 evidence（ghost-timer 截取或 ack 链接）：
+
+1. 我已经开始干了
+2. 我来负责 grill-with-docs / grill-via-web
+3. 我的机器上开始干了
+
+可选补充：`host=<machine-id-or-name>` / `branch=feat/issue-<N>` 或 `branch=worktree-issue-<N>+pr-<i>` 让其他 maintainer 看到你的工作位置。
+
+**贴完评论之后**，再**自己**给 issue 加 `grill-working` label（颜色 `#fbca04`，与 driver mutex 共用同一 label——具体语义见 `docs/PRE-IMPLEMENT-CLAIM.md`）。然后才可以：
+
+- 开 `.codex/worktrees/issue-<N>/` 或 `.claude/worktrees/issue-<N>+pr-<i>/` 起 `feat/issue-<N>` branch；
+- 跑 `/grill-with-docs` 补 docs gate（如果情形 a 且 `docs-grill-ready` 缺）；
+- 跑 `/fixed-flow-driver` 启动 step 3-5。
+
+### 为什么 reuse `grill-working`（不新建 label）
+
+`grill-working` 既是 driver mutex（driver 自动加），也是 human takeover signal（maintainer 手动加）——`docs/PRE-IMPLEMENT-CLAIM.md` §`同一 label，两种来源` 定义两套语义如何共存（看 `.lock` sentinel + 看 pickup 评论锚点可以 O(1) 区分谁加的）。GitHub label 是仓库 metadata，比评论文本更易扫描（`gh issue list --label grill-working` 一行命令出全集），符合 #349 的「tags for easy issue tracking」要求。
+
+### 回滚
+
+贴完三段声明 + label 之后改变主意（previous claimant 上线回评 / 发现 scope 太大要 triage-and-split），按 `docs/PRE-IMPLEMENT-CLAIM.md` §`Rollback`：在同一线程追加 `--- abandoning takeover ---` 一行，**自己**移除 `grill-working` label；不要靠他人接力回收 label。
+
+### 与既有规则的边界
+
+- **vs `Preempted by an existing PR`**：那一节解决「issue 已有别人开的 PR」的双轨 PR 竞争；本节解决「issue 还没人开 PR，但有别人 mid-claim」的接手前仪式——两节互补，不重叠。
+- **vs `docs/POSTMORTEM.md` hard rule #6**：本节门禁要求 takeover 必须发生在 grill-ready issue（已经走过 reporter-grill），label 添加是**创建时点**的 takeover signal（不是事后追认 epic）；不属于 #6 禁止的 retroactive 操作。**Hand-close 非合规 issue 显式 not in scope** 正是为了不踩 #6。
+- **vs SessionStart banner contract**：`docs/specs/2026-05-11-fixedflow-sessionstart-banner.zh.md` 的 banner / docs-only trigger 语义本节不动；takeover 跑的 driver 仍走 banner gate。
+- **vs conformance Action auto-close**：本节只管 maintainer 的手动 takeover；machine path 不受本节约束。
 
 ## 步骤负责人分界
 
@@ -149,6 +196,67 @@ driver 启动时会同时校验 grill comment + docs-grill comment + 两个 labe
 
 `bypass-fixed-flow` 仅 repo admin 可加；conformance Action 通过 `gh api repos/:owner/:repo/collaborators/:user/permission` 校验来源用户的 permission，不是 admin 直接忽略 label。
 
+## Human-ready issues — never auto-close
+
+策略由 issue #338 codify。`ready-for-human` label 的官方描述是 `Needs human judgment / external access / design decision`——「该不该 close」本身就是一次 human-judgment 事件。因此：
+
+**带 `ready-for-human` label 的 issue 只能由真人 maintainer 手动 close。禁止 agent / bot 把它从 `open` 状态迁出（close / delete / transfer / convert-to-discussion / lock-as-resolved 等任何 state transition），也禁止 agent / bot 私自 remove `ready-for-human` label 以绕过本规则。**
+
+### 适用范围
+
+**Intent-based ban（不靠枚举 API 名）**：任何**非真人 actor**（Claude Code / Codex / `/fixed-flow-driver` / `/claim-to-merge` / 任何 autonomous worker / 任何 bot / 任何 watcher / 任何 cron / 任何 stale-bot / 任何 GitHub Action 在 `pull_request: closed` / `schedule:` / `issues:` / `workflow_dispatch:` 等任意触发下）对带 `ready-for-human` label 的 issue 做下列任意一种**状态迁移**——一律禁止：
+
+- ❌ close（`gh issue close` / `gh issue edit --state closed` / `PATCH /repos/:owner/:repo/issues/:N -f state=closed` / `@octokit/rest` 的 `octokit.issues.update({state:"closed"})` / GraphQL `closeIssue` mutation / `gh api graphql` 等价调用 / 批量 close 脚本……）
+- ❌ delete（`gh issue delete` / GraphQL `deleteIssue`）
+- ❌ transfer（`gh issue transfer` 转出到别的 repo）
+- ❌ convert-to-discussion（`gh issue develop` / web UI convert）
+- ❌ lock + 标 off-topic / spam / resolved 当作软关闭使用
+- ❌ remove `ready-for-human` label（`gh issue edit --remove-label ready-for-human` / API `DELETE /issues/:N/labels/...`）——本质等价于解除本规则的保护，agent 自己摘 label 等于自己解除自己的约束，必须禁止
+- ❌ remove `grill-ready` / `docs-grill-ready` label：**只要 issue 同时挂着 `ready-for-human` label**，agent / bot 也不能擅自 strip 任何相关 dispatch label（与 §与 `grill-ready` 互斥 段配套——label 状态的任何编辑都属于 human-judgment 事件，必须由真人 maintainer 操作；agent 看到双 label 共存只能贴评论 + 退出）
+
+枚举只是脚手架，**判定原则 = "非真人 actor + 任何把 issue 从 open 状态搬出去或编辑保护 label（无论是 `ready-for-human` 自身还是与之 mutex 的 `grill-ready` / `docs-grill-ready`）= forbidden，与具体 API 表面无关"**。新的 GitHub feature / 第三方工具引入新的 close-equivalent surface 时默认落入本禁令，不需要每个新 surface 都来改本规则。
+
+补充约束：
+
+- ❌ 即使 agent 判断该 issue 已被某 merged PR 解决 / 已过期 / 是 duplicate / 已被另一条 issue 覆盖 —— 只能贴评论说明，**不许自己做任何状态迁移**。
+- ❌ 即使 agent 读到本规则后口头同意 —— 本规则本身也不许被 agent close / delete / transfer（issue #338 自身就是它的 self-test case）。
+- ✅ 只有真人 maintainer（libz 的任一 GitHub 账号 / 其它有 maintain 权限的真人）在浏览器 / CLI 里手动操作，才是合法路径。
+- ✅ **PR 关键字 auto-close 例外（必须双因子可机器验证的 human-ack）**：若真人 maintainer 已经手动判定该 issue 「等 PR fix 即可结案」，可以在 PR body 写 `Closes #N`，让 GitHub 在 squash-merge 时 auto-close。但 agent 必须**同时**满足下列**两个**独立 factor（任一缺失 = 走默认禁令 ❌；单 factor 不足，**两因子设计是为了让单一 PAT 失陷无法独立完成 bypass**）：
+  - **Factor (a) — label removed by non-agent human**：`ready-for-human` label 已被在 PR open **之前**手动 remove，且必须**同时**满足：(i) `gh api repos/:owner/:repo/issues/:N/events` 查到 `unlabeled` 事件；(ii) 事件 actor 的 `actor.type == "User"` 且 `actor.login` 不在 repo 已知 bot allowlist（例如不匹配 `*-bot` / `dependabot` / `github-actions` / 任何 PAT-driven agent identity）；(iii) actor permission ≥ maintain（`gh api repos/:owner/:repo/collaborators/:user/permission`）；(iv) actor 不是即将合 PR 的作者本人；(v) label **从 PR open 到 squash-merge 之间持续保持 absent**（events API 不出现新的 `labeled ready-for-human` 事件——禁止 add-then-strip 时序绕过）。
+  - **Factor (b) — explicit ack comment by another human maintainer**：issue 上有一条 repo maintainer（与 Factor (a) 的 actor 不同人——「不同人」以 `actor.login` 字符串严格不等判定，不接受同一人换 device / session / IP 的辩解；permission 通过 `gh api repos/:owner/:repo/collaborators/:user/permission` 返回 `admin` / `maintain` / `write`；账号必须 `user.type == "User"` 且 `actor.login` 不在 repo 已知 bot allowlist——例如不匹配 `*-bot` / `dependabot` / `github-actions` / 任何 PAT-driven agent identity，与 Factor (a) 的 bot-exclusion 完全对称）authored 的评论包含字面字符串 `ack: close-via-PR #<PR-N>`（`<PR-N>` 必须等于即将合 PR 的编号）；评论发布在 PR squash-merge **之前**；评论作者必须能在 issue audit log 中独立可见。
+  - **PR body 必须明文引用两份证据**（label-removed event URL + actor 用户名 + permission level + bot-check 通过；ack 评论 URL + 评论作者 + permission level + bot-check 通过）。任一未引用 / 任一 factor 缺失 / 两个 factor 的 `actor.login` 同字符串 / 两个 factor 由同一 PAT 触发 = 走默认禁令 = ❌。**单凭 "我觉得 maintainer 应该同意" / "讨论里似乎有共识" / 单 factor 满足，都不算合规 ack。**
+
+### 与 `grill-ready` 互斥
+
+`ready-for-human` 与 `grill-ready` 是**互斥**的 dispatch 标签：
+
+| Label | Dispatcher | Close 路径 |
+|---|---|---|
+| `grill-ready` + `docs-grill-ready` | `/fixed-flow-driver`（maintainer 手动启动） | PR squash-merge 含 `Closes #N` 触发 GitHub auto-close（PR 关闭副作用，非 agent 主动） |
+| `ready-for-human` | **没有自动 dispatcher** | **只能真人手动 close**（PR-keyword auto-close 例外要求 §适用范围 的双因子 human-ack：label-removed-by-non-bot-human-maintainer + 另一位真人 maintainer 的 `ack: close-via-PR #<N>` 评论；单 remove label 不够） |
+
+如果同一条 issue 同时挂 `ready-for-human` 与 `grill-ready`：**先 remove `grill-ready`** 再让 driver 介入；如果反向决策（升级为人手处理），先 remove `grill-ready` + `docs-grill-ready` 再贴 `ready-for-human`。driver 看到 `ready-for-human` label 一律拒绝 dispatch（参见 §Dispatch policy）。
+
+**两个 label 的 remove 都必须由真人 maintainer 操作**——agent / bot 不能为了让自己跑得动而自己 remove `ready-for-human`（会与本节 §适用范围 的 label-strip 禁令冲突；driver 看到该 label 时**只能拒绝 dispatch + 退出**，绝不能 strip-and-continue）。
+
+### 与 refusal layer 的关系
+
+`.github/workflows/issue-conformance.yml` 在 enforce 期会对「24h 内无 `grill-ready` label」的 issue 评论 + close（§refusal layer）。**此 close 路径必须 whitelist `ready-for-human`**：conformance Action 与任何未来的 stale-bot / cleanup watcher / repo-wide sweep 一律不得 close 带 `ready-for-human` label 的 issue。docs 在此提前 codify 这条约束；workflow yaml 的实装在另行 issue 跟进，不在本规则的 docs PR 范围。
+
+**Transition guard（yaml whitelist 落地前）**：在 conformance Action 的 yaml 实际增加 `ready-for-human` whitelist 之前，maintainer 必须**操作层手动**保证「`ready-for-human` 与 missing-`grill-ready`」不在同一条 issue 上共存超过 24h——要么及时贴 `grill-ready`（走 FIXEDFLOW dispatch），要么主动 manual close（按本节合法路径）。在过渡期出现 conformance Action 误关 `ready-for-human` issue 的情况，立即由真人 maintainer reopen + 在事件复盘里 patch 这条约束，不要让 Action 的延迟成为规则被绕过的借口。
+
+### 落地建议（仅 enforcement 时点可选 — 禁令本身仍是 MUST）
+
+下面三条是把上面 §适用范围 的 MUST 禁令落到自动化拦截层的**实装建议**，每条的「做不做 / 何时做」由 maintainer 决定；但**做不做 enforcement 实装 ≠ 放宽禁令本身**——只要 `ready-for-human` label 还在 issue 上，§适用范围 的状态迁移 + label-strip 禁令对所有 agent / bot 永远是 hard rule。
+
+1. 给 stale-issue / cleanup watcher 加白名单：`ready-for-human` 永不自动 close（与 §与 refusal layer 的关系 段对齐）。
+2. 可选 pre-close hook：检测 `gh issue close`（及 §适用范围 列出的任意等价 close API / 状态迁移 / label-strip）actor 是 bot/agent + issue 含 `ready-for-human` label → reject。
+3. driver / `/claim-to-merge` 看到 `ready-for-human` label 时只能贴评论并退出，不得触发任何 close 调用 / label-strip（已由 §Dispatch policy 的 refusal 路径覆盖）。
+
+### 与 retroactive ban 的关系
+
+本节只规定「已经带 `ready-for-human` label 的 issue 谁可以 close」。「label 谁可以贴 / 何时可以贴」由 `docs/HOW-TO-CLAIM-ISSUE.md` "ready-for-human label" 段 + `docs/POSTMORTEM.md` hard rule #6 + `docs/TRIAGE-AND-SPLIT.md` 共同 codify（核心：创建时点贴合法；ship 后 retroactive 补贴无约束效力）。两条规则不重叠：贴 label 是入口约束，close 是出口约束。
+
 ## driver 行为细则
 
 driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skills/`）。
@@ -184,6 +292,9 @@ driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skil
 - `docs/POSTMORTEM.md` — multi-PR recap comment 规则；epic 类 issue 的复盘叙事约束在那里（hard rule #6 + #7）。
 - `docs/HOW-TO-CLAIM-ISSUE.md` — claim 前必须看到两个 label；`ready-for-human` + AI-triage retroactive ban；epic carve-out 引用。
 - `docs/TRIAGE-AND-SPLIT.md` — grill 完发现 issue 太大时的 triage 入口（人手 maintainer 判断瞬间）。
+- 本文 §Human-ready issues — never auto-close — codify by issue #338；规定带 `ready-for-human` label 的 issue 只能由真人手动 close、所有 agent / bot 禁止 `gh issue close`、`grill-ready` 互斥关系、refusal-layer whitelist 要求。
+- `docs/plans/2026-05-12-issue-349/` — 接手别人 grill-ready issue 时的 pre-comment + `grill-working` label 契约由 issue #349 引入（本文件 §Taking over someone else's grill-ready issue — pre-comment + label contract）。
+- `docs/PRE-IMPLEMENT-CLAIM.md` — `grill-working` label 双语义（driver mutex + human takeover）、takeover 门禁（24h ghost-timer / explicit ack）、回滚、冲突解决的 canonical doc；由 #349 backfill。
 
 ## 验证（语义 probe，不写 canned-answer block）
 

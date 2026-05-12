@@ -5,6 +5,25 @@ description: Grilling session that challenges your plan against the existing dom
 
 <what-to-do>
 
+## 0. Pre-grill claim (cross-host mutex, mandatory when bound to a TeamBrain issue)
+
+Per `docs/PRE-GRILL-CLAIM.md`, **before** running the docs-gate grill on a TeamBrain GitHub issue (FIXEDFLOW step 2.5 context), the agent must:
+
+> **make a comment claiming we have started grilling this issue and add tag "grilling"**
+
+Concretely:
+
+1. `gh issue view <N> --json labels -q '.labels[].name' | grep -q '^grilling$' && exit` — defer if already locked.
+2. `gh issue view <N> --json labels -q '.labels[].name' | grep -q '^docs-grill-ready$' && exit` — docs gate already done.
+3. `gh issue comment <N> --body "🍳 docs-grill picked up at <ISO timestamp> on <hostname> via /grill-with-docs. Following docs/PRE-GRILL-CLAIM.md."`
+4. `gh issue edit <N> --add-label grilling`
+
+Only after both succeed: proceed with the docs-grill interview below. When the docs-grill comment is posted back to the issue, swap labels with `gh issue edit <N> --remove-label grilling --add-label docs-grill-ready`.
+
+Skip §0 when running this skill on a non-issue artifact (local plan / design doc).
+
+## Grill loop
+
 Interview me relentlessly about every aspect of this plan until we reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
 
 Ask the questions one at a time, waiting for feedback on each question before continuing.

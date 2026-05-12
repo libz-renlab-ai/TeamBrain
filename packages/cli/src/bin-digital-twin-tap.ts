@@ -182,6 +182,12 @@ export async function main(
   arg1: (() => Promise<string>) | MainDeps = readStdin,
   arg2: (() => string) = homedir,
 ): Promise<void> {
+  // Issue #343 PR-1: master kill switch. When TEAMAGENT_DISABLED=1 the
+  // digital-twin tap bails before reading stdin, config load, and the
+  // tapSession() forward to @teamagent/digital-twin. This hook bypasses
+  // runHook/runAdvancedHook (no ctx), so the check reads process.env
+  // directly.
+  if (process.env.TEAMAGENT_DISABLED === '1') return;
   // Back-compat positional signature: (stdinReader, homedirFn).
   // New signature: (deps: MainDeps).
   const deps: MainDeps =

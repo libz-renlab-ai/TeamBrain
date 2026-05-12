@@ -39,6 +39,12 @@ import {
   renderM5PublishResult,
 } from "./commands/m5-publish.js";
 import {
+  executeM5Replay,
+  parseM5ReplayArgs,
+  renderM5ReplayResult,
+  M5ReplayArgError,
+} from "./commands/m5-replay.js";
+import {
   executePitfall,
   runPitfallInteractive,
   parsePitfallArgs,
@@ -62,6 +68,11 @@ import {
   parseInitArgs,
   renderInitResult,
 } from "./commands/init.js";
+import {
+  executeRequiredCheck,
+  parseRequiredCheckArgs,
+  renderRequiredCheckResult,
+} from "./commands/required-check.js";
 import {
   disable,
   enable,
@@ -186,6 +197,12 @@ import {
   renderFixtureReplayHelp,
   FixtureReplayArgError,
 } from "./commands/fixture-replay.js";
+import {
+  executeSymphony,
+  parseSymphonyArgs,
+  renderSymphonyHelp,
+  SymphonyArgError,
+} from "./commands/symphony.js";
 
 function findPackageVersion(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
@@ -310,6 +327,27 @@ async function main(): Promise<void> {
       const opts = parseM5SyncArgs(rest);
       const result = await runM5Sync(opts);
       process.stdout.write(renderM5SyncResult(result) + "\n");
+      return;
+    }
+    case "m5-replay": {
+      try {
+        const opts = parseM5ReplayArgs(rest);
+        const result = await executeM5Replay(opts);
+        if (opts.json) {
+          process.stdout.write(JSON.stringify(result) + "\n");
+        } else {
+          process.stdout.write(renderM5ReplayResult(result) + "\n");
+        }
+        if (!result.passed) {
+          process.exit(1);
+        }
+      } catch (err) {
+        if (err instanceof M5ReplayArgError) {
+          process.stderr.write(`[m5-replay] ${err.message}\n`);
+          process.exit(2);
+        }
+        throw err;
+      }
       return;
     }
     case "m5-delete": {
@@ -490,6 +528,31 @@ async function main(): Promise<void> {
     case "review": {
       const opts = parseReviewArgs(rest);
       process.stdout.write(executeReview(opts));
+      return;
+    }
+    case "required-check": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage: teamagent required-check [--project <dir>] [--json]\n" +
+          "\n" +
+          "Validates this repository's TeamAgent required-mode contract:\n" +
+          "  - reads `.teamagent/required.json` (written by `teamagent init .`)\n" +
+          "  - confirms its schema and mode are `teamagent.required.v1` / `required`\n" +
+          "\n" +
+          "Exit code:\n" +
+          "  0 — OK; the project is configured for required mode.\n" +
+          "  2 — `.teamagent/required.json` missing or malformed.\n" +
+          "  3 — schema or mode unsupported.\n" +
+          "\n" +
+          "Hook-safe (no DB access, no network, no writes). Designed to be\n" +
+          "invoked from `.claude/hooks/check-teamagent.sh` before Claude tool use.\n",
+        );
+        return;
+      }
+      const opts = parseRequiredCheckArgs(rest);
+      const r = executeRequiredCheck(opts);
+      process.stdout.write(renderRequiredCheckResult(r, opts.json ?? false) + "\n");
+      if (r.exitCode !== 0) process.exit(r.exitCode);
       return;
     }
     case "init": {
@@ -881,6 +944,25 @@ async function main(): Promise<void> {
         if (!result.ok) process.exit(1);
       } catch (err) {
         if (err instanceof FixtureReplayArgError) {
+          process.stderr.write(err.message.endsWith("\n") ? err.message : err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
+      return;
+    }
+    case "symphony": {
+      try {
+        if (rest.includes("--help") || rest.includes("-h")) {
+          process.stdout.write(renderSymphonyHelp());
+          return;
+        }
+        const opts = parseSymphonyArgs(rest);
+        const result = await executeSymphony(opts, process.cwd());
+        process.stdout.write(result.output);
+        if (result.exitCode !== 0) process.exit(result.exitCode);
+      } catch (err) {
+        if (err instanceof SymphonyArgError) {
           process.stderr.write(err.message.endsWith("\n") ? err.message : err.message + "\n");
           process.exit(2);
         }

@@ -103,6 +103,16 @@ async function main(): Promise<void> {
       return { prompt, session_id: sessionId };
     },
     handler: async (ctx) => {
+      // Issue #343 PR-1: master kill switch. When TEAMAGENT_DISABLED=1 the
+      // UserPromptSubmit hook bails before pending-injection drain, rule
+      // retrieval (semantic + BM25 + embedder daemon round-trip), recording
+      // memory retrieval, and Claude Code envelope assembly. Returning
+      // undefined yields no injection — Claude Code proceeds with the
+      // user's raw prompt only.
+      if (ctx.env.TEAMAGENT_DISABLED === "1") {
+        return undefined;
+      }
+
       const { input, cwd, home, env, paths, bus } = ctx;
       const prompt = input.prompt;
       const sessionId = input.session_id ?? "";

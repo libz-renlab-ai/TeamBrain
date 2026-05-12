@@ -1,0 +1,12 @@
+{
+  "author": "alice",
+  "current": {
+    "confidence": 0.95,
+    "content": "Never run `git push --force` against the main branch. Use --force-with-lease against feature branches only.",
+    "deleted": false,
+    "modified_by": "alice",
+    "modified_ts": "2026-05-12T00:00:00.000Z",
+    "scope": "team"
+  },
+  "rule_id": "avoidance-no-force-push-to-main"
+}

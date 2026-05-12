@@ -1,0 +1,12 @@
+{
+  "author": "alice",
+  "current": {
+    "confidence": 0.75,
+    "content": "In TeamBrain monorepo, prefer `pnpm install` and `pnpm vitest run` over npm / yarn / npx; the project pins pnpm via packageManager and CI assumes pnpm lockfile semantics.",
+    "deleted": false,
+    "modified_by": "alice",
+    "modified_ts": "2026-05-12T00:00:00.000Z",
+    "scope": "team"
+  },
+  "rule_id": "learning-prefer-pnpm"
+}

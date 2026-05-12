@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TeamBrain — 安装交响曲状态板（中文版）</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#050714;--bg-alt:#0a0d1f;
+    --surface:rgba(17,24,39,0.55);--surface-strong:rgba(17,24,39,0.85);
+    --border:rgba(148,163,184,0.10);--border-strong:rgba(148,163,184,0.22);
+    --cyan:#22d3ee;--green:#34d399;--purple:#a78bfa;--amber:#fbbf24;--red:#f87171;--blue:#60a5fa;--pink:#f472b6;
+    --text:#f1f5f9;--muted:#94a3b8;--dim:#64748b;
+    --mono:'JetBrains Mono','Fira Code',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --cjk:'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif;
+  }
+  html,body{background:var(--bg);color:var(--text);font-family:var(--cjk),'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.7;min-height:100vh;-webkit-font-smoothing:antialiased}
+  body::before{
+    content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(900px 700px at 8% 0%,rgba(34,211,238,0.16),transparent 55%),
+      radial-gradient(800px 600px at 92% 18%,rgba(167,139,250,0.14),transparent 55%),
+      radial-gradient(1000px 800px at 50% 100%,rgba(244,114,182,0.10),transparent 60%);
+  }
+  body::after{
+    content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:
+      linear-gradient(rgba(148,163,184,0.04) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(148,163,184,0.04) 1px,transparent 1px);
+    background-size:48px 48px;
+  }
+  main{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:48px 28px 96px}
+  header.page{margin-bottom:36px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--cyan);margin-bottom:8px}
+  h1{font-size:38px;line-height:1.2;font-weight:700;letter-spacing:-.01em;background:linear-gradient(135deg,#22d3ee 0%,#a78bfa 60%,#f472b6 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .subtitle{color:var(--muted);margin-top:10px;font-size:16px;max-width:780px;line-height:1.75}
+  .lang-switch{display:inline-block;margin-top:14px;padding:5px 12px;border:1px solid var(--border-strong);border-radius:999px;font-family:var(--mono);font-size:11.5px;color:var(--cyan);text-decoration:none}
+  .lang-switch:hover{border-color:var(--cyan)}
+  .meta-row{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;font-family:var(--mono);font-size:12px;color:var(--dim)}
+  .meta-row span b{color:var(--text);font-weight:500}
+
+  pre.banner{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:18px 22px;margin:24px 0 28px;font-family:var(--mono);font-size:12.5px;line-height:1.45;color:var(--cyan);
+    overflow-x:auto;white-space:pre;
+  }
+
+  section{margin-top:44px}
+  h2{font-size:22px;font-weight:600;letter-spacing:-.01em;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+  h2::before{content:'';width:3px;height:18px;background:linear-gradient(180deg,var(--cyan),var(--purple));border-radius:2px}
+  h3{font-size:15px;font-weight:600;margin:18px 0 8px;color:var(--text)}
+  p{color:var(--muted);margin-bottom:10px;line-height:1.75}
+  p.lede{font-size:15.5px;color:var(--text);margin-bottom:18px}
+
+  .grid{display:grid;gap:14px}
+  .grid.cards-3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .grid.cards-4{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:18px 18px 16px;position:relative;overflow:hidden;
+  }
+  .card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-strong)}
+  .card.ok::before{background:var(--green)}
+  .card.wip::before{background:var(--amber)}
+  .card.gap::before{background:var(--red)}
+  .card.info::before{background:var(--cyan)}
+  .card .pill{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--border-strong);color:var(--muted);margin-bottom:8px}
+  .card.ok .pill{color:var(--green);border-color:rgba(52,211,153,.4)}
+  .card.wip .pill{color:var(--amber);border-color:rgba(251,191,36,.4)}
+  .card.gap .pill{color:var(--red);border-color:rgba(248,113,113,.4)}
+  .card.info .pill{color:var(--cyan);border-color:rgba(34,211,238,.4)}
+  .card h4{font-size:14.5px;font-weight:600;margin-bottom:6px}
+  .card p{font-size:12.5px;line-height:1.65;margin:0;color:var(--muted)}
+  .card .num{font-family:var(--mono);font-size:32px;font-weight:600;color:var(--text);letter-spacing:-.02em;display:block;margin-top:4px}
+  .card .num small{font-size:14px;color:var(--muted);font-weight:400;margin-left:6px}
+
+  table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;font-size:13px}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.7}
+  th{background:rgba(17,24,39,.7);font-weight:600;color:var(--text);font-size:12px;letter-spacing:.04em}
+  tr:last-child td{border-bottom:none}
+  td.mono,th.mono{font-family:var(--mono);font-size:12px}
+  td code{background:rgba(148,163,184,.10);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:11.5px;color:var(--cyan)}
+  td a{color:var(--blue);text-decoration:none;border-bottom:1px dashed rgba(96,165,250,.4)}
+  td a:hover{color:var(--cyan);border-bottom-color:var(--cyan)}
+
+  .badge{display:inline-block;font-family:var(--cjk),var(--mono);font-size:11.5px;padding:2px 8px;border-radius:6px;font-weight:500;white-space:nowrap}
+  .badge.ok   {background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+  .badge.wip  {background:rgba(251,191,36,.12);color:var(--amber);border:1px solid rgba(251,191,36,.3)}
+  .badge.gap  {background:rgba(248,113,113,.12);color:var(--red);  border:1px solid rgba(248,113,113,.3)}
+  .badge.info {background:rgba(34,211,238,.12);color:var(--cyan); border:1px solid rgba(34,211,238,.3)}
+  .badge.gray {background:rgba(148,163,184,.10);color:var(--muted);border:1px solid var(--border-strong)}
+
+  ul.bullets{padding-left:22px;color:var(--muted)}
+  ul.bullets li{margin:6px 0;font-size:13.5px;line-height:1.75}
+  ul.bullets li code{background:rgba(148,163,184,.10);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:12px;color:var(--cyan)}
+
+  .row-split{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:16px}
+  @media(max-width:780px){.row-split{grid-template-columns:1fr}}
+
+  pre.code{background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-family:var(--mono);font-size:12px;color:var(--text);overflow-x:auto;white-space:pre}
+
+  footer.page{margin-top:64px;padding-top:24px;border-top:1px solid var(--border);font-family:var(--mono);font-size:11.5px;color:var(--dim);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+</style>
+</head>
+<body>
+<main>
+
+<header class="page">
+  <div class="eyebrow">TeamBrain · 安装管道状态</div>
+  <h1>Install Symphony — 仓库级安装与初始化状态</h1>
+  <p class="subtitle">
+    "安装交响曲"的单页状态板：把 <code style="font-family:var(--mono);background:rgba(148,163,184,.1);padding:1px 6px;border-radius:4px;color:var(--cyan)">teamagent init</code>
+    编排的每一条通道——Claude hooks、Codex hooks、plugins、skills、用户级传播——都列出来。
+    绿色 = 已交付，琥珀色 = 规划中，红色 = 缺口。
+    依据：<a href="./INIT-PROPAGATION.md" style="color:var(--blue)">INIT-PROPAGATION.md</a>、
+    <a href="./features/hooks-status.md" style="color:var(--blue)">features/hooks-status.md</a>、ADR-0007。
+  </p>
+  <a class="lang-switch" href="./install-symphony-status.html">EN · English version →</a>
+  <div class="meta-row">
+    <span>生成时间 <b>2026-05-12</b></span>
+    <span>分支 <b>worktree-docs-install-symphony-status-zh</b></span>
+    <span>基准 <b>main @ 910bc894</b></span>
+    <span>范围 <b>仓库级 · 单页</b></span>
+  </div>
+</header>
+
+<pre class="banner">
+   ┌────────────────────────  teamagent init  ────────────────────────┐
+   │                                                                  │
+   │   项目仓库                            用户 $HOME                  │
+   │   ──────────────                     ────────────────            │
+   │   .claude/skills/    ─── 编译 ────► ~/.claude/skills/teamagent/  │
+   │   .claude/settings   ─── channelOps ► ~/.claude/settings.json    │
+   │   .codex/skills/     ─── ⏳ 未做 ──► ~/.codex/skills/            │
+   │   .codex/hooks/      ─── ⏳ 未做 ──► ~/.codex/hooks.json         │
+   │   plugin manifest    ─── plug.install► ~/.claude/plugins/        │
+   │   .teamagent/KB      ─── seed+warmup ► .teamagent/knowledge.db   │
+   │                                                                  │
+   └──────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+                          teamagent doctor  ✓
+</pre>
+
+<section>
+  <h2>一句话总览（TL;DR）</h2>
+  <div class="grid cards-4">
+    <div class="card ok">
+      <span class="pill">claude hooks</span>
+      <h4>已激活通道</h4>
+      <span class="num">6<small>/8 事件</small></span>
+      <p>SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、Stop、PreCompact、SessionEnd 均已接入；SubagentStop / Notification 有意未使用。</p>
+    </div>
+    <div class="card ok">
+      <span class="pill">用户级写入</span>
+      <h4>病毒式安装</h4>
+      <span class="num">3<small>/3 路径</small></span>
+      <p><code>~/.claude/skills/</code>（编译产物）、<code>~/.claude/settings.json</code>（hooks）、<code>~/.claude/plugins/</code>（DEFAULT_PLUGINS）。</p>
+    </div>
+    <div class="card wip">
+      <span class="pill">codex 对齐</span>
+      <h4>Codex 事件映射</h4>
+      <span class="num">5<small>/8 事件</small></span>
+      <p>SessionStart / UserPromptSubmit / PreToolUse / PostToolUse / Stop 在 Codex 侧均支持；PreCompact、SessionEnd、SubagentStop 上游未提供。PermissionRequest 是 Codex 独有。</p>
+    </div>
+    <div class="card gap">
+      <span class="pill">未关 install issues</span>
+      <h4>待办工作流</h4>
+      <span class="num">4<small> 个 issue</small></span>
+      <p>#271 / #290 / #291 / #292 —— Codex 项目级 hook 安装 + adapter 接线。调研 PR #340 已合并，实现 issue 仍开放。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>组件状态</h2>
+  <p class="lede">每一行是安装管道里的一个切片。<span class="badge ok">已交付</span> 表示当前 <code>teamagent init</code> 已安装；<span class="badge wip">规划中</span> 表示 INIT-PROPAGATION.md 里有承诺但 <code>init</code> 还没接线；<span class="badge gap">缺口</span> 表示有 open issue 但没有落地代码。</p>
+  <table>
+    <thead>
+      <tr><th style="width:42%">组件</th><th style="width:14%">状态</th><th>实现位置 / 未完事项</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Claude PreToolUse hook（avoidance 规则）</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td><code>bin-pre-tool-use.cjs</code> 同时接入 <code>.claude/settings.local.json</code>（项目级）和 <code>~/.claude/settings.json</code>（用户级）。匹配器：<code>Bash|Write|Edit|WebFetch</code>。</td>
+      </tr>
+      <tr>
+        <td>Claude PostToolUse hook（事件日志）</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td><code>bin-post-tool-use.cjs</code> 把 <code>hook-post.result</code> 写到 <code>SqliteEventLog</code>。纯观测，无业务逻辑。</td>
+      </tr>
+      <tr>
+        <td>Claude UserPromptSubmit（语义规则 + 记忆检索）</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td>由 <code>installHook</code> 接入；PR #346（issue #315）补上 BM25 fallback 和 spawn-race lock 后稳定。</td>
+      </tr>
+      <tr>
+        <td>Claude Stop（三 handler 并发）</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td><code>bin-stop.cjs</code>（analyze → calibrate → compile）+ <code>self-report-fused.sh</code>（12-field 门禁）+ <code>bin-digital-twin-tap.cjs</code>（仅用户级，PR #341）。</td>
+      </tr>
+      <tr>
+        <td>Claude SessionStart / SessionEnd / PreCompact</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td>v0.11.0 channelOps 统一改造（PR #239、PR #230）后三个都接入。<code>install-user-hook</code> 命令现在是软退役 shim，转调 <code>applyUserLevelChannelOps</code>。</td>
+      </tr>
+      <tr>
+        <td>状态栏（单 slot，chain-wrap 用户命令）</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td><code>dist/teamagent-statusline.cjs</code> 包装用户已有的 statusline，原始命令缓存在 <code>_teamagentOriginalCommand</code> 便于干净卸载。M6 暴露 CC 运行时状态（PR #337、issue #331）。</td>
+      </tr>
+      <tr>
+        <td>编译后的 Skills（规则 → Skill 镜像）</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td><code>runCompile</code> 把 stable+/canonical/enforced 规则写到 <code>~/.claude/skills/teamagent/&lt;id&gt;/SKILL.md</code>。Legacy <code>CLAUDE.md</code> managed block 需要 opt-in flag <code>--legacy-claude-md</code> 才会重生。</td>
+      </tr>
+      <tr>
+        <td>Plugin 安装（DEFAULT_PLUGINS）</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td><code>install-plugins.ts</code> 封装 <code>claude plugin install</code>；marketplace + plugins 落到 <code>~/.claude/plugins/installed/</code>。PR #147、PR #181。</td>
+      </tr>
+      <tr>
+        <td>自动更新（Pages + npm fallback）</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td>每个用户都能自动更新——Pages 托管 manifest，npm fallback，Tier-3 banner 兜底（PR #342，closes #305 / #313）。</td>
+      </tr>
+      <tr>
+        <td>知识库 seed + warmup</td>
+        <td><span class="badge ok">已交付</span></td>
+        <td><code>.teamagent/knowledge.db</code> 从打包 fixture seed；PR #113 加了可见的 warmup 进度条。每一步 checkpoint 存在 <code>~/.teamagent/.warmup-state.json</code>。</td>
+      </tr>
+      <tr>
+        <td>静态 skill 镜像（<code>.claude/skills/&lt;name&gt;/</code> → 用户）</td>
+        <td><span class="badge wip">规划中</span></td>
+        <td>INIT-PROPAGATION.md 里写了，但 <code>init</code> 还没接线。<code>planStaticUserSkillInstall</code> 已在 core 里实现，init 没调用。跟踪文档 <code>docs/INIT-PROPAGATION-IMPL.md</code>（占位，尚未编写）。</td>
+      </tr>
+      <tr>
+        <td>Claude settings 关键键合并（<code>permissions</code> / <code>env</code> / MCP）</td>
+        <td><span class="badge wip">规划中</span></td>
+        <td>INIT-PROPAGATION 承诺要做，目前代码只合并 hook 条目。其它顶级键尚未做 diff/merge。</td>
+      </tr>
+      <tr>
+        <td>M5-infect onboarding 提醒</td>
+        <td><span class="badge wip">规划中</span></td>
+        <td>Issue #284 —— 写入 onboarding 提醒，让没装 TeamAgent 的队友先装；m5-infect 命令已有，UX nudge 还未发布。</td>
+      </tr>
+      <tr>
+        <td><code>.codex/</code> 项目级 hook 配置 + adapter</td>
+        <td><span class="badge gap">缺口</span></td>
+        <td>Issue #290。调研 spec 通过 PR #340 落地，实现仍开放。Codex 注册表格式 = <code>~/.codex/hooks.json</code> + 项目级变体。</td>
+      </tr>
+      <tr>
+        <td><code>teamagent init --target=codex/both</code></td>
+        <td><span class="badge gap">缺口</span></td>
+        <td>Issue #291。<code>init.ts:55,197,1549</code> 已经接受 <code>target: "claude" | "codex" | "both"</code> 并分支处理，但 codex 分支仅 <em>跳过</em> Claude hook 注册（<code>init.ts:282</code>）—— Codex 侧的 hook installer 还没写。<code>installHook</code> 需要真正的 codex 代码路径。</td>
+      </tr>
+      <tr>
+        <td>Codex 安装幂等性测试</td>
+        <td><span class="badge gap">缺口</span></td>
+        <td>Issue #292 —— Codex 安装不破坏既有配置的测试集。是 #291 进 squash-merge 之前的门禁。</td>
+      </tr>
+      <tr>
+        <td>Codex 项目级 hook 端到端</td>
+        <td><span class="badge gap">缺口</span></td>
+        <td>Issue #271（ready-for-human）。覆盖 #290 + #291 + #292 三个子项的伞 issue。</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Codex 对齐矩阵</h2>
+  <p>依据 <code>docs/features/codex-hooks-spec.md</code>（PR #340）。Codex 侧支持的事件总数（含 Codex 独有的 <code>PermissionRequest</code>）：<b>6 个</b>。TeamBrain Claude 侧库存：<b>8 个</b>事件，目前 <b>6/8</b> 已接线。</p>
+  <table>
+    <thead>
+      <tr><th>#</th><th>事件</th><th>Claude（TeamBrain）</th><th>Codex</th><th>差异 / 备注</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>SessionStart</td><td><span class="badge ok">已接线</span></td><td><span class="badge ok">支持</span></td><td>Codex 多一个 <code>source</code> 字段（<code>startup|resume|clear</code>），Claude 没有。</td></tr>
+      <tr><td>2</td><td>UserPromptSubmit</td><td><span class="badge ok">已接线</span></td><td><span class="badge ok">支持</span></td><td>两边 <code>prompt</code> 字段一致；matcher 两边都被忽略。</td></tr>
+      <tr><td>3</td><td>PreToolUse</td><td><span class="badge ok">已接线</span></td><td><span class="badge ok">支持</span></td><td><code>Write</code>/<code>Edit</code> 在 Codex 端坍缩为 <code>apply_patch</code>；Codex 没有 <code>permission_mode</code> 字段。</td></tr>
+      <tr><td>3a</td><td>PermissionRequest</td><td><span class="badge gray">—</span></td><td><span class="badge info">codex 独有</span></td><td>Hook 返回 <code>decision: {behavior: "allow"|"deny"}</code>。可以映射到 <code>bin-pre-tool-use.cjs</code> 里现有的 <code>permission_mode</code> 逻辑。</td></tr>
+      <tr><td>4</td><td>PostToolUse</td><td><span class="badge ok">已接线</span></td><td><span class="badge ok">支持</span></td><td>字段逐一对齐（<code>tool_name</code>、<code>tool_use_id</code>、<code>tool_input</code>、<code>tool_response</code>）。</td></tr>
+      <tr><td>5</td><td>Stop</td><td><span class="badge ok">已接线（3 handler）</span></td><td><span class="badge ok">支持</span></td><td>Codex 多 <code>stop_hook_active</code> + <code>last_assistant_message</code>；现有三 handler 链需要一层 adapter shim（由 #290 跟踪）。</td></tr>
+      <tr><td>6</td><td>PreCompact</td><td><span class="badge ok">已接线</span></td><td><span class="badge gap">缺失</span></td><td>Codex 文档不承诺该事件。TeamBrain 已有源码，但在 Codex 端无法接线。</td></tr>
+      <tr><td>7</td><td>SessionEnd</td><td><span class="badge ok">已接线</span></td><td><span class="badge gap">缺失</span></td><td>同 PreCompact。</td></tr>
+      <tr><td>8</td><td>SubagentStop / Notification</td><td><span class="badge gray">未启用</span></td><td><span class="badge gap">缺失</span></td><td>TeamBrain 自己也没用 —— 无对齐工作。</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>开放中的 install 工作流</h2>
+  <p>下面这四个 issue 是"安装交响曲"在 Codex 侧完整对齐的全部阻塞面。调研 PR #340 已合并；剩下的工作是实现 + 测试。</p>
+  <table>
+    <thead>
+      <tr><th style="width:80px">Issue</th><th>标题</th><th style="width:200px">标签</th><th style="width:90px">状态</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/271">#271</a></td>
+        <td>把 Codex 项目级 hooks 加进 <code>teamagent init</code></td>
+        <td><span class="badge info">enhancement</span> <span class="badge gray">codex</span> <span class="badge wip">ready-for-human</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/290">#290</a></td>
+        <td>feat(.codex)：提交项目级 Codex hook 配置 + adapter</td>
+        <td><span class="badge info">enhancement</span> <span class="badge gray">codex</span> <span class="badge wip">needs-triage</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/291">#291</a></td>
+        <td>feat(install-hook)：参数化 Codex target + 接 <code>--target=codex/both</code></td>
+        <td><span class="badge info">enhancement</span> <span class="badge gray">codex</span> <span class="badge wip">needs-triage</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/292">#292</a></td>
+        <td>test(install-hook)：Codex 安装幂等性 + 非破坏性</td>
+        <td><span class="badge info">enhancement</span> <span class="badge gray">codex</span> <span class="badge wip">needs-triage</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+      <tr>
+        <td><a href="https://github.com/libz-renlab-ai/TeamBrain/issues/284">#284</a></td>
+        <td>m5-infect：给没装 TeamAgent 的队友写 onboarding 提醒</td>
+        <td><span class="badge info">enhancement</span></td>
+        <td><span class="badge gap">OPEN</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>近期合并的 install PR</h2>
+  <p>安装交响曲过去一个多月的交付，新→旧排序。这一连串 PR 把安装管道推到了当前 6/8 + 病毒式安装的状态。</p>
+  <table>
+    <thead>
+      <tr><th style="width:80px">PR</th><th style="width:120px">合并日期</th><th>标题</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/357">#357</a></td><td class="mono">2026-05-12</td><td>docs(install-status)：本状态板英文版</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/342">#342</a></td><td class="mono">2026-05-12</td><td>[issue-313] 每个用户都自动更新 —— Pages + npm fallback + Tier 3 banner</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/341">#341</a></td><td class="mono">2026-05-12</td><td>[issue-299] 打包 <code>bin-digital-twin-tap.cjs</code> + doctor install-table 检查 + <code>applyChannelOps</code> warn</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/340">#340</a></td><td class="mono">2026-05-12</td><td>research(codex-hooks)：映射 Codex hook registry 与 Claude 对齐（closes #289）</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/316">#316</a></td><td class="mono">2026-05-11</td><td>fix(init)：暴露 nested-init-guard 渲染 + v0.10.x→v0.11.0 升级提示</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/287">#287</a></td><td class="mono">2026-05-11</td><td>docs(init-propagation)：明确 <code>teamagent init</code> 的项目→用户配置传播契约</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/265">#265</a></td><td class="mono">2026-05-10</td><td>[issue-146] install-hook 暂存 <code>bin-uploader.cjs</code>（解决 F1 TODO）</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/239">#239</a></td><td class="mono">2026-05-09</td><td>v0.11.0 install-hook 清理：channelOps 统一 + 删 .sh + install-user-hook shim</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/230">#230</a></td><td class="mono">2026-05-09</td><td>feat(install-hook)：B+C scope —— 4 个通道 + 收编 install-user-hook + orphan scanner</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/181">#181</a></td><td class="mono">2026-05-09</td><td>fix(issue-161)：walk-up DB 解析 + 病毒式用户级 hook 安装</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/147">#147</a></td><td class="mono">2026-05-08</td><td>feat(install)：真 <code>npm install -g</code> ≤3s + 8/8 强制验证 harness</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/145">#145</a></td><td class="mono">2026-05-08</td><td>fix：INSTALL.md 缺 init 步骤 + 卸载重装提示</td></tr>
+      <tr><td><a href="https://github.com/libz-renlab-ai/TeamBrain/pull/113">#113</a></td><td class="mono">2026-05-07</td><td>perf(install)：可见 warmup 进度条 + 并行 doctor/hook（closes #108）</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>怎么验证安装</h2>
+  <p>三层验证，由快到全。第二层之后的任何验证必须走第三方 judge harness（项目惯例）。</p>
+
+  <div class="row-split">
+    <div>
+      <h3>第一层 —— <code>teamagent doctor</code></h3>
+      <p>单一权威 CLI 检查。逐通道汇报安装状态、知识库存在性、plugin 同步、skill 传播。</p>
+      <pre class="code">$ pnpm teamagent doctor
+# 期望输出：
+# hook-registered ✓ (6 channels)
+# plugin-sync     ✓
+# skills mirror   ✓
+# kb              ✓
+# warmup          ✓</pre>
+    </div>
+    <div>
+      <h3>第二层 —— 直接看文件系统</h3>
+      <p>如果 doctor 全绿，下面这些路径都必须存在并包含 TeamAgent 条目。</p>
+      <pre class="code">$ ls ~/.claude/skills/teamagent/
+$ jq '.hooks | keys' ~/.claude/settings.json
+$ ls ~/.claude/plugins/installed/
+$ ls .teamagent/knowledge.db</pre>
+    </div>
+  </div>
+
+  <h3>第三层 —— judge harness 探针（权威）</h3>
+  <p>端到端 install 回归必须走第三方 judge harness（按 <code>docs/plans/&lt;...&gt;/judge.md</code> playbook 约定）：用一次性 <code>$HOME</code> 跑 <code>teamagent init</code>，把 raw stdout/stderr/exit code 落到 <code>.judge/&lt;run_id&gt;/</code>，最后让另一只 LLM judge 只读 raw JSON 判结论 —— 永远不允许 <code>init</code> 给自己打分。探针最少覆盖以下场景：</p>
+  <ul class="bullets">
+    <li>从干净 prefix 跑 <code>npm install -g teamagent</code>（PR #147 的预算 ≤3 秒）。</li>
+    <li>在空仓库里跑 <code>teamagent init</code>（默认 <code>--target=claude</code>）。</li>
+    <li><code>teamagent init --target=codex</code> —— <b>当前 flag 已被接受</b>（<code>init.ts:282</code> 跳过 Claude hook 注册）<b>但不安装任何 Codex 侧 hook</b>；等 #291 把 Codex installer 分支补上。</li>
+    <li><code>teamagent doctor</code> 退出码 = 0，所有行都绿。</li>
+    <li>重复跑 <code>init</code> 是幂等的（hook 不重复、settings 不被改写）。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>下一步</h2>
+  <p>把这块状态板全部刷成绿的最短路径：</p>
+  <ol style="padding-left:24px;color:var(--muted);font-size:13.5px;line-height:1.85">
+    <li style="margin:6px 0">接 <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/290" style="color:var(--blue)">#290</a>（提交 <code>.codex/</code> hook 配置 + adapter）—— 调研已经在 PR #340 合并。</li>
+    <li style="margin:6px 0">接 <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/291" style="color:var(--blue)">#291</a> —— 让 <code>installHook</code> 真正按 <code>target</code> 分支。<code>InitOptions.target</code> 已经接受 <code>"claude" | "codex" | "both"</code>，但只有 claude 分支真正干活。</li>
+    <li style="margin:6px 0">交付 <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/292" style="color:var(--blue)">#292</a> 对 <code>.codex/</code> 安装的幂等性测试。是 #271 关闭前的必要门禁。</li>
+    <li style="margin:6px 0">关 <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/271" style="color:var(--blue)">#271</a> 伞 issue：在纯 Codex 主机上端到端跑 <code>teamagent doctor</code> 通过。</li>
+    <li style="margin:6px 0">交付 <a href="https://github.com/libz-renlab-ai/TeamBrain/issues/284" style="color:var(--blue)">#284</a> m5-infect onboarding 提醒，让安装能在团队里"社交式"传播。</li>
+  </ol>
+  <p>等 #271 关闭后，"安装交响曲"达到 8/8 hook 通道（其中 5/8 在 Codex 侧接线，剩下 3 个 PreCompact / SessionEnd / SubagentStop 标注为"上游缺失"而非"我们的缺口"）。</p>
+</section>
+
+<footer class="page">
+  <span>TeamBrain · docs/install-symphony-status-zh.html · 单页状态板（中文版）</span>
+  <span>来源：<code>docs/INIT-PROPAGATION.md</code>、<code>docs/features/hooks-status.md</code>、<code>docs/features/codex-hooks-spec.md</code></span>
+</footer>
+
+</main>
+</body>
+</html>

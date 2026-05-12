@@ -1,4 +1,5 @@
-import { writeFileSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type { BenchmarkConfig, GroupSummary, Report, TaskResult } from "./types.js";
 
 function escapeMd(s: string): string {
@@ -70,6 +71,7 @@ export function aggregate(results: TaskResult[], config: BenchmarkConfig): Repor
 }
 
 export function writeJson(report: Report, outputPath: string): void {
+  mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, JSON.stringify(report, null, 2));
 }
 
@@ -100,5 +102,6 @@ export function writeMarkdown(report: Report, outputPath: string): void {
   for (const r of report.rawResults) {
     lines.push(`- [${escapeMd(r.group)}] ${escapeMd(r.taskId)} run=${r.run} → **${r.verdict}** (${r.durationMs}ms${r.reason ? `, ${escapeMd(r.reason)}` : ""})`);
   }
+  mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, lines.join("\n"));
 }

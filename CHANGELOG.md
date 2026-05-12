@@ -13,6 +13,34 @@ artifacts the user sees) do NOT need an entry.
 
 ## Unreleased
 
+### Added
+
+- **`TEAMAGENT_DISABLED=1` env disables every TeamAgent hook** (issue #343, PR-1 of 3).
+  When this env is set to `"1"`, all 8 hook handlers — `SessionStart`,
+  `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SessionEnd`,
+  `PreCompact`, and the user-level `digital-twin-tap` Stop hook — early-return
+  at handler entry. No `~/.teamagent` filesystem mutation, no AttributionBus
+  event, no matcher / M5 / analyze / embedder / digital-twin runtime work. The
+  hooks still produce minimal Claude Code envelopes (so the conversation
+  proceeds normally), they just don't do any TB-specific work.
+  Purpose: lets PR-2 / PR-3 (Counterfactual Ablation harness) measure the
+  paired TB-ON vs TB-OFF token cost without uninstalling TeamAgent. Without
+  this switch the only way to disable TB was `pnpm teamagent uninstall`,
+  which mutates `~/.claude/settings.json` and defeats paired t-test
+  stability. Any value other than `"1"` (including unset, `"0"`, `"true"`)
+  leaves all hooks fully enabled — opt-in by exact string match.
+
+- **Issue #343 closed: boss-facing TB token cost report + reproducibility recipe** (PR-3 of 3).
+  `docs/reports/2026-05-12-issue-343-tb-token-cost-summary.md` is a
+  single-page Chinese summary aimed at the boss/CEO: headline verdict
+  (mean Δ=+2,773 tokens, p=0.329 → no statistically significant token
+  diff between TB-ON and TB-OFF on n=17 curated tasks), 3 anticipated
+  Q&A, 3 takeaways, 5-command reproducibility recipe. Companion engineering
+  doc `docs/features/cost-measurement.md` documents the full re-run recipe,
+  JSON output shapes (`bench-report.json` + `ablation.json`), how to extend
+  the corpus, and why scipy paired t-test is the canonical harness per
+  `docs/verify/E2E-LEARNING.md`.
+
 ### Fixed
 
 - **Multi-session no longer multiplies the 650MB embedder model**. Issue #315.

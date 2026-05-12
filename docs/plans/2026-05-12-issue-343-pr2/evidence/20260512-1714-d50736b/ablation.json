@@ -1,0 +1,121 @@
+{
+  "n_pairs": 17,
+  "groups_compared": [
+    "teamagent",
+    "teamagent-disabled"
+  ],
+  "metric": "total_tokens (tokensIn + tokensOut + cacheReadTokens + cacheCreationTokens)",
+  "mean_delta": 2773.470588235294,
+  "stddev_delta": 11350.49495130965,
+  "t_statistic": 1.0074725581476625,
+  "p_value": 0.3287019190708823,
+  "ci_95": [
+    -3062.415411522003,
+    8609.356587992592
+  ],
+  "verdict": "FAIL_TO_REJECT \u2014 no significant token diff (mean \u0394=2773.5, p=0.3287, threshold=0.05)",
+  "per_task": [
+    {
+      "task": "001-moment-vs-dayjs",
+      "tb_on": 46432.0,
+      "tb_off": 46419.0,
+      "delta": 13.0
+    },
+    {
+      "task": "002-axios-cancel",
+      "tb_on": 47157.0,
+      "tb_off": 47188.0,
+      "delta": -31.0
+    },
+    {
+      "task": "003-react-key",
+      "tb_on": 46984.0,
+      "tb_off": 46737.0,
+      "delta": 247.0
+    },
+    {
+      "task": "004-multi-trap-todo",
+      "tb_on": 48654.0,
+      "tb_off": 48729.0,
+      "delta": -75.0
+    },
+    {
+      "task": "005-xhr-vs-fetch",
+      "tb_on": 48910.0,
+      "tb_off": 48951.0,
+      "delta": -41.0
+    },
+    {
+      "task": "006-react-class-component",
+      "tb_on": 49302.0,
+      "tb_off": 49495.0,
+      "delta": -193.0
+    },
+    {
+      "task": "007-verify-loop",
+      "tb_on": 309237.0,
+      "tb_off": 262440.0,
+      "delta": 46797.0
+    },
+    {
+      "task": "008-var-to-const",
+      "tb_on": 46476.0,
+      "tb_off": 46527.0,
+      "delta": -51.0
+    },
+    {
+      "task": "009-loose-equality",
+      "tb_on": 48154.0,
+      "tb_off": 46827.0,
+      "delta": 1327.0
+    },
+    {
+      "task": "010-callback-to-async",
+      "tb_on": 46789.0,
+      "tb_off": 46897.0,
+      "delta": -108.0
+    },
+    {
+      "task": "011-math-random-secret",
+      "tb_on": 46842.0,
+      "tb_off": 47090.0,
+      "delta": -248.0
+    },
+    {
+      "task": "012-sync-fs-hot",
+      "tb_on": 46814.0,
+      "tb_off": 46851.0,
+      "delta": -37.0
+    },
+    {
+      "task": "013-sql-concat",
+      "tb_on": 46659.0,
+      "tb_off": 46719.0,
+      "delta": -60.0
+    },
+    {
+      "task": "014-lodash-full-import",
+      "tb_on": 46406.0,
+      "tb_off": 46442.0,
+      "delta": -36.0
+    },
+    {
+      "task": "015-unsafe-json-parse",
+      "tb_on": 46275.0,
+      "tb_off": 46653.0,
+      "delta": -378.0
+    },
+    {
+      "task": "016-alert-for-ux",
+      "tb_on": 46178.0,
+      "tb_off": 46331.0,
+      "delta": -153.0
+    },
+    {
+      "task": "017-console-error-prod",
+      "tb_on": 46485.0,
+      "tb_off": 46309.0,
+      "delta": 176.0
+    }
+  ]
+}

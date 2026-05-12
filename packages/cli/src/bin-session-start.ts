@@ -113,6 +113,16 @@ async function main(): Promise<void> {
     parseInput,
     escape: { manualResources: true },
     handler: async (ctx) => {
+      // Issue #343 PR-1: master kill switch. When TEAMAGENT_DISABLED=1 the
+      // SessionStart hook bails before any side effect (embedder daemon
+      // spawn, wiki residue cleanup, schema-migration backup prune, M5
+      // pipeline). Returning undefined yields a minimal no-op envelope so
+      // Claude Code proceeds without surprise. Used by PR-2/PR-3 paired
+      // TB-ON vs TB-OFF token-cost ablation.
+      if (ctx.env.TEAMAGENT_DISABLED === "1") {
+        return undefined;
+      }
+
       // Issue #164: kick off the embedder daemon if it's not already running.
       // Fire-and-forget detached spawn so SessionStart returns immediately;
       // subsequent PreToolUse / Stop hooks will hit the daemon over HTTP

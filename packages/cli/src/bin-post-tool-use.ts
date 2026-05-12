@@ -33,6 +33,13 @@ async function main(): Promise<void> {
     parseInput: (raw) =>
       raw && typeof raw === "object" ? (raw as PostToolUseHookInput) : null,
     handler: async (ctx) => {
+      // Issue #343 PR-1: master kill switch. When TEAMAGENT_DISABLED=1 the
+      // PostToolUse hook returns empty without writing a `hook-post.result`
+      // event to SqliteEventLog. PostToolUse is pure observability — no
+      // user-visible behaviour change either way.
+      if (ctx.env.TEAMAGENT_DISABLED === "1") {
+        return {};
+      }
       const handler = createPostToolUseHandler({
         eventLog: ctx.eventLog as unknown as SqliteEventLog,
       });

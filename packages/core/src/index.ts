@@ -193,6 +193,10 @@ export {
 } from "./update/update-state.js";
 export { shouldCheckUpdate, type ShouldCheckInput } from "./update/should-check.js";
 export {
+  isLocalUserPrCreator,
+  type PrCreatorMatchInput,
+} from "./update/pr-creator-match.js";
+export {
   nextSnooze,
   shouldPromptUpgrade,
   SNOOZE_DURATIONS_MS,

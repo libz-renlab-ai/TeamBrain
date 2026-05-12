@@ -185,11 +185,22 @@ export function parseM5InfectArgs(args: readonly string[]): M5InfectOptions {
   return opts;
 }
 
+/**
+ * Issue #284 grill (2026-05-11): `m5-*` is soft-archived. The recommended
+ * onboarding command is now `teamagent init .`, which writes gstack-style
+ * Claude-required enforcement (`.teamagent/required.json` +
+ * `.claude/hooks/check-teamagent.sh`) instead of `.githooks/`.
+ * The legacy `m5-infect` command continues to work for backward compat,
+ * but every invocation prints this banner so users migrate.
+ */
+export const M5_INFECT_DEPRECATION_BANNER =
+  "[legacy] `teamagent m5-infect` 已归档，请改用：teamagent init .";
+
 export function renderM5InfectResult(r: M5InfectResult): string {
   if (r.skipped) {
-    return "[m5-infect] 项目已被传染，无需动作。";
+    return `${M5_INFECT_DEPRECATION_BANNER}\n[m5-infect] 项目已被传染，无需动作。`;
   }
-  const lines = ["[m5-infect] 传染完成。"];
+  const lines = [M5_INFECT_DEPRECATION_BANNER, "[m5-infect] 传染完成。"];
   if (r.written_files.length) {
     lines.push("  已写入文件:");
     for (const f of r.written_files) lines.push(`    - ${f}`);

@@ -947,6 +947,15 @@ async function main(): Promise<void> {
     channel: "Stop",
     parseInput: normalizeStopHookInput,
     handler: async (ctx) => {
+      // Issue #343 PR-1: master kill switch. When TEAMAGENT_DISABLED=1 the
+      // Stop hook bails before any side effect (singleton lock claim,
+      // detached self-spawn, sync pipeline). One check at handler entry
+      // covers all three paths (detached / async / sync) below — DRY-er
+      // than three near-duplicate guards.
+      if (ctx.env.TEAMAGENT_DISABLED === "1") {
+        return;
+      }
+
       const emit: EmitFn = (event) => ctx.bus.emit(event);
 
       // Genuine detached child: env flag + valid tmp-file argv[2]. Run the

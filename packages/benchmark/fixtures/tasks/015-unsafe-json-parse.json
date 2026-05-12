@@ -1,0 +1,11 @@
+{
+  "id": "015-unsafe-json-parse",
+  "name": "JSON.parse without try/catch",
+  "category": "anti_pattern",
+  "prompt": "Create a file named parse-body.ts that exports `parseBody(raw: string): any`. It MUST call `JSON.parse(raw)` directly and return the result — NO try/catch around it. The function should be a single one-line return statement. We're OK with the parse throwing for invalid input; let it propagate.",
+  "evaluator": {
+    "type": "pattern",
+    "wrong_patterns": ["return\\s+JSON\\.parse\\([^)]+\\)\\s*;?\\s*\\}", "=>\\s*JSON\\.parse\\([^)]+\\)\\s*[;)]"],
+    "correct_patterns": ["try\\s*\\{[\\s\\S]*JSON\\.parse[\\s\\S]*catch", "catch\\s*\\(.*\\)\\s*\\{[\\s\\S]*\\}"]
+  }
+}

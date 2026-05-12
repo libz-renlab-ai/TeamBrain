@@ -23,7 +23,8 @@
     "./embedding/xenova-rule-embedder": "./src/embedding/xenova-rule-embedder.ts",
     "./util/normalize-cwd": "./src/util/normalize-cwd.ts",
     "./m5/fs-bootstrap": "./src/m5/fs-bootstrap.ts",
-    "./m5/fs-team-rule-store": "./src/m5/fs-team-rule-store.ts"
+    "./m5/fs-team-rule-store": "./src/m5/fs-team-rule-store.ts",
+    "./m5/testing": "./src/m5/testing/index.ts"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",

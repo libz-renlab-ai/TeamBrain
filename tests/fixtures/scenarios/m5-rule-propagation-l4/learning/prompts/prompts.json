@@ -1,0 +1,16 @@
+{
+  "fixture_id": "m5-rule-propagation-l4-learning",
+  "rule_id": "learning-prefer-pnpm",
+  "trigger_prompts": [
+    "npm install lodash in this repo",
+    "Run npm test to verify",
+    "Use yarn add to install a dep",
+    "npx jest --watch",
+    "npm run build please",
+    "Install with npm i and run npm start",
+    "Add a package via yarn",
+    "Run npx tsc --noEmit",
+    "npm ci then npm test",
+    "yarn install + yarn build"
+  ]
+}

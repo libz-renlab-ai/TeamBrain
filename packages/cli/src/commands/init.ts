@@ -46,6 +46,10 @@ import type { LLMClient } from "@teamagent/ports";
 import type { KnowledgeEntry } from "@teamagent/types";
 import { computeEnforcement } from "@teamagent/types";
 import { auditOrphanShellHooks, installHook } from "./install-hook.js";
+import {
+  CHECK_TEAMAGENT_SH_CONTENT,
+  REQUIRED_JSON_CONTENT,
+} from "./required-check.js";
 import { findTeamagentRoot } from "../lib/walk-up.js";
 
 export interface InitOptions {
@@ -283,6 +287,15 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     });
   } else {
     steps.push({ step: "install-hook", status: "skipped", detail: "skipHook=true" });
+  }
+
+  // Issue #284 slice 1: write `.teamagent/required.json` and
+  // `.claude/hooks/check-teamagent.sh` for Claude targets. Independent of
+  // --skip-hook because these are repo-committed enforcement artifacts, not
+  // the compiled PreToolUse bundle that --skip-hook gates. Idempotent: a
+  // re-run produces no file changes when content is byte-identical.
+  if (targetIncludesClaude(target)) {
+    steps.push(doWriteRequiredArtifacts(paths.cwd, dryRun));
   }
 
   if (opts.installPlugins) {
@@ -1094,6 +1107,105 @@ function doAuditOrphanShellHooks(cwd: string, dryRun: boolean): InitStepResult {
   }
 }
 
+/**
+ * Issue #284 slice 1: write the two repo-committed enforcement artifacts:
+ * - `.teamagent/required.json` (schema/config consumed by `required-check`)
+ * - `.claude/hooks/check-teamagent.sh` (bash hook script Claude can invoke
+ *   from `.claude/settings.json`; wiring that entry into settings.json is
+ *   slice 2 scope).
+ * Idempotent: re-runs that find byte-identical content do not rewrite the
+ * file (no mtime bump, no temp-file churn).
+ */
+function doWriteRequiredArtifacts(
+  cwd: string,
+  dryRun: boolean,
+): InitStepResult {
+  if (dryRun) {
+    return okStep(
+      "write-required-artifacts",
+      "(dry-run) 会写入 .teamagent/required.json 与 .claude/hooks/check-teamagent.sh",
+    );
+  }
+  try {
+    const reqPath = path.join(cwd, ".teamagent", "required.json");
+    const shPath = path.join(cwd, ".claude", "hooks", "check-teamagent.sh");
+    const reqContent =
+      JSON.stringify(REQUIRED_JSON_CONTENT, null, 2) + "\n";
+    const shContent = CHECK_TEAMAGENT_SH_CONTENT;
+    const reqWritten = writeManagedFile(reqPath, reqContent);
+    const shWritten = writeManagedFile(shPath, shContent);
+    if (shWritten) {
+      try {
+        fs.chmodSync(shPath, 0o755);
+      } catch {
+        // Windows / sandboxed FS — best-effort; the JSON-on-stdout hook
+        // contract still works when interpreter is invoked explicitly.
+      }
+    }
+    const parts: string[] = [];
+    parts.push(
+      reqWritten
+        ? `已写入 ${path.relative(cwd, reqPath)}`
+        : `${path.relative(cwd, reqPath)} 已是最新`,
+    );
+    parts.push(
+      shWritten
+        ? `已写入 ${path.relative(cwd, shPath)}`
+        : `${path.relative(cwd, shPath)} 已是最新`,
+    );
+    return okStep("write-required-artifacts", parts.join(" · "));
+  } catch (err) {
+    return failStep(
+      "write-required-artifacts",
+      String(err).slice(0, 200),
+    );
+  }
+}
+
+/**
+ * Atomic + idempotent file write. Returns true when the file was written
+ * (i.e. content differed from what was on disk), false when the on-disk
+ * content already matched byte-for-byte.
+ *
+ * Robustness:
+ * - Read step tolerates the file being deleted between the existsSync
+ *   probe and the read (TOCTOU window); ENOENT falls through to the
+ *   write path. Other errors propagate.
+ * - Tmp-file write step uses try/finally to unlink the tmp partial
+ *   artifact if `writeFileSync` or `renameSync` throws (disk full,
+ *   permission revoked) — avoids leaving `.tmp.<pid>.<ts>` orphans on
+ *   the user's filesystem.
+ */
+function writeManagedFile(absPath: string, content: string): boolean {
+  if (fs.existsSync(absPath)) {
+    let existing: string | null = null;
+    try {
+      existing = fs.readFileSync(absPath, "utf8");
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw err;
+    }
+    if (existing === content) return false;
+  }
+  fs.mkdirSync(path.dirname(absPath), { recursive: true });
+  const tmp = `${absPath}.tmp.${process.pid}.${Date.now()}`;
+  let renamed = false;
+  try {
+    fs.writeFileSync(tmp, content);
+    fs.renameSync(tmp, absPath);
+    renamed = true;
+  } finally {
+    if (!renamed) {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        // tmp may not exist (writeFileSync threw before creating it); nothing to clean.
+      }
+    }
+  }
+  return true;
+}
+
 function doInstallHook(
   cwd: string,
   hookEntry: string | undefined,
@@ -1603,7 +1715,7 @@ export function renderInitResult(result: InitResult): string {
     { icon: "🛡️", label: "前置守卫", stepKeys: ["nested-init-guard"] },
     { icon: "🔍", label: "检测项目环境", stepKeys: ["detect-stack"] },
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
-    { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook", "audit-orphan-hooks"] },
+    { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook", "audit-orphan-hooks", "write-required-artifacts"] },
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
     { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills", MIRROR_CLAIM_STEP, STATIC_USER_SKILLS_STEP] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
@@ -1727,6 +1839,7 @@ function stepLabel(step: string): string {
     "structure-rules": "导入规则",
     "install-hook": "Hook 注册",
     "audit-orphan-hooks": "孤儿 .sh 审计",
+    "write-required-artifacts": "Required 模式产物",
     "install-plugins": "Plugin 安装",
     "compile-skills": "Skills",
     [MIRROR_CLAIM_STEP]: "FIXEDFLOW Skill",

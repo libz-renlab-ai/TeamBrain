@@ -85,6 +85,14 @@ async function main(): Promise<void> {
     parseInput: (raw) => (isValidStopHookInput(raw) ? raw : null),
     escape: { manualResources: true },
     handler: (ctx) => {
+      // Issue #343 PR-1: master kill switch. When TEAMAGENT_DISABLED=1 the
+      // PreCompact hook bails before scheduling the detached child re-entry,
+      // so no compact-time analyze pipeline runs. PreCompact's handler type
+      // signature (declared above) intentionally narrows ctx to { input, cwd }
+      // without env, so read process.env directly here.
+      if (process.env.TEAMAGENT_DISABLED === "1") {
+        return undefined;
+      }
       const selfPath = process.argv[1]!;
       const child = spawn(
         process.execPath,
