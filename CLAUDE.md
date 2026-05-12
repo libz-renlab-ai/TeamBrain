@@ -203,6 +203,7 @@ claude -p "Summarize latest changes in this repo" \
 
 - **Windows 下 vitest 并发 OOM**：`vitest.config.ts` 强制 `fileParallelism: false`，测试顺序跑。不要打开并发。
 - **CLI E2E subprocess 测试**：M0 暂未启用（相同 OOM 原因）。手动运行 `pnpm teamagent skeleton-demo` 做视觉验证。M1 引入真实 IO 后再考虑方案。
+- **toohot — too many `claude.exe --bg-spare` workers**：当本机出现「鼠标 / 按键 / Terminal 全卡」且 `loadavg` 远超 core 数（如 M1 上 ≥27）时，常见根因不是热墙而是 [`claude agents`](https://docs.claude.com/claude-code) background worker 泄漏——daemon 把 20+ 个 `--bg-spare`/`--bg-pty-host` 配对常驻在 scheduler 队列里。诊断 + 安全 kill recipe（识别自己 PID 锁链 → SIGTERM/KILL 两段式 → daemon 自动重建池子）见 [docs/debugging/toohot-many-bg-spare-workers.md](docs/debugging/toohot-many-bg-spare-workers.md)。与 ADR-0013 是同种 scheduler-overload，但触发器是 `claude agents` 长寿命 worker，不是 `pnpm test` fork burst。
 
 ## M4-B 语义匹配（自 0.9.4 起）
 
