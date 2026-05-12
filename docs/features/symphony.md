@@ -64,12 +64,35 @@ workspace:
   root: .symphony/workspaces
 codex:
   command: codex app-server
-  approval_policy: on-request
-  thread_sandbox: workspace-write
-  turn_sandbox_policy: workspace-write
+  approval_policy: never
+  # thread_sandbox = SandboxMode (string enum); turn_sandbox_policy = SandboxPolicy
+  # (internally-tagged object with a camelCase variant). The two shapes are NOT
+  # interchangeable; codex app-server rejects a bare string for sandboxPolicy.
+  thread_sandbox: "workspace-write"
+  turn_sandbox_policy:
+    type: "workspaceWrite"
 ---
 Work on {{ issue.identifier }}: {{ issue.title }}.
 
 Issue description:
 {{ issue.description }}
 ```
+
+### Codex sandbox shapes (verified against `codex-cli 0.130.0`)
+
+The two sandbox fields look similar but are passed to different Codex JSON-RPC
+parameters and therefore expect different shapes. Empirically validated against
+`codex app-server generate-json-schema` plus a live `--once` run:
+
+| WORKFLOW.md key       | RPC param                | Codex type      | Accepted shape                                        |
+|-----------------------|--------------------------|-----------------|-------------------------------------------------------|
+| `thread_sandbox`      | `thread/start.sandbox`   | `SandboxMode`   | kebab-case string: `"read-only"` / `"workspace-write"` / `"danger-full-access"` |
+| `turn_sandbox_policy` | `turn/start.sandboxPolicy` | `SandboxPolicy` | object: `{type: "readOnly"}` / `{type: "workspaceWrite"}` / `{type: "dangerFullAccess"}` (variant names are camelCase) |
+
+Passing a bare `"workspace-write"` string to `turn_sandbox_policy` fails with
+`Invalid request: invalid type: string "workspace-write", expected internally
+tagged enum SandboxPolicyDeserialize`. Passing a `{type: "workspace-write"}`
+object (kebab-case variant) fails with `unknown variant 'workspace-write',
+expected one of 'dangerFullAccess', 'readOnly', 'externalSandbox',
+'workspaceWrite'`. The matrix above is the only combination codex accepts end
+to end.
