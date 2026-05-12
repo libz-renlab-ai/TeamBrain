@@ -1,0 +1,15 @@
+RUN_ID=20260512T180126Z-e2e-91a3eaf6
+TIMESTAMP_UTC=20260512T180126Z
+REPO_ROOT=/Users/m1/projects/TeamBrain
+HEAD=6a6e989b1420928edaeaab616d98302b675b0c82
+HEAD_SHORT=6a6e989b
+BRANCH=docs/ceo-duck-pr-proof-comments
+ORIGIN_MAIN=c12ea750
+TSX=/Users/m1/projects/TeamBrain/node_modules/.bin/tsx
+SANDBOX=/tmp/feature1-sandbox.v7x6Sw
+TMPHOME=/tmp/feature1-home.F4JJuE
+HOSTNAME=m1deMacBook-Air-3.local
+USER=m1
+OS=Darwin 25.1.0 arm64
+SANDBOX_DEMO=/tmp/feature1-skeleton.KEejpV
+TMPHOME_DEMO=/tmp/feature1-home-skeleton.iBGftb

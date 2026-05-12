@@ -1,0 +1,14 @@
+<self-report>
+premature_stopping: false
+permission_seeking: false
+ownership_dodging: false
+simplest_fix: false
+reasoning_loop: false
+known_limitation: false
+skipped_repo_search: false
+fabricated_value: false
+placeholder_used: false
+ambiguity_unresolved: false
+contradiction_unresolved: false
+silent_fallback: false
+</self-report>

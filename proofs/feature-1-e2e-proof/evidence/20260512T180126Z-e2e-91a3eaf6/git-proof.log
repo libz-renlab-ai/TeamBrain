@@ -1,0 +1,25 @@
+commit c12ea750ab652018c58673d7230eae82026f97e7
+Author: liusy-renlab-ai <liusy@nb-ai.com>
+Date:   Wed May 13 01:40:23 2026 +0800
+
+    fix(judge): Feature-1 init harness pins repo-local tsx + repoint PASS evidence (#399)
+    
+    * fix(judge): Feature-1 init harness pins repo-local tsx + PASS evidence
+    
+    The 2026-05-11 PASS run was lucky — the caller happened to have `tsx`
+    on $PATH. Today's fresh worktree re-run got exit 127 ("tsx not found")
+    before init even started. A real user who clones the repo and tries
+    to reproduce Feature 1's openable-and-usable gate would hit the same
+    wall before seeing any value prop.
+    
+    Pin the harness's Step 2 to $REPO_ROOT/node_modules/.bin/tsx and add
+    an executable-check guard that fast-fails with a "run pnpm install"
+    remediation hint. Update the Dependencies note to match.
+    
+    Attach a fresh PASS evidence run (overall=PASS, all 5 checks true,
+    exit 0, .teamagent/{knowledge.db,required.json,.project-root} + one
+    exported skill) using the new pinned-tsx command, so the gate is
+    both green and reproducible from a clean clone.
+    
+    Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+    

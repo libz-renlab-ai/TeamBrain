@@ -1,0 +1,34 @@
+The `/private/tmp` directory is **not a git repo** — it's a working directory containing multiple projects. The most coherent "repo" here is `superpowers-probe`, which is the **Superpowers** project (a plugin/methodology for AI coding agents).
+
+## Superpowers — Business Features
+
+**What it is:** A complete software development methodology for coding agents, built on composable skills that auto-trigger at the right moments during development.
+
+### Core Skills Library
+
+| Category | Skills |
+|----------|--------|
+| **Testing** | `test-driven-development` — RED-GREEN-REFACTOR cycle |
+| **Debugging** | `systematic-debugging` — 4-phase root cause process; `verification-before-completion` |
+| **Collaboration** | `brainstorming` (Socratic design), `writing-plans`, `executing-plans`, `dispatching-parallel-agents`, `requesting-code-review`, `receiving-code-review`, `using-git-worktrees`, `finishing-a-development-branch`, `subagent-driven-development` |
+| **Meta** | `writing-skills`, `using-superpowers` |
+
+### The Core Workflow
+
+1. **brainstorming** → before writing code (Socratic design refinement)
+2. **using-git-worktrees** → creates isolated workspace on new branch
+3. **writing-plans** → breaks work into 2-5 min tasks with exact file paths
+4. **subagent-driven-development** / **executing-plans** → dispatches subagents per task with two-stage review
+5. **test-driven-development** → RED-GREEN-REFACTOR enforced
+6. **requesting-code-review** → reviews against plan, reports by severity
+7. **finishing-a-development-branch** → merge/PR decision, cleanup
+
+### Supported Harnesses
+Claude Code, Codex CLI, Codex App, Factory Droid, Gemini CLI, OpenCode, Cursor, GitHub Copilot CLI
+
+---
+
+Additionally, `business-target-tracker-v1-snapshot/SKILL.md` references a **TeamBrain** system with 3 canonical business features (not fully present in this directory):
+- **#1 anti-repeat-mistake** (SHIPPED)
+- **#2 second-level-realtime** (VISION)
+- **#3 video-centralized-storage** (VISION)

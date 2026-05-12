@@ -1,0 +1,70 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ TeamAgent · 本次操作归因
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+▸ 做了什么: [skeleton] 添加模拟知识 skeleton-demo-001 + legacy markdown 预览
+▸ 知识库变化: 0 → 1 条
+▸ 下次体验: 模拟知识条目可生成 4 行 legacy/internal markdown 预览；普通命令不再写入 CLAUDE.md 规则块
+▸ 如果没有 TeamAgent: 没有 Walking Skeleton 的骨架贯通，后续 Milestone 没有落脚点
+▸ 做了什么: [skeleton] L0 拒绝演示 skeleton-demo-bad
+▸ 下次体验: L0 如预期拦下：wrong_pattern_not_in_source, scope_paths_empty
+▸ 如果没有 TeamAgent: 没有 L0 门闸，坏条目会污染知识库
+▸ 做了什么: Skills 编译完成: 写入 2，移除 0
+▸ 下次体验: Skills written: 2, removed: 0
+▸ 做了什么: [skeleton] Skills 编译演示
+▸ 下次体验: CLAUDE.md 出口：legacy/internal 已禁用（普通命令不写 root rule dump）
+  Skills 出口：stable+ 规则 2 条 → ~/.claude/skills/teamagent/ 目录（dry-run，未实际写入）
+    导出 skill: [skeleton-demo-canonical, skeleton-demo-stable]
+▸ 如果没有 TeamAgent: 没有 Skills 编译，规则无法作为 Claude Code skill 被所有项目复用
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+--- raw events ---
+[
+  {
+    "kind": "skeleton.knowledge-added",
+    "source": "skeleton",
+    "knowledgeId": "skeleton-demo-001",
+    "knowledgeCountBefore": 0,
+    "knowledgeCountAfter": 1,
+    "blockLines": 4,
+    "severity": "highlight",
+    "timestamp": "2026-05-12T18:01:48.537Z",
+    "userFacingValue": "模拟知识条目可生成 4 行 legacy/internal markdown 预览；普通命令不再写入 CLAUDE.md 规则块",
+    "counterfactual": "没有 Walking Skeleton 的骨架贯通，后续 Milestone 没有落脚点"
+  },
+  {
+    "kind": "skeleton.l0-validation",
+    "source": "skeleton",
+    "knowledgeId": "skeleton-demo-bad",
+    "ok": false,
+    "failedChecks": [
+      "wrong_pattern_not_in_source",
+      "scope_paths_empty"
+    ],
+    "severity": "warning",
+    "timestamp": "2026-05-12T18:01:48.537Z",
+    "userFacingValue": "L0 如预期拦下：wrong_pattern_not_in_source, scope_paths_empty",
+    "counterfactual": "没有 L0 门闸，坏条目会污染知识库"
+  },
+  {
+    "kind": "compile.skills-compiled",
+    "source": "compile",
+    "written": 2,
+    "removed": 0,
+    "severity": "info",
+    "userFacingValue": "Skills written: 2, removed: 0",
+    "timestamp": "2026-05-12T18:01:48.540Z"
+  },
+  {
+    "kind": "skeleton.skills-compiled",
+    "source": "skeleton",
+    "written": [
+      "skeleton-demo-canonical",
+      "skeleton-demo-stable"
+    ],
+    "legacyDisabled": true,
+    "severity": "highlight",
+    "timestamp": "2026-05-12T18:01:48.537Z",
+    "userFacingValue": "CLAUDE.md 出口：legacy/internal 已禁用（普通命令不写 root rule dump）\n  Skills 出口：stable+ 规则 2 条 → ~/.claude/skills/teamagent/ 目录（dry-run，未实际写入）\n    导出 skill: [skeleton-demo-canonical, skeleton-demo-stable]",
+    "counterfactual": "没有 Skills 编译，规则无法作为 Claude Code skill 被所有项目复用"
+  }
+]

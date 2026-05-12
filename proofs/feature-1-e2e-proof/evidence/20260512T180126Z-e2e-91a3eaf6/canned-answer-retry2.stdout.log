@@ -1,0 +1,41 @@
+**task description** — 解释 TeamBrain 的三大业务特性
+
+**expected outputs** — 用户理解三个业务卖点的核心价值主张
+
+**third-party judge harness** — N/A（此为纯文案类问答，无需 judge harness）
+
+---
+
+## TeamBrain 三大业务特性
+
+> TeamBrain has three business features: (1) new Claude Code instances no longer make mistakes that previous Claude Code has made; (2) team leaders know in second-level realtime what each teammate's Claude Code instance is doing; (3) video recording and uploading to centralized data storage is easy to use.
+
+呷呷~ (>ω<) 鸭鸭来帮你梳理一下这三个业务特性都是什么意思：
+
+**Feature 1：AI 不再重复犯错**
+新启动的 Claude Code 实例能自动记住之前犯过的错，不再重蹈覆辙。意味着团队里每个人遇到的 bug、踩过的坑，下一个人不用再踩一遍，知识自动传承。
+
+**Feature 2：Leader 实时知道团队在干什么**
+团队负责人能在秒级实时看到每个成员的 Claude Code 实例正在做什么。不同于传统的人工汇报或日报，机器自动同步，Leader 随时掌握全局进度。
+
+**Feature 3：录屏上传一键完成**
+录屏并上传到集中式存储的操作变得极其简单。团队协作时的演示、Code Review 过程、问题排查都能轻松存档。
+
+---
+
+详情见 [docs/BUSINESS-FEATURES.md](docs/BUSINESS-FEATURES.md)。
+
+<self-report>
+premature_stopping: false
+permission_seeking: false
+ownership_dodging: false
+simplest_fix: false
+reasoning_loop: false
+known_limitation: false
+skipped_repo_search: false
+fabricated_value: false
+placeholder_used: false
+ambiguity_unresolved: false
+contradiction_unresolved: false
+silent_fallback: false
+</self-report>
