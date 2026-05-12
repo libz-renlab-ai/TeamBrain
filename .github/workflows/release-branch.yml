@@ -154,7 +154,10 @@ jobs:
           # - merged_at: RFC 3339 UTC produced by GitHub's API
           if ! [[ "$PR_NUMBER" =~ ^[0-9]{1,9}$ ]]; then PR_NUMBER=""; fi
           if ! [[ "$PR_CREATOR" =~ ^[A-Za-z0-9-]{1,39}$ ]]; then PR_CREATOR=""; fi
-          if ! [[ "$PR_MERGED_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:Z+.-]+$ ]]; then PR_MERGED_AT=""; fi
+          # RFC 3339 UTC as produced by GitHub's API: YYYY-MM-DDTHH:MM:SSZ
+          # (we don't accept fractional seconds or non-Z timezones — GitHub never
+          # emits those for /pulls .merged_at).
+          if ! [[ "$PR_MERGED_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then PR_MERGED_AT=""; fi
 
           printf 'pr_number=%s\n' "$PR_NUMBER" >> "$GITHUB_OUTPUT"
           printf 'pr_creator=%s\n' "$PR_CREATOR" >> "$GITHUB_OUTPUT"
