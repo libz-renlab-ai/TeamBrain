@@ -103,3 +103,5 @@ PASS 条件硬阈值：6 个 probe 全过、no_new_label probe 显示 label 数�
 | `issue-conformance.yml` 强制检查 pre-comment | 另开 issue | 改 auto-close 行为是 cross-cut；本 PR 是 doc-only |
 | `grill-working` label 在 driver 内做硬 mutex | 另开 issue | 触及 `fixed-flow-driver` 实现 |
 | 把三段声明做成 issue-comment template | 另开 issue | 仓库 setting 改动 |
+| F7 — `grill-working` label 的 TTL / auto-remove cron（绝档 takeover label 不腐） | 另开 issue | 触及 `.github/workflows/issue-conformance.yml`；adversarial /review iter-1 提出，本 PR 是 doc-only |
+| F8 — trivial-fix（≤ 20 LOC 单文件 doc 修复）的 escape hatch 设计 | 另开 issue | 是 design call 而非 doc landing；adversarial /review iter-1 提出 |
