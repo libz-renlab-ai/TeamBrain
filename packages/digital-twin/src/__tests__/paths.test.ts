@@ -50,6 +50,12 @@ describe('paths', () => {
       const p = digitalTwinPaths('/x');
       expect(p.quotaCacheFile).toBe(join(p.digitalTwinDir, 'quota-cache.json'));
     });
+
+    // Issue #368 — uploader daemon stdout/stderr capture target.
+    it('uploaderLogFile is at digitalTwinDir/uploader.log', () => {
+      const p = digitalTwinPaths('/x');
+      expect(p.uploaderLogFile).toBe(join(p.digitalTwinDir, 'uploader.log'));
+    });
   });
 
   describe('DEFAULT_PATHS', () => {
