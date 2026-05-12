@@ -275,6 +275,42 @@ user-visible VERIFIED rows; this doc covers everything.
 
 ---
 
+## Pending judge harness (shipped 2026-05-09 → 2026-05-12, not yet VERIFIED)
+
+> These features merged after the 2026-05-09 release cut and ship code +
+> tests but do **not** yet carry the `docs/plans/<slug>/judge.md` playbook
+> required for inclusion in the canonical VERIFIED=64 list. Adding a row
+> here is a tracking signal — the canonical count stays at **64** until
+> each feature lands its harness in a follow-up PR. CHANGELOG `Unreleased`
+> documents the user-visible behaviour.
+
+| Pending # | Feature | Shipped in | Status |
+|---|---------|------------|--------|
+| P1 | Digital-twin sidecar + `/api/cc-status` collector | #350 / #374 / #381 | code + tests; harness needed |
+| P2 | `teamagent statusline` CC runtime state | #331 / #337 / #317 | code + tests; harness needed |
+| P3 | Post-merge auto-update banner for PR creators (`m6`) | #358 | code + tests; harness needed |
+| P4 | Newsboard SessionStart hook (4-section ASCII duck MOTD) | #235 / #249 | code + tests; harness needed |
+| P5 | `/reverification` skill (LLM-uncheatable verification) | #318 | skill + tests; cross-harness gate |
+| P6 | `grill-via-web` + `grill-with-docs` + cross-host grill mutex | #286 / #314 / #347 / #361 | skills + GH-label contract; workflow harness needed |
+| P7 | `teamagent required-check` + nested-init guard | #284 / #383 | code + tests; harness needed |
+| P8 | Counterfactual Ablation harness (scipy paired t-test) | #332 / #365 / #369 | itself a verify harness; meta-harness needed to gate |
+| P9 | MockLlmResponder + `teamagent fixture replay` (moment-dayjs) | #324 / #360 | code + tests; tier-(a) byte-diff harness in `docs/verify/E2E-LEARNING.md` |
+| P10 | TeamAgent symphony orchestration service (`m6`) + install-status HTML | #363 / #357 / #373 | code + tests; harness needed |
+| P11 | `teamagent install duck` static skill | #321 | skill mirrored at user level; harness needed |
+| P12 | `/onboard` project skill (remote Mac bootstrap) | #201 | skill mirrored; harness needed |
+| P13 | `/repo-issues-status` project skill | #334 | skill mirrored; harness needed |
+| P14 | Soft-force upgrade prompt + `teamagent whatsnew` | #225 / #237 | code + tests; harness needed |
+| P15 | One-line `curl|bash` installer + idempotent resume (ADR-0011) | #92 / #107 / #147 / #155 / #180 / #268 / #272 | shipped via `release/install.sh`; existing `docs/features/install-sh/run-judge.sh` covers the curl path — promotion to canonical VERIFIED row pending |
+| P16 | Inner-loop tests on `wip/**` CI (ADR-0013) | #270 | workflow shipped; harness needed |
+| P17 | M5 propagation slices 1–7 (dual-HOME / bare-git / fs-copy bridges, nightly workflow) | #332 slices 1–7 / #356–#367 | test scaffolding shipped; M5-PROPAGATION-L4 doc updated |
+
+Total: 17 pending. Promotion path: each row needs a
+`docs/plans/<slug>/judge.md` playbook that produces a JSON verdict (per
+`docs/PLAN-RESEARCH-REPORT.md`), at which point the row moves up into the
+numbered VERIFIED list above and the canonical count increments.
+
+---
+
 ## Biggest Known Limitations (residual, not blockers)
 
 1. **Cross-machine sync requires shared git remote** — not fully zero-config; documented in `docs/features/xsync/`.
