@@ -63,7 +63,31 @@ install-path SHA pinning, but no SessionStart codepath calls it any more.
 
   // Provenance string for forensic / debugging purposes. Format:
   // `release-branch.yml@<github_run_id>`.
-  "generatedBy": "release-branch.yml@1234567890"
+  "generatedBy": "release-branch.yml@1234567890",
+
+  // ── Post-merge PR-creator force-update feature (additive) ────────────────
+  // The three fields below are OPTIONAL — published only when the release-
+  // branch workflow could resolve the PR associated with this commit via
+  // `gh api .../commits/{sha}/pulls`. Direct pushes to main (bypassing PR
+  // flow), private fork race, or any API hiccup will omit them. Consumers
+  // MUST treat all three as optional and fall back to legacy behaviour when
+  // absent.
+
+  // Number of the PR that landed in this release (1..N). Validated to
+  // ^[0-9]{1,9}$ at publish time.
+  "pr_number": 348,
+
+  // GitHub login of the PR author. Used by the local updater to decide
+  // whether the user running it authored the just-merged PR; if so, the
+  // updater stamps pending_banner with pr_creator:true so SessionStart
+  // renders the distinct 🎯 banner. Only the public login is published —
+  // no email, no real name. Validated to ^[A-Za-z0-9-]{1,39}$ at publish
+  // time (matches GitHub login charset and length cap).
+  "pr_creator_login": "LiuShiyuMath",
+
+  // ISO 8601 UTC timestamp of when the PR was merged. Advisory only — not
+  // used by the updater state machine.
+  "merged_at": "2026-05-12T03:13:00Z"
 }
 ```
 
@@ -74,9 +98,14 @@ CI workflow `.github/workflows/release-branch.yml` step
 release tarball + GitHub Release have shipped. The step:
 
 1. Reads `VERSION` from the package.json (already validated as strict semver).
-2. Clones the `gh-pages` branch shallow.
-3. Overwrites `latest.json`.
-4. Commits & force-pushes only if the file changed.
+2. **Resolves PR creator metadata** via the previous **"Resolve PR creator
+   for merge commit"** step (`gh api .../commits/{sha}/pulls`, defensively
+   regex-validated; fail-soft on empty / private fork / non-PR push).
+3. Clones the `gh-pages` branch shallow.
+4. Overwrites `latest.json` using `jq` object-add to conditionally include
+   the three new optional fields (`pr_number`, `pr_creator_login`,
+   `merged_at`) only when they validated successfully.
+5. Commits & force-pushes only if the file changed.
 
 The landing page (also hosted on `gh-pages`) is untouched — only the
 `latest.json` file at the repo root is modified.

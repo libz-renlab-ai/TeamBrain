@@ -218,3 +218,67 @@ message instead of the generic `fetch failed (network/rate-limit)`:
 - `server` → 5xx, GitHub-side issue.
 - `network` → connection refused / timeout / DNS.
 - `parse` → upstream returned malformed JSON.
+
+## PR-creator force-update
+
+When a PR squash-merges into `main`, the CI workflow
+`.github/workflows/release-branch.yml` resolves the PR's author via
+`gh api .../commits/{sha}/pulls` and publishes their **public GitHub login**
+into `latest.json` alongside the new version (see
+`docs/features/auto-update-channel.md`). On the local box, the updater
+then:
+
+1. Calls `gatherLocalIdentity()` (a best-effort lookup of `gh api user --jq
+   .login`, `process.env.GITHUB_USER`/`GH_USER`, and
+   `git config user.email` for `<id>+<login>@users.noreply.github.com`).
+2. Feeds those signals to the pure helper `isLocalUserPrCreator(…)`. Any
+   single match (any signal, case-insensitive) returns `true`.
+3. When matched, the resulting `pending_banner` is stamped with
+   `pr_creator: true` and `pr_number: <N>`. On the next SessionStart,
+   `maybeShowPendingBanner` renders a distinct banner naming the PR:
+
+   ```
+   🎯 TeamAgent: 你的 PR #348 已 merge — 自动更新到 0.11.6 (强制刷新)
+      本次会话生效。详情: teamagent update --status
+   ```
+
+The install path itself is unchanged — the feature is **identity-aware
+banner stamping** plus making sure your own merged-PR doesn't go un-noticed
+on the box where you wrote it.
+
+### What "force" means (and doesn't)
+
+The PR-creator path **does**:
+
+- Override `snooze` and `never_prompt` for the banner (the user still sees
+  the new version even if they previously snoozed; this is intentional —
+  you should see your own merge).
+- Use the same install pipeline (`npm install -g <release tarball>` →
+  `migrate-auto`) as every other update path.
+
+The PR-creator path **does NOT**:
+
+- Bypass the `auto-update.disabled` marker. If a user has hard-disabled
+  auto-update, even their own merged PR won't trigger an install.
+- Run a webhook, daemon, or background poller. It piggybacks on the
+  existing SessionStart polling channel (~hourly Pages check). Worst case:
+  ~1 hour delay between merge and the PR creator's next session updating.
+- Publish anything beyond the public GitHub login — no email, no real
+  name, no machine identifiers.
+
+### Opt-out
+
+The `auto-update.disabled` hard kill-switch (`touch
+~/.teamagent/auto-update.disabled` or `TEAMAGENT_AUTO_UPDATE=0`) suppresses
+the PR-creator force path as well as the regular update path. There is no
+separate "PR-creator opt-out" — the feature only adds a banner; the install
+is already happening anyway.
+
+### Privacy
+
+The `latest.json` schema gains three optional fields:
+`pr_number`, `pr_creator_login`, `merged_at`. Only the public GitHub
+**login** is ever published, never an email, real name, or PII. The
+workflow validates the login against the strict GitHub charset
+`^[A-Za-z0-9-]{1,39}$` before writing the file, defense-in-depth against
+any future API quirk.
