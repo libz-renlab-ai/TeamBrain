@@ -62,8 +62,11 @@ else
 fi
 echo "$P8" > "$EVID/P8.txt"
 
-# P9 — FIXEDFLOW.md takeover 段含 24h 或 ack 门禁字样（F1 verify）
-P9=$(grep -cE '24h|ghost-timer|explicit ack' docs/FIXEDFLOW.md)
+# P9 — FIXEDFLOW.md §Taking over 段内含 ghost-timer / ack 门禁字样（F1 verify）
+# 用 awk 把范围限定在 §Taking over 段内（从 "## Taking over" 到下一个 "## "），
+# 避免 preamble / refusal-layer 里的不相关 "24h" 文字（iter-2 N2 fix）。
+P9=$(awk '/^## Taking over/{flag=1; next} /^## /{flag=0} flag' docs/FIXEDFLOW.md \
+       | grep -cE 'Ghost-timer|ghost-timer|Explicit ack|explicit ack|24h')
 echo "$P9" > "$EVID/P9.txt"
 ```
 
@@ -76,17 +79,17 @@ cat > "$EVID/observed.json" <<JSON
 {
   "issue": 349,
   "run_id": "$(date -u +%Y%m%dT%H%M%SZ)",
-  "iter": 2,
+  "iter": 3,
   "probes": [
     {"probe":"P1","tool":"grep -c \"Taking over someone else's grill-ready issue\" docs/FIXEDFLOW.md","observed":$P1,"stdout_path":"evidence/P1.txt"},
-    {"probe":"P2","tool":"grep -c \"grill-working\" docs/FIXEDFLOW.md","observed":$P2,"stdout_path":"evidence/P2.txt"},
-    {"probe":"P3","tool":"3 phrase greps in docs/FIXEDFLOW.md (P3.txt has the 3 sub-counts)","observed":$P3_min,"stdout_path":"evidence/P3.txt"},
+    {"probe":"P2","tool":"grep -c grill-working docs/FIXEDFLOW.md","observed":$P2,"stdout_path":"evidence/P2.txt"},
+    {"probe":"P3","tool":"awk 'BEGIN{m=999} END{print m} {if (\$1<m) m=\$1}' < <(grep -Fc -- '我已经开始干了' docs/FIXEDFLOW.md; grep -cE '我来负责[[:space:]]*grill-with-docs[[:space:]]*/[[:space:]]*grill-via-web' docs/FIXEDFLOW.md; grep -Fc -- '我的机器上开始干了' docs/FIXEDFLOW.md)","observed":$P3_min,"stdout_path":"evidence/P3.txt"},
     {"probe":"P4","tool":"grep -c \"Taking over someone else's grill-ready issue\" docs/HOW-TO-CLAIM-ISSUE.md","observed":$P4,"stdout_path":"evidence/P4.txt"},
-    {"probe":"P5","tool":"grep -c \"docs/plans/2026-05-12-issue-349\" docs/FIXEDFLOW.md","observed":$P5,"stdout_path":"evidence/P5.txt"},
-    {"probe":"P6","tool":"diff -u evidence/labels.baseline.txt evidence/labels.observed.txt","observed":$P6_diff_lines,"stdout_path":"evidence/P6.txt"},
-    {"probe":"P7","tool":"grep -c \"PRE-IMPLEMENT-CLAIM.md\" docs/FIXEDFLOW.md","observed":$P7,"stdout_path":"evidence/P7.txt"},
-    {"probe":"P8","tool":"wc -l < docs/PRE-IMPLEMENT-CLAIM.md (0 if missing)","observed":$P8,"stdout_path":"evidence/P8.txt"},
-    {"probe":"P9","tool":"grep -cE '24h|ghost-timer|explicit ack' docs/FIXEDFLOW.md","observed":$P9,"stdout_path":"evidence/P9.txt"}
+    {"probe":"P5","tool":"grep -c docs/plans/2026-05-12-issue-349 docs/FIXEDFLOW.md","observed":$P5,"stdout_path":"evidence/P5.txt"},
+    {"probe":"P6","tool":"diff -u docs/plans/2026-05-12-issue-349/evidence/labels.baseline.txt <(gh label list --json name --jq '.[].name' | sort) | wc -l | tr -d ' '","observed":$P6_diff_lines,"stdout_path":"evidence/P6.txt"},
+    {"probe":"P7","tool":"grep -c PRE-IMPLEMENT-CLAIM.md docs/FIXEDFLOW.md","observed":$P7,"stdout_path":"evidence/P7.txt"},
+    {"probe":"P8","tool":"[ -f docs/PRE-IMPLEMENT-CLAIM.md ] && wc -l < docs/PRE-IMPLEMENT-CLAIM.md | tr -d ' ' || echo 0","observed":$P8,"stdout_path":"evidence/P8.txt"},
+    {"probe":"P9","tool":"awk '/^## Taking over/{flag=1; next} /^## /{flag=0} flag' docs/FIXEDFLOW.md | grep -cE 'Ghost-timer|ghost-timer|Explicit ack|explicit ack|24h'","observed":$P9,"stdout_path":"evidence/P9.txt"}
   ]
 }
 JSON
@@ -125,17 +128,24 @@ V3 LLM **must** consume `observed.json` + `expected.json` separately. It is **fo
 
 ```bash
 claudefast -p "
-You are the third-party judge for TeamBrain issue #349. You will NOT read any source doc.
-You WILL:
-1. Read docs/plans/2026-05-12-issue-349/evidence/observed.json (raw observed numbers).
-2. Read docs/plans/2026-05-12-issue-349/evidence/expected.json (pinned thresholds).
-3. For each probe entry in observed.json, INDEPENDENTLY re-run the tool string in its 'tool' field as a Bash tool call, and capture the new observed value.
-4. Compare the re-observed value to the threshold + operator in expected.json. Emit one line per probe in the format:
-     <probe> PASS|FAIL  reobserved=<n>  expected=<op><threshold>  meaning=<...>
-   Mark FAIL if re-observed disagrees with the observed.json value (V2 lied) OR if the threshold is not met.
-5. End with exactly one line: VERDICT: PASS  (if all 9 probes PASS) or VERDICT: FAIL  (otherwise).
+You are the third-party judge for TeamBrain issue #349 (iter-3 hardened).
+You will NOT read FIXEDFLOW.md / HOW-TO-CLAIM-ISSUE.md / PRE-IMPLEMENT-CLAIM.md directly.
 
-Do NOT trust observed.json's 'observed' field — re-run the greps. Do NOT read source docs directly.
+You WILL:
+1. Read docs/plans/2026-05-12-issue-349/evidence/observed.json — raw observed numbers + a runnable 'tool' command per probe (every tool string is a single shell pipeline; no prose).
+2. Read docs/plans/2026-05-12-issue-349/evidence/expected.json — pinned thresholds + operator.
+3. For each probe entry in observed.json, INDEPENDENTLY execute the exact 'tool' command via a Bash tool call from the repo root, and capture the re-observed integer value (last line of stdout).
+4. Compare the re-observed value to the expected operator+threshold. Emit one line per probe:
+     <probe> PASS|FAIL  reobserved=<n>  observed_in_json=<n>  expected=<op><threshold>  meaning=<...>
+   Mark FAIL if:
+     - re-observed disagrees with observed.json 'observed' value (V2 lied), OR
+     - re-observed does not satisfy expected operator+threshold.
+5. End with exactly one line:  VERDICT: PASS  (only if every probe PASS), otherwise  VERDICT: FAIL.
+
+Constraints (do NOT skip):
+- The tool string is the SOURCE OF TRUTH for what to run. Do NOT substitute your own command (no \"I know a better grep\"). If the tool string is malformed, mark that probe FAIL and explain in the line.
+- For P6, you MUST regenerate the observed label list yourself via 'gh label list --json name --jq .[].name | sort' inside the pipeline; never reuse a pre-existing labels.observed.txt that V2 wrote.
+- Do NOT read FIXEDFLOW.md / HOW-TO-CLAIM-ISSUE.md / PRE-IMPLEMENT-CLAIM.md as files. The greps in the tool strings ARE allowed to read those docs; you, the judge, are not.
 "
 ```
 

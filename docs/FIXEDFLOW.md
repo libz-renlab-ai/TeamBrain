@@ -112,7 +112,7 @@ The FIXEDFLOW driver may **only** be dispatched on **docs-gated grilled-issues**
 
 ### 为什么 reuse `grill-working`（不新建 label）
 
-`grill-working` 既是 driver mutex（driver 自动加），也是 human takeover signal（maintainer 手动加）——`docs/PRE-IMPLEMENT-CLAIM.md` §`Two semantics, one label` 定义两套语义如何共存（看 `.lock` sentinel + 看最近评论可以 O(1) 区分谁加的）。GitHub label 是仓库 metadata，比评论文本更易扫描（`gh issue list --label grill-working` 一行命令出全集），符合 #349 的「tags for easy issue tracking」要求。
+`grill-working` 既是 driver mutex（driver 自动加），也是 human takeover signal（maintainer 手动加）——`docs/PRE-IMPLEMENT-CLAIM.md` §`同一 label，两种来源` 定义两套语义如何共存（看 `.lock` sentinel + 看 pickup 评论锚点可以 O(1) 区分谁加的）。GitHub label 是仓库 metadata，比评论文本更易扫描（`gh issue list --label grill-working` 一行命令出全集），符合 #349 的「tags for easy issue tracking」要求。
 
 ### 回滚
 
