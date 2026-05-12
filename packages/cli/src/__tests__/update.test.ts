@@ -13,10 +13,16 @@ import {
 import { defaultUpdateState } from "@teamagent/core";
 import type { FetchShaResult } from "../github-api.js";
 
-// Mock the github-api module so checkCmd tests don't make real HTTP calls.
-// The mock is wired before module resolution; each test reconfigures the fn.
+// Mock the github-api module so legacy checkCmd tests don't make real HTTP calls.
+// Pre-#313 path; runUpdater + checkCmd no longer call fetchRemoteSha in #313.
 vi.mock("../github-api.js", () => ({
   fetchRemoteSha: vi.fn(),
+}));
+
+// Issue #313: checkCmd now goes through fetchLatestVersion (Pages → npm).
+// Mock the new module so the #313 path is also test-injectable.
+vi.mock("../update/fetch-latest.js", () => ({
+  fetchLatestVersion: vi.fn(),
 }));
 
 // Issue #245: capture every upgrade emit without touching the real
@@ -96,8 +102,12 @@ describe("update command", () => {
 
 // ────────────────────────────────────────────────────────────────
 // checkCmd — per-reason error formatting (§ 2.4) and ETag persistence
+// Issue #313: rate_limit_anonymous / rate_limit_authed / etag reasons no longer
+// exist on the checkCmd path (Pages + npm has its own discriminated failure
+// taxonomy, see FetchLatestFailureReason). Skipped; #313-aligned checkCmd
+// tests live further down in describe("checkCmd (#313 fetchLatestVersion)").
 // ────────────────────────────────────────────────────────────────
-describe("checkCmd — per-reason error messages", () => {
+describe.skip("checkCmd — per-reason error messages (pre-#313, behaviour removed)", () => {
   let mockFetchRemoteSha: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
@@ -171,7 +181,10 @@ describe("checkCmd — per-reason error messages", () => {
   });
 });
 
-describe("checkCmd — ETag and sha persistence on success", () => {
+// Issue #313: ETag conditional GET removed (Pages doesn't return useful ETag);
+// SHA-based comparison replaced with version-based. PR #194 backoff tests
+// document removed legacy behaviour. #313-aligned tests below.
+describe.skip("checkCmd — ETag and sha persistence on success (pre-#313, behaviour removed)", () => {
   let mockFetchRemoteSha: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
@@ -299,6 +312,99 @@ describe("checkCmd — ETag and sha persistence on success", () => {
     const r = await runUpdateCommand("check");
     expect(r.ok).toBe(true);
     expect(r.output).toContain("up-to-date");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────
+// Issue #313: checkCmd via fetchLatestVersion (Pages → npm chain)
+// ────────────────────────────────────────────────────────────────
+describe("checkCmd (#313 fetchLatestVersion)", () => {
+  let mockFetchLatest: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    const mod = await import("../update/fetch-latest.js");
+    mockFetchLatest = mod.fetchLatestVersion as ReturnType<typeof vi.fn>;
+    mockFetchLatest.mockReset();
+  });
+
+  it("up-to-date when fetched version equals last_installed_version", async () => {
+    const s = defaultUpdateState();
+    s.last_installed_version = "0.11.5";
+    writeState(s);
+    mockFetchLatest.mockResolvedValue({
+      ok: true,
+      version: "0.11.5",
+      source: "pages",
+    });
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("up-to-date");
+    expect(r.output).toContain("0.11.5");
+    expect(r.output).toContain("source=pages");
+  });
+
+  it("update available: prints versions + source", async () => {
+    const s = defaultUpdateState();
+    s.last_installed_version = "0.11.0";
+    writeState(s);
+    mockFetchLatest.mockResolvedValue({
+      ok: true,
+      version: "0.11.6",
+      source: "pages",
+      sha: "deadbeef",
+    });
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("update available");
+    expect(r.output).toContain("0.11.0");
+    expect(r.output).toContain("0.11.6");
+    expect(r.output).toContain("source=pages");
+  });
+
+  it("Tier 3 failure: prints human-readable banner with recovery paths", async () => {
+    writeState(defaultUpdateState());
+    mockFetchLatest.mockResolvedValue({
+      ok: false,
+      pagesReason: "pages_5xx",
+      pagesMessage: "Pages server error 503",
+      npmReason: "npm_5xx",
+      npmMessage: "npm registry server error 503",
+    });
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain("暂时查不到新版本");
+    expect(r.output).toContain("pages_5xx");
+    expect(r.output).toContain("npm_5xx");
+    expect(r.output).toContain("npm i -g teamagent@latest");
+    expect(r.output).toContain("TEAMAGENT_GITHUB_TOKEN");
+    // MUST NOT include the old internal jargon
+    expect(r.output).not.toContain("GitHub anonymous rate limit");
+  });
+
+  it("npm fallback source is surfaced when Pages failed", async () => {
+    const s = defaultUpdateState();
+    s.last_installed_version = "0.11.0";
+    writeState(s);
+    mockFetchLatest.mockResolvedValue({
+      ok: true,
+      version: "0.11.5",
+      source: "npm",
+    });
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("source=npm");
+  });
+
+  it("respects legacy next_check_after_ts during transition window", async () => {
+    // Old state file with backoff set from pre-#313 code; new code honors it
+    // so users aren't surprised with double-fetch on the first session after upgrade.
+    const s = defaultUpdateState();
+    s.next_check_after_ts = Date.now() + 60 * 60 * 1000;
+    writeState(s);
+    const r = await runUpdateCommand("check");
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain("backoff active until");
+    expect(mockFetchLatest).not.toHaveBeenCalled();
   });
 });
 

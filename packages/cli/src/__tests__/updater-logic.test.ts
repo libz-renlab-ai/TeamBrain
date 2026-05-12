@@ -2,8 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { runUpdater, isDevModeTsExtensionError, type UpdaterDeps } from "../updater-logic.js";
 import { defaultUpdateState, type UpdateState } from "@teamagent/core";
 import type { FetchShaResult } from "../github-api.js";
+import type { FetchLatestResult } from "../update/fetch-latest.js";
 
-// Helper factories for the new FetchShaResult shape
+// ── FetchShaResult helpers (legacy — fetchRemoteSha unused by runUpdater since #313) ──
+
 function okResult(sha = "new-sha", etag: string | null = "W/\"abc\"", source: "200" | "304" = "200"): FetchShaResult {
   return { ok: true, sha, etag, source };
 }
@@ -16,8 +18,38 @@ function failResult(
   return { ok: false, reason, status, message };
 }
 
+// ── FetchLatestResult helpers (#313: Pages → npm chain, no rate-limit branch) ──
+
+function okLatest(
+  version = "0.11.6",
+  source: "pages" | "npm" = "pages",
+  sha?: string,
+): FetchLatestResult {
+  return sha
+    ? { ok: true, version, source, sha }
+    : { ok: true, version, source };
+}
+
+function failLatest(
+  pagesReason: "pages_network" | "pages_5xx" | "pages_404" | "pages_parse" | "pages_timeout" = "pages_5xx",
+  npmReason: "npm_network" | "npm_5xx" | "npm_404" | "npm_parse" | "npm_timeout" = "npm_5xx",
+): FetchLatestResult {
+  return {
+    ok: false,
+    pagesReason,
+    pagesMessage: "test-pages-fail",
+    npmReason,
+    npmMessage: "test-npm-fail",
+  };
+}
+
 function makeDeps(over: Partial<UpdaterDeps> = {}): UpdaterDeps {
   return {
+    // Issue #313: fetchLatestVersion is the new primary version-check path.
+    // Default returns "0.0.0" — most tests override either this or
+    // last_installed_version to control whether the "up-to-date" early-return
+    // fires (when versions match) or the install pipeline runs (when they differ).
+    fetchLatestVersion: vi.fn().mockResolvedValue(okLatest("0.0.0")),
     fetchRemoteSha: vi.fn().mockResolvedValue(okResult()),
     runNpmInstall: vi.fn().mockResolvedValue({ ok: true }),
     runMigrateAuto: vi.fn().mockResolvedValue({ ok: true }),
@@ -41,7 +73,13 @@ function lastWrittenState(deps: UpdaterDeps): UpdateState {
   return last[0] as UpdateState;
 }
 
-describe("runUpdater", () => {
+// Issue #313: the rate-limit / ETag / SHA-comparison branches that the existing
+// runUpdater tests below exercise have been REMOVED — version-check now goes
+// through fetchLatestVersion (Pages + npm), which has neither GitHub rate-limit
+// nor ETag caching. Skipping the block to preserve historical documentation;
+// will be deleted once #313's CHANGELOG entry has propagated through one
+// release. Fresh #313-aligned tests live in describe("runUpdater (#313 version-check)") below.
+describe.skip("runUpdater (legacy, pre-#313 SHA/rate-limit behavior)", () => {
   it("noop when remote sha matches local", async () => {
     const state = { ...defaultUpdateState(), last_installed_sha: "same" };
     const deps = makeDeps({
@@ -385,6 +423,97 @@ describe("runUpdater", () => {
     });
     await expect(runUpdater(deps)).resolves.toBeUndefined();
     expect(deps.log).toHaveBeenCalledWith(expect.stringContaining("emitInstalled failed"));
+  });
+});
+
+// ── Issue #313: runUpdater version-check via fetchLatestVersion ──
+
+describe("runUpdater (#313 version-check)", () => {
+  it("up-to-date when fetched version equals last_installed_version → no install", async () => {
+    const state = { ...defaultUpdateState(), last_installed_version: "0.11.5" };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue(okLatest("0.11.5")),
+    });
+    await runUpdater(deps);
+    expect(deps.fetchLatestVersion).toHaveBeenCalled();
+    expect(deps.runNpmInstall).not.toHaveBeenCalled();
+  });
+
+  it("update available → install + migrate + write banner with version strings", async () => {
+    const state = { ...defaultUpdateState(), last_installed_version: "0.11.0", last_installed_sha: "sha-old" };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue(okLatest("0.11.6", "pages", "sha-new")),
+    });
+    await runUpdater(deps);
+    expect(deps.runNpmInstall).toHaveBeenCalled();
+    expect(deps.runMigrateAuto).toHaveBeenCalled();
+    const final = lastWrittenState(deps);
+    expect(final.last_installed_version).toBe("0.11.6");
+    expect(final.last_installed_sha).toBe("sha-new");
+    expect(final.pending_banner?.from).toBe("0.11.0");
+    expect(final.pending_banner?.to).toBe("0.11.6");
+  });
+
+  it("Tier 3 failure → writes last_install_error with 'version-check failed:' prefix", async () => {
+    const deps = makeDeps({
+      fetchLatestVersion: vi.fn().mockResolvedValue(failLatest("pages_5xx", "npm_5xx")),
+    });
+    await runUpdater(deps);
+    const final = lastWrittenState(deps);
+    expect(final.last_install_error).toMatch(/^version-check failed:/);
+    expect(final.last_install_error).toContain("pages=pages_5xx");
+    expect(final.last_install_error).toContain("npm=npm_5xx");
+    // Tier 3 does NOT trigger consecutive_install_failures counter
+    expect(final.consecutive_install_failures).toBe(0);
+    expect(deps.runNpmInstall).not.toHaveBeenCalled();
+  });
+
+  it("Tier 3 recovery → clears stale 'version-check failed:' error when up-to-date", async () => {
+    // The iter-1 fix from PR #342: prior cycle wrote a Tier-3 error; this cycle
+    // succeeds + already current → must clear last_install_error so the
+    // SessionStart Tier 3 banner stops firing.
+    const state: UpdateState = {
+      ...defaultUpdateState(),
+      last_installed_version: "0.11.5",
+      last_install_error: "version-check failed: pages=pages_5xx (...); npm=npm_5xx (...)",
+    };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue(okLatest("0.11.5")),
+    });
+    await runUpdater(deps);
+    const final = lastWrittenState(deps);
+    expect(final.last_install_error).toBeNull();
+  });
+
+  it("preserves non-Tier-3 last_install_error on successful fetch (reinstall banner owns it)", async () => {
+    // A real npm-install error from a prior cycle must NOT be cleared by a
+    // successful version-check — that's reinstall-banner's territory.
+    const state: UpdateState = {
+      ...defaultUpdateState(),
+      last_installed_version: "0.11.5",
+      last_install_error: "npm install failed: Connection closed by 198.18.0.18 port 22",
+      consecutive_install_failures: 3,
+    };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue(okLatest("0.11.5")),
+    });
+    await runUpdater(deps);
+    const final = lastWrittenState(deps);
+    expect(final.last_install_error).toBe("npm install failed: Connection closed by 198.18.0.18 port 22");
+  });
+
+  it("install path uses last_installed_sha for backup (rollback path preserved)", async () => {
+    const state = { ...defaultUpdateState(), last_installed_version: "0.11.0", last_installed_sha: "sha-prev" };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue(okLatest("0.11.6")),
+    });
+    await runUpdater(deps);
+    expect(deps.backupCurrentInstall).toHaveBeenCalledWith("sha-prev");
   });
 });
 

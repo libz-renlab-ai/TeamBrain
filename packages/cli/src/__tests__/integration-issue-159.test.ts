@@ -127,7 +127,14 @@ describe("issue-159 integration: ETag conditional GET round-trip", () => {
 
 // ── Scenario 4: runUpdater backoff lifecycle ──────────────────────────────────
 
-describe("issue-159 integration: runUpdater backoff lifecycle", () => {
+// Issue #313: runUpdater no longer calls fetchRemoteSha — version-check moved
+// to fetchLatestVersion (Pages + npm registry, neither subject to GitHub
+// rate-limit). The "backoff lifecycle" scenario below tested behavior that
+// has been removed; skipped to preserve historical documentation, will be
+// deleted once #313's CHANGELOG entry has propagated through one release.
+// fetchRemoteSha itself is preserved in github-api.ts for install-path SHA
+// pinning — scenarios 1-3 + 5-6 below still exercise it as a unit and pass.
+describe.skip("issue-159 integration: runUpdater backoff lifecycle (#313 removed)", () => {
   it("rate-limit increments consecutive_rate_limits without touching consecutive_install_failures; success resets", async () => {
     // Use a non-trivial initial state so "unchanged" assertions are non-trivial
     let currentState: UpdateState = {
@@ -157,6 +164,14 @@ describe("issue-159 integration: runUpdater backoff lifecycle", () => {
       } satisfies FetchShaResult);
 
     const deps: UpdaterDeps = {
+      // Issue #313: fetchLatestVersion is now required; stub for typecheck even
+      // though the surrounding describe is .skip'd (TS still type-checks .skip'd
+      // bodies).
+      fetchLatestVersion: vi.fn().mockResolvedValue({
+        ok: true,
+        version: "0.0.0",
+        source: "pages",
+      }),
       fetchRemoteSha: mockFetchRemoteSha,
       runNpmInstall: vi.fn().mockResolvedValue({ ok: true }),
       runMigrateAuto: vi.fn().mockResolvedValue({ ok: true }),
