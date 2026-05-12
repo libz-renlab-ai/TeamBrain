@@ -358,6 +358,30 @@ describe('executeDigitalTwinStatus', () => {
     expect(joined).toContain('pid:        12345');
     expect(joined).toContain('started_at: 2026-05-08T11:30:00Z');
     expect(joined).toContain('alive:      yes');
+    // Issue #368 — uploader log section, no error in this scenario.
+    expect(joined).toContain('uploader log:');
+    expect(joined).toContain(paths.uploaderLogFile);
+    expect(joined).toContain('last_error: (none)');
+  });
+
+  // Issue #368 — a broken upload pipeline must be visible in `status`.
+  it('surfaces the last uploader.log error line in status', () => {
+    const cfg = defaultConfig({ user_id: 'u', machine_id: 'm' });
+    cfg.uploader.token = 't';
+    saveConfig(cfg, digitalTwinPaths(home).configFile);
+    const paths = digitalTwinPaths(home);
+    mkdirSync(paths.digitalTwinDir, { recursive: true });
+    writeFileSync(
+      paths.uploaderLogFile,
+      ['digital-twin: daemon exiting (idle)', "Error: Cannot find module 'ulid' [MODULE_NOT_FOUND]"].join('\n'),
+      'utf-8',
+    );
+    const c = captureOutput();
+    const r = executeDigitalTwinStatus({ homedir: () => home, print: c.print });
+    expect(r.exitCode).toBe(0);
+    const joined = c.out.join('\n');
+    expect(joined).toContain('uploader log:');
+    expect(joined).toMatch(/last_error: .*MODULE_NOT_FOUND.* \(line 2\)/);
   });
 
   it('reports daemon as none + alive=no when pid file is absent', () => {

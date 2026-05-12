@@ -3,7 +3,7 @@
  * Digital-twin uploader daemon entry.
  *
  * Acquires a PID lock, then runs the upload main loop. Exit codes:
- *   0   — clean exit (idle self-shutdown OR stale-lock detected)
+ *   0   — clean exit (idle self-shutdown OR stale-lock detected; also dry-run)
  *   1   — auth failed (token invalid; user must re-login)
  *   2   — config missing or daemon disabled (treated as soft exit)
  */
@@ -24,12 +24,27 @@ export interface DaemonRunDeps {
   homedir?: () => string;
   exit?: (code: number) => void;
   log?: (msg: string) => void;
+  /**
+   * Issue #368 — install-time / `teamagent doctor` smoke test. When true, the
+   * daemon proves all top-level imports loaded (no `MODULE_NOT_FOUND` for
+   * `ulid` &c.) and exits 0 immediately, without touching config, the PID
+   * lock, or the upload loop. Defaults to `process.env.TEAMAGENT_UPLOADER_DRYRUN === '1'`.
+   */
+  dryRun?: boolean;
 }
 
 export async function runDaemon(deps: DaemonRunDeps = {}): Promise<void> {
   const home = (deps.homedir ?? osHomedir)();
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   const log = deps.log ?? ((msg: string) => process.stderr.write(`${msg}\n`));
+
+  const dryRun = deps.dryRun ?? process.env.TEAMAGENT_UPLOADER_DRYRUN === '1';
+  if (dryRun) {
+    // Reaching here at all means every top-level import resolved — that's the
+    // whole point of the probe (the issue #368 bug crashed before this line).
+    log('digital-twin uploader: dry-run OK (all imports resolved)');
+    return exit(0);
+  }
 
   const cfg = loadConfig(digitalTwinPaths(home).configFile);
   if (!isEnabled(cfg)) {

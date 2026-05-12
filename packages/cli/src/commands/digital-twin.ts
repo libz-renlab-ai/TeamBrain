@@ -25,6 +25,7 @@ import {
   listPending,
   readPidFile,
   isPidAlive,
+  readLastUploaderError,
   tapSession,
   claudeTranscriptPath,
   type TapSessionResult,
@@ -255,6 +256,14 @@ export function executeDigitalTwinStatus(deps: DigitalTwinDeps = {}): DigitalTwi
     lines.push('    pid:        (none)');
     lines.push('    alive:      no');
   }
+  // Issue #368: a broken upload pipeline must be visible. Surface the last
+  // error line from the uploader daemon's captured stdout/stderr.
+  const lastErr = readLastUploaderError(home);
+  lines.push('  uploader log:');
+  lines.push(`    path:       ${paths.uploaderLogFile}`);
+  lines.push(
+    `    last_error: ${lastErr ? `${lastErr.line} (line ${lastErr.lineno})` : '(none)'}`,
+  );
   r.print(lines.join('\n'));
   return { exitCode: 0 };
 }
