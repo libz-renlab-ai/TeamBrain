@@ -258,6 +258,44 @@ export function maybeShowReinstallBanner(
   writeUpdateState(state);
 }
 
+/**
+ * Issue #313 — Tier 3 SessionStart banner.
+ *
+ * When the auto-update version-check has failed (Pages + npm both unreachable),
+ * `runUpdater` writes `last_install_error` with the prefix `"version-check failed:"`
+ * and does NOT bump `consecutive_install_failures` (that counter is reserved
+ * for real install/migrate failures, see maybeShowReinstallBanner above).
+ *
+ * This banner replaces the previous silent 24h backoff behaviour: instead of
+ * a quiet hour-long sleep, the user sees a concrete failure cause and three
+ * recovery paths (manual install / retry / set token).
+ *
+ * **No throttle**: fires every SessionStart while the error string persists,
+ * because the failure is dynamic — next successful version-check writes
+ * `last_install_error: null` (in runUpdater) which stops the trigger. If
+ * Pages stays down for hours, the user really should know each session.
+ * (Contrast with maybeShowReinstallBanner which throttles 24h because the
+ * underlying failure mode is persistent and the user already saw the path.)
+ *
+ * Trigger: `last_install_error` starts with `"version-check failed:"`.
+ *
+ * Self-clearing: next successful Pages OR npm fetch clears the error string.
+ */
+export function maybeShowVersionCheckBanner(
+  stderr: (s: string) => void = (s) => process.stderr.write(s),
+): void {
+  const state = readUpdateState();
+  const err = state.last_install_error ?? "";
+  if (!err.startsWith("version-check failed:")) return;
+
+  stderr("⚠️  TeamAgent: 暂时查不到新版本\n");
+  stderr(`   ${err}\n`);
+  stderr("   建议:\n");
+  stderr("     • 手动: npm i -g teamagent@latest\n");
+  stderr("     • 或等下次启动 (我们会重试)\n");
+  stderr("     • 高级用户: 设 TEAMAGENT_GITHUB_TOKEN 走认证通道\n");
+}
+
 // ─── issue #225: soft-force upgrade prompt ───────────────────────────────
 
 /**

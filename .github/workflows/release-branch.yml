@@ -117,3 +117,43 @@ jobs:
           git push -q --force \
             "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" \
             release
+
+      - name: Publish latest.json to gh-pages (issue #313 Tier 1)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Issue #313: TeamAgent auto-update version-check 主路读这个文件
+          # (https://libz-renlab-ai.github.io/TeamBrain/latest.json)。
+          # 该路径走 GitHub Pages 的 Fastly CDN，无 60 req/hr quota，
+          # 替代之前的 api.github.com/repos/.../branches/release 调用。
+          # Schema documented in docs/features/auto-update-channel.md.
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${TAG#v}"
+          REPO_DIR=$(mktemp -d)
+
+          git clone --depth=1 --branch=gh-pages \
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" \
+            "$REPO_DIR"
+          cd "$REPO_DIR"
+
+          cat > latest.json <<EOF
+          {
+            "version": "$VERSION",
+            "sha": "$GITHUB_SHA",
+            "releasedAt": "$(date -u +%FT%TZ)",
+            "tarball": "https://github.com/${{ github.repository }}/archive/refs/heads/release.tar.gz",
+            "generatedBy": "release-branch.yml@${{ github.run_id }}"
+          }
+          EOF
+
+          git config user.name "TeamAgent Release Bot"
+          git config user.email "bot@teamagent.local"
+          git add latest.json
+
+          if git diff --cached --quiet; then
+            echo "latest.json unchanged; skip commit"
+          else
+            git commit -q -m "issue-313: publish latest.json for $TAG ($GITHUB_SHA)"
+            git push -q origin gh-pages
+            echo "Published latest.json @ https://libz-renlab-ai.github.io/TeamBrain/latest.json"
+          fi

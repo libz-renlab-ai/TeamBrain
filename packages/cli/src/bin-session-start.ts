@@ -54,6 +54,7 @@ import {
   spawnUpdater,
   maybeShowPendingBanner,
   maybeShowReinstallBanner,
+  maybeShowVersionCheckBanner,
   maybeShowUpgradePrompt,
 } from "./session-start-logic.js";
 import { cleanupWikiResidue } from "./wiki-residue-cleanup.js";
@@ -184,6 +185,11 @@ async function main(): Promise<void> {
       try {
         maybeShowReinstallBanner((s) => ctx.mirrorSystemMessage(s.replace(/\n$/, "")));
       } catch (e) { logError("reinstall-banner-failed", e); }
+      // Issue #313: Tier 3 — Pages + npm 双挂时显式提示，替代 silent backoff。
+      // 无节流；每次 SessionStart 都尝试，因为下一次 fetch 成功会自动 clear。
+      try {
+        maybeShowVersionCheckBanner((s) => ctx.mirrorSystemMessage(s.replace(/\n$/, "")));
+      } catch (e) { logError("version-check-banner-failed", e); }
       // Issue #225: soft-force upgrade prompt. Re-fires every SessionStart
       // until the user picks A/B/C; honors snooze backoff + never_prompt +
       // TEAMAGENT_NEVER_PROMPT env override. Shown AFTER the pending /

@@ -15,6 +15,27 @@ artifacts the user sees) do NOT need an entry.
 
 ### Fixed
 
+- **Auto-update no longer silently sleeps for 24h on shared NAT / mobile networks (#313, closes #305)**.
+  Pre-#313 the version-check fired `GET https://api.github.com/repos/libz-renlab-ai/TeamBrain/branches/release`,
+  which hits the **60 req/hr anonymous quota per IP**. On corporate NAT, mobile cells, CI runners — any place
+  several `teamagent` users share an outbound IP — the quota burned out fast; once exhausted, the updater
+  fell into a silent exponential backoff up to 24 hours, leaving users stuck on old versions (e.g. #305:
+  user stuck on 0.10.1, statusline `TeamAgent | 规则:2 | 帮过 …` line never appeared because that line is a
+  0.11.x feature).
+
+  New version-check chain — **completely off `api.github.com`**:
+  1. **Tier 1 (主路)**: `https://libz-renlab-ai.github.io/TeamBrain/latest.json` — GitHub Pages, Fastly
+     CDN, no rate limit, no token. CI in `release-branch.yml` regenerates this file on every release.
+  2. **Tier 2 (兜底)**: `https://registry.npmjs.org/teamagent/latest` — npm registry, also no GitHub
+     rate limit. May lag the release branch by ~1 week (`docs/PUBLISHING.md` cadence).
+  3. **Tier 3 (人话提示)**: when both tiers fail, SessionStart now surfaces a banner with the failure
+     cause + concrete recovery paths (`npm i -g teamagent@latest`, retry on next session, or set
+     `TEAMAGENT_GITHUB_TOKEN`) — replacing the previous silent 24h sleep.
+
+  The actual binary download path (`github.com/.../archive/refs/heads/release.tar.gz`) is unchanged —
+  it was always a static asset URL and never consumed the 60/hr quota. Only the version-check moved.
+  See `docs/features/auto-update-channel.md` for full schema and guarantees.
+
 - **`teamagent init` no longer silently fails when blocked by `nested-init-guard`**.
   Previously, running `teamagent init` from a sub-directory of an already-initialized
   project printed only `❌ 安装未完成 ... 运行 teamagent doctor` with no reason —
