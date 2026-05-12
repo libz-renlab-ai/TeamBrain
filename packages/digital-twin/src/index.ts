@@ -61,6 +61,20 @@ export {
 
 export { DASHBOARD_HTML } from './dashboard-html.js';
 
+// Feature #2 v3 — fire-and-forget cc-status push wired from SessionStart /
+// UserPromptSubmit hooks so the boss kanban shows real teammates' Claude Code
+// sessions, not just the bin-realtime-demo synthetic writer. See
+// packages/cli/src/realtime-emit.ts for the caller.
+export {
+  postCcStatusSnapshot,
+  type PostCcStatusOptions,
+  type PostCcStatusOutcome,
+} from './realtime-client.js';
+export {
+  createSseHandler,
+  type SseHandlerOptions,
+} from './realtime-stream.js';
+
 export { runProdServer, type RunProdServerDeps } from './bin-prod-server.js';
 
 export {
