@@ -46,7 +46,9 @@ USAGE
 
 valid_user_name() {
   # Allow letters, digits, dash, underscore. Reject ., /, .. and empty.
-  [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]]
+  # First character must NOT be `-` (flag-injection guard if a downstream
+  # tool ever splats user names into argv without a `--` separator).
+  [[ "$1" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]]
 }
 
 require_setup() {

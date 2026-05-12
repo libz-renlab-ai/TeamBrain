@@ -38,8 +38,8 @@ touching the existing single-user layout. The two coexist.
 | User Claude config | `.sandbox/users/<name>/home/.claude/` |
 | User teamagent global DB | `.sandbox/users/<name>/home/.teamagent/` |
 | User project root | `.sandbox/users/<name>/project/` |
-| User project hooks config | `.sandbox/users/<name>/project/.claude/settings.local.json` |
-| User project knowledge DB | `.sandbox/users/<name>/project/.teamagent/knowledge.db` |
+| User project hooks config | `.sandbox/users/<name>/project/.claude/settings.local.json` (populated by `init`) |
+| User project knowledge DB | `.sandbox/users/<name>/project/.teamagent/knowledge.db` (populated by `init`) |
 
 | Shared component | Path |
 |------------------|------|
@@ -48,6 +48,10 @@ touching the existing single-user layout. The two coexist.
 
 The `.sandbox/` tree (including `.sandbox/users/`) is already covered by the
 existing `.sandbox/` line in `.gitignore`, so nothing extra needs to be ignored.
+
+User names are validated to `^[A-Za-z0-9_][A-Za-z0-9_-]*$` — letters / digits /
+underscore / dash, but the **first** character may not be `-`, so names cannot
+masquerade as CLI flags (`-rf`, `--help`) to any tool that later ingests them.
 
 ## How to spin up users
 

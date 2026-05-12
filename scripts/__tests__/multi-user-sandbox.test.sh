@@ -72,7 +72,9 @@ done
 "$SH" add alice >/dev/null || fail "re-add alice should be idempotent"
 
 # ── invalid names rejected ────────────────────────────────────────────────────
-for bad in "../etc" "a b" "" "alice/" "."; do
+# Leading `-` is forbidden to keep argv-injection-shaped names off disk
+# (-rf / --help / -n would be flag-injection bait for any downstream tool).
+for bad in "../etc" "a b" "" "alice/" "." "-rf" "--help" "-n" "-"; do
   if "$SH" add "$bad" >/dev/null 2>&1; then
     fail "invalid user name '$bad' was accepted (should reject)"
   fi
