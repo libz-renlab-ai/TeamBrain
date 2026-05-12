@@ -70,21 +70,31 @@ function debugLog(line: string): void {
   }
 }
 
+// Cache identity once per process: getUserId() shells out to `git config
+// user.email` (typ. 30-60ms on macOS) and getMachineId() touches disk to
+// read/write the machine-id sentinel. Both are stable for the process
+// lifetime and called per-hook, so caching keeps emitCcStatus well under
+// the 50ms hook-critical-path target.
+let cachedUserId: string | null = null;
+let cachedMachineId: string | null = null;
+
 function buildSnapshot(input: EmitInput): CcStatusSnapshot {
-  const userId = (() => {
+  if (cachedUserId === null) {
     try {
-      return getUserId();
+      cachedUserId = getUserId();
     } catch {
-      return `unknown@${hostname()}`;
+      cachedUserId = `unknown@${hostname()}`;
     }
-  })();
-  const machineId = (() => {
+  }
+  if (cachedMachineId === null) {
     try {
-      return getMachineId();
+      cachedMachineId = getMachineId();
     } catch {
-      return hostname();
+      cachedMachineId = hostname();
     }
-  })();
+  }
+  const userId = cachedUserId;
+  const machineId = cachedMachineId;
   const snap: CcStatusSnapshot = {
     schema_version: CC_STATUS_SCHEMA_VERSION,
     session_id: input.sessionId || `unknown-${Date.now()}`,
