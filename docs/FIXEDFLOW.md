@@ -157,7 +157,7 @@ driver 启动时会同时校验 grill comment + docs-grill comment + 两个 labe
 
 ### 适用范围
 
-- ❌ Claude Code / Codex / `/fixed-flow-driver` / `/claim-to-merge` / 任何 autonomous worker / 任何 bot / 任何 watcher / 任何 cron / 任何 stale-bot / 任何 GitHub Action 在 `pull_request: closed` 或 `schedule:` 触发下调用 `gh issue close` 关闭带 `ready-for-human` label 的 issue —— 一律禁止。
+- ❌ Claude Code / Codex / `/fixed-flow-driver` / `/claim-to-merge` / 任何 autonomous worker / 任何 bot / 任何 watcher / 任何 cron / 任何 stale-bot / 任何 GitHub Action 在 `pull_request: closed` 或 `schedule:` 触发下调用 `gh issue close`（或任何等价的 close API：`gh issue edit --state closed`、`PATCH /repos/:owner/:repo/issues/:N -f state=closed`、`@octokit/rest` 的 `octokit.issues.update({state:"closed"})` 等）关闭带 `ready-for-human` label 的 issue —— 一律禁止。
 - ❌ 即使 agent 判断该 issue 已被某 merged PR 解决 / 已过期 / 是 duplicate / 已被另一条 issue 覆盖 —— 只能贴评论说明，**不许自己 close**。
 - ❌ 即使 agent 读到本规则后口头同意 —— 本规则本身也不许被 agent close（issue #338 自身就是它的 self-test case）。
 - ✅ 只有真人 maintainer（libz 的任一 GitHub 账号 / 其它有 maintain 权限的真人）在浏览器 / CLI 里手动按 close，才是合法路径。
