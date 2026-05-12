@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>TeamBrain · Feature #2 v2 live kanban</title>
+  <style>
+    :root { font-family: -apple-system, system-ui, sans-serif; color-scheme: dark; }
+    body { background: #0b0d10; color: #d9e0ea; margin: 0; padding: 2rem; }
+    h1 { font-size: 1.2rem; letter-spacing: 0.08em; text-transform: uppercase; color: #6ee7b7; margin: 0 0 1rem; }
+    .meta { color: #6b7280; font-size: 0.78rem; margin-bottom: 1.5rem; }
+    .grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+    .row { background: #131820; border: 1px solid #1f2933; padding: 0.9rem 1rem; border-radius: 12px; transition: opacity .25s, border-color .25s; }
+    .row.stale { opacity: 0.4; border-color: #312e2e; }
+    .row.fresh { border-color: #34d399; }
+    .who { font-weight: 600; color: #e5e7eb; }
+    .session { font-family: ui-monospace, SF Mono, monospace; color: #94a3b8; font-size: 0.78rem; margin-top: 0.2rem; }
+    .event { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; background: #1f2937; color: #93c5fd; font-size: 0.72rem; margin-top: 0.5rem; }
+    .cwd { color: #fbbf24; font-size: 0.8rem; margin-top: 0.45rem; word-break: break-all; }
+    .ctx { color: #a78bfa; font-size: 0.75rem; margin-top: 0.3rem; }
+    .stale-marker { color: #f87171; font-size: 0.7rem; margin-top: 0.4rem; }
+  </style>
+</head>
+<body>
+  <h1>TeamBrain · Feature #2 v2 — boss kanban (live)</h1>
+  <div class="meta">
+    Source: <code>GET /v1/cc-status/stream</code> · poll 1s · stale &gt; 30s greys out.
+    First frame: <span id="firstFrame">—</span> · Last frame: <span id="lastFrame">—</span> · Events: <span id="evCount">0</span>
+  </div>
+  <div id="grid" class="grid"></div>
+  <script>
+    const grid = document.getElementById('grid');
+    const firstFrameEl = document.getElementById('firstFrame');
+    const lastFrameEl = document.getElementById('lastFrame');
+    const evCountEl = document.getElementById('evCount');
+    let firstSeen = null;
+    let evCount = 0;
+    const src = new EventSource('/v1/cc-status/stream');
+    src.onmessage = (ev) => {
+      const t = new Date().toISOString();
+      if (!firstSeen) { firstSeen = t; firstFrameEl.textContent = t; }
+      lastFrameEl.textContent = t;
+      evCount += 1;
+      evCountEl.textContent = String(evCount);
+      let parsed;
+      try { parsed = JSON.parse(ev.data); } catch { return; }
+      const rows = (parsed.sessions || []).map((r) => {
+        const stale = (r.stale_seconds ?? 0) > 30;
+        const cls = 'row ' + (stale ? 'stale' : 'fresh');
+        const ctxPct = r.context_pct != null ? (Math.round(r.context_pct * 100) + '%') : '—';
+        const tokens = r.context_tokens != null ? r.context_tokens.toLocaleString() : '—';
+        return `<div class="${cls}">
+          <div class="who">${r.display_name || r.user_id}</div>
+          <div class="session">session: ${r.session_id}</div>
+          <div class="event">${r.event}</div>
+          <div class="cwd">${r.cwd || ''} @ ${r.git_branch || ''}</div>
+          <div class="ctx">ctx: ${tokens} (${ctxPct}) · model: ${r.model || '—'}</div>
+          ${stale ? '<div class="stale-marker">stale ' + r.stale_seconds + 's</div>' : ''}
+        </div>`;
+      });
+      grid.innerHTML = rows.join('');
+    };
+    src.onerror = () => { /* keep the connection; EventSource auto-retries */ };
+  </script>
+</body>
+</html>
