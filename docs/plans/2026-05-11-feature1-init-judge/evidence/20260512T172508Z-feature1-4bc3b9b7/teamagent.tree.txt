@@ -1,0 +1,3 @@
+/tmp/feature1-sandbox.SoGRH6/.teamagent/.project-root
+/tmp/feature1-sandbox.SoGRH6/.teamagent/knowledge.db
+/tmp/feature1-sandbox.SoGRH6/.teamagent/required.json

@@ -1,0 +1,4 @@
+RUN_ID=20260512T172508Z-feature1-4bc3b9b7
+SANDBOX=/tmp/feature1-sandbox.SoGRH6
+TMPHOME=/tmp/feature1-home.y5A3tE
+TSX=/Users/m1/projects/TeamBrain/.claude/worktrees/goal-feature1-convince-user/node_modules/.bin/tsx
