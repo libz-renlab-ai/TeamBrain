@@ -91,6 +91,14 @@ async function main(): Promise<void> {
       return { kind: "ok", input: raw as PreToolUseHookInput };
     },
     handler: async (ctx) => {
+      // Issue #343 PR-1: master kill switch. When TEAMAGENT_DISABLED=1 the
+      // PreToolUse hook returns an unconditional allow without touching
+      // matcher / retriever / attribution, so paired TB-ON vs TB-OFF
+      // ablation runs see zero TB-side token cost.
+      if (ctx.env.TEAMAGENT_DISABLED === "1") {
+        return { permissionDecision: "allow" };
+      }
+
       // Fast-allow path: missing tool_name. Envelope still wraps to the proper
       // hookSpecificOutput shape so the SDK respects the decision.
       if (ctx.input.kind !== "ok") {

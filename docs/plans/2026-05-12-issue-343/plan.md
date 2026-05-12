@@ -16,11 +16,9 @@
 
 | # | 文件 | 行 | 改法 |
 |---|---|---|---|
-| 1 | `packages/cli/src/bin-session-start.ts` | 114 | handler 入口 `if (process.env["TEAMAGENT_DISABLED"] === "1") return undefined;` |
-| 2 | `packages/cli/src/bin-pre-tool-use.ts` | 99 | sdkInput 后立即 `return { permissionDecision: "allow" };` |
-| 3 | `packages/cli/src/bin-stop.ts` | 955 | detached path early-return |
-| 4 | `packages/cli/src/bin-stop.ts` | 984 | async path early-return |
-| 5 | `packages/cli/src/bin-stop.ts` | 1060 | sync path early-return |
+| 1 | `packages/cli/src/bin-session-start.ts` | 114 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return undefined;` |
+| 2 | `packages/cli/src/bin-pre-tool-use.ts` | 93 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return { permissionDecision: "allow" };` |
+| 3 | `packages/cli/src/bin-stop.ts` | 949 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return;` — **一个 check 覆盖 detached / async / sync 三路径**（research 原提议 3 个 check，实现时按 DRY 简化为 1 个） |
 
 ### 为什么
 
