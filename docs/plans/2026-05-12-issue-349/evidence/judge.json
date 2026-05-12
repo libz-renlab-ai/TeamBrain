@@ -1,0 +1,17 @@
+{
+  "issue": 349,
+  "run_id": "20260512T111221Z",
+  "iter": 3,
+  "baseline_note": "labels.baseline.txt refreshed to include 'grilling' (added upstream by PR #357 during this PR's lifetime); PR #353 itself touches no label-management code or config",
+  "probes": [
+    {"probe":"P1","tool":"grep -c \"Taking over someone else's grill-ready issue\" docs/FIXEDFLOW.md","observed":2,"stdout_path":"evidence/P1.txt"},
+    {"probe":"P2","tool":"grep -c grill-working docs/FIXEDFLOW.md","observed":8,"stdout_path":"evidence/P2.txt"},
+    {"probe":"P3","tool":"{ grep -Fc -- '我已经开始干了' docs/FIXEDFLOW.md ; grep -cE '我来负责[[:space:]]*grill-with-docs[[:space:]]*/[[:space:]]*grill-via-web' docs/FIXEDFLOW.md ; grep -Fc -- '我的机器上开始干了' docs/FIXEDFLOW.md ; } | awk 'BEGIN{m=999} {if($1<m) m=$1} END{print m}'","observed":1,"stdout_path":"evidence/P3.txt"},
+    {"probe":"P4","tool":"grep -c \"Taking over someone else's grill-ready issue\" docs/HOW-TO-CLAIM-ISSUE.md","observed":1,"stdout_path":"evidence/P4.txt"},
+    {"probe":"P5","tool":"grep -c docs/plans/2026-05-12-issue-349 docs/FIXEDFLOW.md","observed":1,"stdout_path":"evidence/P5.txt"},
+    {"probe":"P6","tool":"diff -u docs/plans/2026-05-12-issue-349/evidence/labels.baseline.txt <(gh label list --json name --jq '.[].name' | sort) | wc -l | tr -d ' '","observed":0,"stdout_path":"evidence/P6.txt"},
+    {"probe":"P7","tool":"grep -c PRE-IMPLEMENT-CLAIM.md docs/FIXEDFLOW.md","observed":5,"stdout_path":"evidence/P7.txt"},
+    {"probe":"P8","tool":"[ -f docs/PRE-IMPLEMENT-CLAIM.md ] && wc -l < docs/PRE-IMPLEMENT-CLAIM.md | tr -d ' ' || echo 0","observed":209,"stdout_path":"evidence/P8.txt"},
+    {"probe":"P9","tool":"awk '/^## Taking over/{flag=1; next} /^## /{flag=0} flag' docs/FIXEDFLOW.md | grep -cE 'Ghost-timer|ghost-timer|Explicit ack|explicit ack|24h'","observed":6,"stdout_path":"evidence/P9.txt"}
+  ]
+}

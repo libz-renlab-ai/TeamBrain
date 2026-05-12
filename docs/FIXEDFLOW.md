@@ -78,6 +78,53 @@ The FIXEDFLOW driver may **only** be dispatched on **docs-gated grilled-issues**
 
 鸭鸭说 (>ω<)：呷呷~ 如果发现别人已经把活儿干了，鸭鸭就先用 `/review` 给那个 PR 当裁判。判得过就放手让他去 squash-merge；判不过也别另起炉灶，直接把补丁推到那个 PR 的同一个 branch 上，循环 `/review` 到 PASS。一个 issue 永远只对应一个 squash-merged PR，绝不能有两条平行线哟~
 
+## Taking over someone else's grill-ready issue — pre-comment + label contract
+
+适用场景：你（maintainer）准备**接手别人开的 grill-ready issue**。本节只覆盖**两种**情形，**不**覆盖 hand-close 非合规 issue：
+
+- (a) **Unattended grill-ready**：原 reporter 已贴 grill 评论 + `grill-ready` label，但 24h 内没人 drive，maintainer 决定自己跑 `/grill-with-docs` + `/fixed-flow-driver`。
+- (b) **Stale in-progress claim**：issue 已有别人评论「我来开始干」或 self-assign，但**距离他们最后一次评论 / push 已 ≥ 24h** 无任何 commit / comment 推进，maintainer 想接过来。
+
+**显式 not in scope**：hand-close 一条非合规 issue（>50 字 body / 非 fixed-flow template / 24h 无 `grill-ready`）**不**走本节——这是 `.github/workflows/issue-conformance.yml` 自动 close 的工作。需要立即 hand-close 时用 `gh issue close <N> --reason "not planned"`，**不要** add `grill-working` label（否则违反 `docs/POSTMORTEM.md` hard rule #6 的 retroactive-labeling 禁令）。
+
+### 进入门禁 (必须满足之一，**不能跳过**)
+
+1. **Ghost-timer ≥ 24h**：previous claimant 的 last comment 或 last commit 已经 ≥ 24h。**必须**在 takeover 评论里粘一行 `gh issue view <N> --json updatedAt,comments` 的截取证明这条 24h 间隔。
+2. **Explicit ack**：previous claimant 在 issue 评论里**写一句**说同意 takeover（`+1` reaction **不算**）。**必须**在 takeover 评论里贴他们 ack 那条评论的链接。
+
+两条都不满足而擅自 takeover 视为 griefing，任何其他 maintainer 都可以 revert label 并 ping 你回滚。
+
+### Takeover 评论格式
+
+进入门禁满足后，在 issue 评论里贴下面三段 **verbatim 中文声明**（顺序固定，禁翻译、禁 paraphrase、禁简写），并跟一行 evidence（ghost-timer 截取或 ack 链接）：
+
+1. 我已经开始干了
+2. 我来负责 grill-with-docs / grill-via-web
+3. 我的机器上开始干了
+
+可选补充：`host=<machine-id-or-name>` / `branch=feat/issue-<N>` 或 `branch=worktree-issue-<N>+pr-<i>` 让其他 maintainer 看到你的工作位置。
+
+**贴完评论之后**，再**自己**给 issue 加 `grill-working` label（颜色 `#fbca04`，与 driver mutex 共用同一 label——具体语义见 `docs/PRE-IMPLEMENT-CLAIM.md`）。然后才可以：
+
+- 开 `.codex/worktrees/issue-<N>/` 或 `.claude/worktrees/issue-<N>+pr-<i>/` 起 `feat/issue-<N>` branch；
+- 跑 `/grill-with-docs` 补 docs gate（如果情形 a 且 `docs-grill-ready` 缺）；
+- 跑 `/fixed-flow-driver` 启动 step 3-5。
+
+### 为什么 reuse `grill-working`（不新建 label）
+
+`grill-working` 既是 driver mutex（driver 自动加），也是 human takeover signal（maintainer 手动加）——`docs/PRE-IMPLEMENT-CLAIM.md` §`同一 label，两种来源` 定义两套语义如何共存（看 `.lock` sentinel + 看 pickup 评论锚点可以 O(1) 区分谁加的）。GitHub label 是仓库 metadata，比评论文本更易扫描（`gh issue list --label grill-working` 一行命令出全集），符合 #349 的「tags for easy issue tracking」要求。
+
+### 回滚
+
+贴完三段声明 + label 之后改变主意（previous claimant 上线回评 / 发现 scope 太大要 triage-and-split），按 `docs/PRE-IMPLEMENT-CLAIM.md` §`Rollback`：在同一线程追加 `--- abandoning takeover ---` 一行，**自己**移除 `grill-working` label；不要靠他人接力回收 label。
+
+### 与既有规则的边界
+
+- **vs `Preempted by an existing PR`**：那一节解决「issue 已有别人开的 PR」的双轨 PR 竞争；本节解决「issue 还没人开 PR，但有别人 mid-claim」的接手前仪式——两节互补，不重叠。
+- **vs `docs/POSTMORTEM.md` hard rule #6**：本节门禁要求 takeover 必须发生在 grill-ready issue（已经走过 reporter-grill），label 添加是**创建时点**的 takeover signal（不是事后追认 epic）；不属于 #6 禁止的 retroactive 操作。**Hand-close 非合规 issue 显式 not in scope** 正是为了不踩 #6。
+- **vs SessionStart banner contract**：`docs/specs/2026-05-11-fixedflow-sessionstart-banner.zh.md` 的 banner / docs-only trigger 语义本节不动；takeover 跑的 driver 仍走 banner gate。
+- **vs conformance Action auto-close**：本节只管 maintainer 的手动 takeover；machine path 不受本节约束。
+
 ## 步骤负责人分界
 
 | 步骤 | 谁负责 | 进入条件 | 退出条件 |
@@ -246,6 +293,8 @@ driver = `.claude/skills/fixed-flow-driver/SKILL.md`（Codex 端在 `.codex/skil
 - `docs/HOW-TO-CLAIM-ISSUE.md` — claim 前必须看到两个 label；`ready-for-human` + AI-triage retroactive ban；epic carve-out 引用。
 - `docs/TRIAGE-AND-SPLIT.md` — grill 完发现 issue 太大时的 triage 入口（人手 maintainer 判断瞬间）。
 - 本文 §Human-ready issues — never auto-close — codify by issue #338；规定带 `ready-for-human` label 的 issue 只能由真人手动 close、所有 agent / bot 禁止 `gh issue close`、`grill-ready` 互斥关系、refusal-layer whitelist 要求。
+- `docs/plans/2026-05-12-issue-349/` — 接手别人 grill-ready issue 时的 pre-comment + `grill-working` label 契约由 issue #349 引入（本文件 §Taking over someone else's grill-ready issue — pre-comment + label contract）。
+- `docs/PRE-IMPLEMENT-CLAIM.md` — `grill-working` label 双语义（driver mutex + human takeover）、takeover 门禁（24h ghost-timer / explicit ack）、回滚、冲突解决的 canonical doc；由 #349 backfill。
 
 ## 验证（语义 probe，不写 canned-answer block）
 

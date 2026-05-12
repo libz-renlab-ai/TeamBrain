@@ -66,4 +66,62 @@ describe("session-start update helpers", () => {
     maybeShowPendingBanner((s) => { captured += s; });
     expect(captured).toBe("");
   });
+
+  // Post-merge PR-creator force-update feature.
+  it("maybeShowPendingBanner uses 🎯 PR-creator template when pr_creator=true + pr_number set", () => {
+    const state = {
+      ...defaultUpdateState(),
+      pending_banner: {
+        from: "0.11.5",
+        to: "0.11.6",
+        at: 1,
+        shown: false,
+        pr_creator: true,
+        pr_number: 348,
+      },
+    };
+    writeUpdateState(state);
+    let captured = "";
+    maybeShowPendingBanner((s) => { captured += s; });
+    expect(captured).toContain("🎯");
+    expect(captured).toContain("PR #348");
+    expect(captured).toContain("merge");
+    expect(captured).toContain("强制刷新");
+    expect(captured).not.toContain("✨");
+    // Mark-shown semantic still works.
+    expect(readUpdateState().pending_banner?.shown).toBe(true);
+  });
+
+  it("maybeShowPendingBanner falls back to PR-creator template without PR# when pr_number missing", () => {
+    const state = {
+      ...defaultUpdateState(),
+      pending_banner: {
+        from: "0.11.5",
+        to: "0.11.6",
+        at: 1,
+        shown: false,
+        pr_creator: true,
+        // pr_number absent — partial data path
+      },
+    };
+    writeUpdateState(state);
+    let captured = "";
+    maybeShowPendingBanner((s) => { captured += s; });
+    expect(captured).toContain("🎯");
+    expect(captured).not.toContain("PR #");
+    expect(captured).toContain("merge");
+  });
+
+  it("maybeShowPendingBanner uses legacy ✨ template when pr_creator absent (back-compat)", () => {
+    const state = {
+      ...defaultUpdateState(),
+      pending_banner: { from: "0.11.5", to: "0.11.6", at: 1, shown: false },
+    };
+    writeUpdateState(state);
+    let captured = "";
+    maybeShowPendingBanner((s) => { captured += s; });
+    expect(captured).toContain("✨");
+    expect(captured).not.toContain("🎯");
+    expect(captured).not.toContain("PR #");
+  });
 });

@@ -1,0 +1,19 @@
+bug
+codex
+docs-grill-ready
+documentation
+duplicate
+enhancement
+epic
+good first issue
+grill-ready
+grill-working
+grilling
+help wanted
+invalid
+needs-info
+needs-triage
+question
+ready-for-agent
+ready-for-human
+wontfix

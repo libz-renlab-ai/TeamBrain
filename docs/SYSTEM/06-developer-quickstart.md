@@ -121,6 +121,13 @@ pnpm teamagent dashboard --watch --port=0 --interval=5s  # 使用随机空闲端
 pnpm teamagent dashboard --once                          # 只生成一次，不启动服务
 ```
 
+> **Pop-open HTML 规则**（详见 [`docs/POP-OPEN-HTML.md`](../POP-OPEN-HTML.md)）：
+> 项目里任何「pop open HTML」入口必须 (1) 用 Google Chrome 打开，
+> (2) artifact 写到 `/tmp/...`、不写进 repo，
+> (3) 生成后立刻 pop open（不留 `--open` opt-in flag）。当前
+> `pnpm teamagent dashboard` 仍写 `docs/dashboard.html` 并用平台默认
+> 浏览器，是待整改的存量入口；新增 HTML 入口从 day-1 必须满足三条规则。
+
 ### 如何添加新的 CLI 命令
 
 1. 在 `packages/cli/src/commands/` 下新建文件，如 `my-command.ts`，导出 `executeMyCommand()` 函数

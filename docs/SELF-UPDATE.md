@@ -218,3 +218,18 @@ message instead of the generic `fetch failed (network/rate-limit)`:
 - `server` → 5xx, GitHub-side issue.
 - `network` → connection refused / timeout / DNS.
 - `parse` → upstream returned malformed JSON.
+
+## PR-creator force-update (identity-aware layer)
+
+A separate, sibling layer on top of this polling channel makes sure a PR
+**creator's own machine** notices their merge with a distinct banner on
+next SessionStart, instead of treating it as just another anonymous update.
+
+See [features/pr-creator-force-update.md](features/pr-creator-force-update.md)
+for the full description: trigger, force-vs-not semantics, opt-out via the
+existing `auto-update.disabled` kill-switch, and privacy guarantees (only
+the public GitHub login is ever published).
+
+`latest.json` schema bump (three new OPTIONAL fields: `pr_number`,
+`pr_creator_login`, `merged_at`) documented in
+[features/auto-update-channel.md](features/auto-update-channel.md).

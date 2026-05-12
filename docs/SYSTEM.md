@@ -46,6 +46,13 @@ Technical entry point for TeamAgent architecture, runtime flow, hooks, storage, 
   rereads the real project/global knowledge DBs plus `~/.teamagent/events.db`
   every 2 seconds, and auto-refreshes the browser. Use
   `pnpm teamagent dashboard --once` for a one-shot static HTML refresh.
+- Pop-open HTML contract (per [`docs/POP-OPEN-HTML.md`](POP-OPEN-HTML.md)):
+  every pop-open HTML entry must (1) open in Google Chrome,
+  (2) write the artifact to `/tmp/...` not into the repo, and
+  (3) pop open immediately (no opt-in `--open` flag). The current
+  `dashboard` command still writes to `docs/dashboard.html` and uses the
+  platform default browser — aligning it is a tracked follow-up; new HTML
+  entries must satisfy the contract from day one.
 
 ## Verification Queries
 

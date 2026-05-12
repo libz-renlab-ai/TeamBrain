@@ -23,6 +23,17 @@ export type FetchLatestSuccess = {
    *  latest.json payload included `sha`. Never present from npm. */
   sha?: string;
   source: "pages" | "npm";
+  /**
+   * Post-merge PR-creator force-update feature. Published in latest.json by
+   * the release-branch.yml workflow after `gh api ... /pulls` lookup of the
+   * just-merged commit. GitHub login of the PR author. Present only when
+   * source="pages" and the workflow successfully resolved a PR for the SHA.
+   */
+  pr_creator_login?: string;
+  /** PR number that landed in this release. Paired with pr_creator_login. */
+  pr_number?: number;
+  /** ISO 8601 merge timestamp of the PR. Advisory only. */
+  merged_at?: string;
 };
 
 export type FetchLatestFailureReason =
@@ -65,7 +76,7 @@ export const DEFAULT_NPM_URL =
 // ── Per-source attempts ───────────────────────────────────────────────────────
 
 type PagesAttempt =
-  | { ok: true; version: string; sha?: string }
+  | { ok: true; version: string; sha?: string; pr_creator_login?: string; pr_number?: number; merged_at?: string }
   | { ok: false; reason: Extract<FetchLatestFailureReason, `pages_${string}`>; message: string };
 
 type NpmAttempt =
@@ -111,9 +122,15 @@ async function attemptPages(
       message: `Pages unexpected status ${res.statusCode}`,
     };
   }
-  let payload: { version?: unknown; sha?: unknown };
+  let payload: {
+    version?: unknown;
+    sha?: unknown;
+    pr_creator_login?: unknown;
+    pr_number?: unknown;
+    merged_at?: unknown;
+  };
   try {
-    payload = JSON.parse(res.body) as { version?: unknown; sha?: unknown };
+    payload = JSON.parse(res.body) as typeof payload;
   } catch {
     return {
       ok: false,
@@ -131,7 +148,19 @@ async function attemptPages(
   const sha = typeof payload.sha === "string" && payload.sha.length > 0
     ? payload.sha
     : undefined;
-  return { ok: true, version: payload.version, sha };
+  const pr_creator_login =
+    typeof payload.pr_creator_login === "string" && payload.pr_creator_login.length > 0
+      ? payload.pr_creator_login
+      : undefined;
+  const pr_number =
+    typeof payload.pr_number === "number" && Number.isFinite(payload.pr_number)
+      ? payload.pr_number
+      : undefined;
+  const merged_at =
+    typeof payload.merged_at === "string" && payload.merged_at.length > 0
+      ? payload.merged_at
+      : undefined;
+  return { ok: true, version: payload.version, sha, pr_creator_login, pr_number, merged_at };
 }
 
 async function attemptNpm(
@@ -210,6 +239,9 @@ export async function fetchLatestVersion(
       version: pages.version,
       sha: pages.sha,
       source: "pages",
+      pr_creator_login: pages.pr_creator_login,
+      pr_number: pages.pr_number,
+      merged_at: pages.merged_at,
     };
   }
 

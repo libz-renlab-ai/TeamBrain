@@ -69,6 +69,11 @@ import {
   renderInitResult,
 } from "./commands/init.js";
 import {
+  executeRequiredCheck,
+  parseRequiredCheckArgs,
+  renderRequiredCheckResult,
+} from "./commands/required-check.js";
+import {
   disable,
   enable,
   uninstall,
@@ -523,6 +528,31 @@ async function main(): Promise<void> {
     case "review": {
       const opts = parseReviewArgs(rest);
       process.stdout.write(executeReview(opts));
+      return;
+    }
+    case "required-check": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage: teamagent required-check [--project <dir>] [--json]\n" +
+          "\n" +
+          "Validates this repository's TeamAgent required-mode contract:\n" +
+          "  - reads `.teamagent/required.json` (written by `teamagent init .`)\n" +
+          "  - confirms its schema and mode are `teamagent.required.v1` / `required`\n" +
+          "\n" +
+          "Exit code:\n" +
+          "  0 — OK; the project is configured for required mode.\n" +
+          "  2 — `.teamagent/required.json` missing or malformed.\n" +
+          "  3 — schema or mode unsupported.\n" +
+          "\n" +
+          "Hook-safe (no DB access, no network, no writes). Designed to be\n" +
+          "invoked from `.claude/hooks/check-teamagent.sh` before Claude tool use.\n",
+        );
+        return;
+      }
+      const opts = parseRequiredCheckArgs(rest);
+      const r = executeRequiredCheck(opts);
+      process.stdout.write(renderRequiredCheckResult(r, opts.json ?? false) + "\n");
+      if (r.exitCode !== 0) process.exit(r.exitCode);
       return;
     }
     case "init": {

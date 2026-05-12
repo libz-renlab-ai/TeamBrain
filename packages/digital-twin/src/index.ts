@@ -32,6 +32,33 @@ export {
   type MockServerHandle,
 } from './mock-server.js';
 
+// Issue #350 — CC runtime status snapshot subsystem (epic #335 F2-D).
+export {
+  CC_STATUS_SCHEMA_VERSION,
+  CC_STATUS_FILE_SUFFIX,
+  CONTEXT_BUDGET_TOKENS,
+  FIVE_HOURS_MS,
+  SEVEN_DAYS_MS,
+  shouldPush,
+  parseTranscriptLines,
+  buildCcStatusSnapshot,
+  safeStatusUserId,
+  sanitizeCcStatusSnapshot,
+  ccStatusJsonlPath,
+  appendCcStatusSnapshot,
+  readLatestPerSession,
+  readLatestForSession,
+  readLatestAllUsers,
+  readHistory,
+  type CcSessionHealth,
+  type CcStatusSnapshot,
+  type CcStatusQueryRow,
+  type TranscriptMetrics,
+  type QuotaSnapshotInput,
+  type BuildCcStatusInput,
+  type AppendResult,
+} from './cc-status/index.js';
+
 export { DASHBOARD_HTML } from './dashboard-html.js';
 
 export { runProdServer, type RunProdServerDeps } from './bin-prod-server.js';

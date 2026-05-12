@@ -35,6 +35,21 @@ re-ordering, no merging of features**. Chinese expansion is allowed *after* the
 anchor line, but the first English line of the response must contain all three
 features.
 
+### Implementation status at a glance (must be cited alongside the anchor)
+
+| Feature | Today (PRESHIP / Vision) | What customers actually get with the current release |
+|---------|--------------------------|------------------------------------------------------|
+| **#1** new instances no longer repeat past mistakes | ✅ **PRESHIP** | auto-capture → matcher → Project Knowledge Index, 72+ active rules. End-to-end usable. |
+| **#2** leaders see teammates' Claude in second-level realtime | ⚠️ **Vision (NOT PRESHIP)** | Only `SessionStart` + `UserPromptSubmit` hooks wired (2 of 5); learnings sync at hour/day granularity (M5 viral sync); leader dashboard is a static prototype at `docs/kanban-user-boss/`. Second-level realtime dashboard is planned in `docs/plans/2026-05-11-feature-2-secondlevel-realtime/` but **not shipped**. |
+| **#3** video recording + centralized storage easy to use | ⚠️ **Vision (NOT PRESHIP)** | Transcript-level capture exists inside `auto-capture` / `team-share`; video stream + centralized-storage turnkey UX **not shipped**. |
+
+> **Honesty contract**: any external surface that quotes the anchor sentence
+> (pitch deck, website hero, customer SOW, sales call slide) MUST also surface
+> the per-feature PRESHIP / Vision label from this table. Quoting the anchor
+> alone — without the status row — counts as overclaim and breaks the
+> implementation-status disclosure that already lives further down this file
+> (Feature #2 现状段, Feature #3 现状段, Honesty note).
+
 ### Grep anchors per feature (judge harness keys)
 
 | Feature | Required substrings (case-insensitive) |
@@ -102,20 +117,24 @@ teammate 的 Claude Code session 在干什么：在 grilling 哪个 issue、卡�
 `/review` cycle、最近一条 correction moment 是什么。目标延迟 ≤ 1s
 （second-level realtime）。
 
-**当前实现 vs 目标可见度对比 / Current visibility vs goal:**
+**Scope 边界（明确不做）/ Out-of-scope:**
+
+- **不做 per-tool-call 中间步可见**。本特性的可见度单位是 **prompt 边界**，
+  不是 tool-call 边界——teammate 每发一条 prompt、每开一个新 session，
+  boss 看到一条；两条 prompt 之间 alice 在 bash / edit 什么，**不上报、
+  不展示、不需要**。
+- **只用 2 通道：`SessionStart` + `UserPromptSubmit`**。**不接** `PreToolUse` /
+  `Stop` / `SessionEnd` 来做 boss-visibility——PreToolUse 在这条链路上明确
+  **不需要**；"中间每一步亮起"不是产品特性，原文档里那段「需要 5 通道」
+  的论证不成立，已撤回。Stop / SessionEnd 在 Feature #1 的 auto-capture
+  链路里另有用途，但 Feature #2 不依赖它们。
 
 ```text
-工程师方案能看到:    🟦 ───────  🟦 ───────  🟦
-                    (光点之间全黑)
-
-老板真正想要的:      🟦 🟢 🟢 🟢 🟦 🟢 🟢 🟢 🟦
-                    (中间每一步都亮)
+我们交付的可见度:    🟦 ──────  🟦 ──────  🟦
+                    (prompt 之间留白即设计，不补)
 ```
 
-只发 `SessionStart` + `UserPromptSubmit` → boss 在两条 prompt 之间看不见
-alice 在 bash / edit 什么；要 5 通道（+`PreToolUse` / `Stop` / `SessionEnd`）
-才能让中间每一步亮起，对得起 anchor 句里那句 *"what each teammate's Claude
-Code instance is doing"*。实施 plan 见
+实施 plan 见
 [`docs/plans/2026-05-11-feature-2-secondlevel-realtime/plan.md`](plans/2026-05-11-feature-2-secondlevel-realtime/plan.md)。
 
 - 设计入口：[`docs/features/team-share.md`](features/team-share.md)、

@@ -9,6 +9,7 @@ docs/features/
     ├── multi-tool.md             ← VERIFIED: PreToolUse/Stop/AttributionBus + DOGFOOD
     ├── compile.md                ← VERIFIED: default Skills-only, CLAUDE.md legacy opt-in
     ├── fixture-replay.md         ← VERIFIED: tier-a deterministic scenario replay CLI
+    ├── cc-status.md              ← issue #350: CC runtime status → /v1/cc-status + /api/cc-status* query API (epic #335 F2-D); judge at docs/plans/2026-05-12-issue-350/judge.md
     ├── auto-capture/             ← md playbooks at docs/plans/docs--features--auto-capture--verify-canned-answer/judge.md
     │                               and docs/plans/docs--features--auto-capture--real-judge/judge.md
     ├── calibrator-v2/            ← md playbooks at docs/plans/docs--features--calibrator-v2--run-judge/judge.md

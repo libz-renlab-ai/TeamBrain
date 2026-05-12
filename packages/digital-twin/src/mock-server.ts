@@ -19,6 +19,20 @@ import {
 import { randomUUID } from 'node:crypto';
 import { join, resolve as resolvePath, sep } from 'node:path';
 import { DASHBOARD_HTML } from './dashboard-html.js';
+import { safeUserId, dateStamp } from './cc-status/path-safety.js';
+import {
+  appendCcStatusSnapshot,
+  readLatestPerSession,
+  readLatestForSession,
+  readLatestAllUsers,
+  readHistory,
+} from './cc-status/store.js';
+
+// Re-exported here for backwards compat — `safeUserId` / `dateStamp` were
+// originally defined in this module before `cc-status/path-safety.ts` split
+// them out (issue #350 /review iter 1) so both this and `store.ts` could
+// share them without a circular import.
+export { safeUserId, dateStamp };
 
 /** Cap raw POST body to bound memory + reject obvious DoS payloads. */
 export const MAX_BODY_BYTES = 32 * 1024 * 1024;
@@ -45,6 +59,8 @@ export interface MockServerHandle {
 
 const ROUTE_CC_SESSIONS = '/v1/cc-sessions';
 const ROUTE_RECORDINGS = '/v1/recordings';
+/** Issue #350 — lightweight CC runtime status snapshot ingress (plain JSON, not gzipped). */
+const ROUTE_CC_STATUS = '/v1/cc-status';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[A-Za-z0-9._-]+$/;
@@ -57,26 +73,6 @@ function send(res: ServerResponse, status: number, body?: unknown): void {
   } else {
     res.end();
   }
-}
-
-export function safeUserId(raw: unknown): string {
-  if (typeof raw !== 'string' || raw.length === 0) return 'unknown';
-  let cleaned = raw.replace(/[^a-zA-Z0-9._@+-]/g, '_').slice(0, 80);
-  cleaned = cleaned.replace(/\.{2,}/g, '_');
-  cleaned = cleaned.replace(/^[._-]+/, '').replace(/[._-]+$/, '');
-  return cleaned.length > 0 ? cleaned : 'unknown';
-}
-
-export function dateStamp(raw: unknown, now: Date): string {
-  let d = now;
-  if (typeof raw === 'string' && raw.length > 0) {
-    const parsed = new Date(raw);
-    if (!Number.isNaN(parsed.getTime())) d = parsed;
-  }
-  const yyyy = d.getUTCFullYear().toString().padStart(4, '0');
-  const mm = (d.getUTCMonth() + 1).toString().padStart(2, '0');
-  const dd = d.getUTCDate().toString().padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 /**
@@ -232,10 +228,44 @@ function parseQuery(url: string): URLSearchParams {
   return new URLSearchParams(idx >= 0 ? url.slice(idx + 1) : '');
 }
 
+/**
+ * Below this value an all-digits `since` param is read as epoch *seconds*; at
+ * or above it, epoch *milliseconds*. 1e12 ms ≈ 2001-09; 1e12 s ≈ year 33658 —
+ * so the heuristic is unambiguous for any realistic timestamp.
+ */
+const EPOCH_MS_THRESHOLD = 1e12;
+/** Largest millisecond value `new Date(...)` accepts (±100,000,000 days). */
+const MAX_DATE_MS = 8.64e15;
+
+/**
+ * Issue #350 — parse the `since` query param for `/api/cc-status/history`.
+ * Accepts ISO-8601, epoch milliseconds, or epoch seconds; missing/garbage
+ * falls back to "24h ago" so a bare `?user=&session=` still returns something
+ * bounded rather than the whole history. The result is always clamped to
+ * `[0, MAX_DATE_MS]` — without that, `?since=99999999999999999` would flow into
+ * `new Date(sinceMs).toISOString()` below, throw a `RangeError` inside the
+ * request handler, and crash the (unauthenticated) collector process.
+ */
+function parseSinceMs(raw: string | null | undefined, nowMs: number): number {
+  let ms = nowMs - 24 * 60 * 60 * 1000;
+  if (typeof raw === 'string' && raw.length > 0) {
+    if (/^\d+$/.test(raw)) {
+      const n = Number(raw);
+      if (Number.isFinite(n)) ms = n < EPOCH_MS_THRESHOLD ? n * 1000 : n;
+    } else {
+      const parsed = Date.parse(raw);
+      if (Number.isFinite(parsed)) ms = parsed;
+    }
+  }
+  if (!Number.isFinite(ms)) return 0;
+  return Math.min(Math.max(0, ms), MAX_DATE_MS);
+}
+
 function handleGet(
   req: IncomingMessage,
   res: ServerResponse,
   outputDir: string,
+  now: () => Date,
 ): void {
   const url = req.url ?? '';
   const path = url.split('?')[0];
@@ -248,6 +278,58 @@ function handleGet(
   }
 
   const q = parseQuery(url);
+
+  // ── Issue #350 — CC runtime status query API. Unauthenticated, like the
+  //    other /api/* endpoints (the issue body flags LAN-readability as a known
+  //    exposure; adding auth to /api/* is a separate issue). ──────────────────
+  if (path === '/api/cc-status/all') {
+    send(res, 200, { sessions: readLatestAllUsers(outputDir, now()) });
+    return;
+  }
+  if (path === '/api/cc-status/history') {
+    const user = validateUserParam(q.get('user') ?? undefined);
+    const session = validateIdParam(q.get('session') ?? undefined);
+    if (!user) {
+      send(res, 400, { error: 'invalid user' });
+      return;
+    }
+    if (!session) {
+      send(res, 400, { error: 'invalid session' });
+      return;
+    }
+    const sinceMs = parseSinceMs(q.get('since'), now().getTime());
+    send(res, 200, {
+      user_id: user,
+      session_id: session,
+      since: new Date(sinceMs).toISOString(),
+      history: readHistory(outputDir, user, session, sinceMs, now()),
+    });
+    return;
+  }
+  if (path === '/api/cc-status') {
+    const user = validateUserParam(q.get('user') ?? undefined);
+    if (!user) {
+      send(res, 400, { error: 'invalid user' });
+      return;
+    }
+    const sessionRaw = q.get('session');
+    if (sessionRaw !== null) {
+      const session = validateIdParam(sessionRaw);
+      if (!session) {
+        send(res, 400, { error: 'invalid session' });
+        return;
+      }
+      const row = readLatestForSession(outputDir, user, session, now());
+      if (!row) {
+        send(res, 404, { error: 'not found' });
+        return;
+      }
+      send(res, 200, row);
+      return;
+    }
+    send(res, 200, { sessions: readLatestPerSession(outputDir, user, now()) });
+    return;
+  }
 
   if (path === '/api/users') {
     const users = listDirNames(outputDir).sort((a, b) => a.localeCompare(b));
@@ -389,15 +471,19 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
 
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     if (req.method === 'GET') {
-      handleGet(req, res, outputDir);
+      handleGet(req, res, outputDir, now);
       return;
     }
     if (req.method !== 'POST') {
       send(res, 405);
       return;
     }
-    const route = req.url ?? '';
-    if (route !== ROUTE_CC_SESSIONS && route !== ROUTE_RECORDINGS) {
+    const route = (req.url ?? '').split('?')[0] ?? '';
+    if (
+      route !== ROUTE_CC_SESSIONS &&
+      route !== ROUTE_RECORDINGS &&
+      route !== ROUTE_CC_STATUS
+    ) {
       send(res, 404);
       return;
     }
@@ -427,6 +513,31 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
         send(res, 400, {
           error: 'invalid json',
           detail: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+
+      // Issue #350 — CC status snapshot: plain JSON body, no gzip, no envelope.
+      // sanitizeCcStatusSnapshot does the allowlist + type checks; a malformed
+      // body 400s (unlike the optional quota sidecar on /v1/cc-sessions, the
+      // snapshot IS the payload here).
+      if (route === ROUTE_CC_STATUS) {
+        const r = appendCcStatusSnapshot(outputDir, json, now());
+        if (!r.ok) {
+          if (r.reason === 'path') {
+            send(res, 400, { error: 'invalid path' });
+          } else if (r.reason === 'io') {
+            send(res, 500, { error: 'write failed' });
+          } else {
+            send(res, 400, { error: 'invalid cc-status snapshot' });
+          }
+          return;
+        }
+        send(res, 200, {
+          ok: true,
+          user_id: r.user_id,
+          date: r.date,
+          session_id: r.session_id,
         });
         return;
       }
