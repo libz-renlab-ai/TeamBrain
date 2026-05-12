@@ -4,6 +4,16 @@ Owner: TBD (主 agent + maintainer)
 Created: 2026-05-11
 Status: **DRAFT — gated on Q2–Q7 grill resolution before code lands**
 
+> **2026-05-12 retraction（产品决策）**：本 plan 原文以「5 通道
+> （SessionStart + UserPromptSubmit + PreToolUse + Stop + SessionEnd）让中间每一步
+> 亮起」为前提，论据是 `docs/BUSINESS-FEATURES.md` 中那段 "boss 真正想要的：中间
+> 每一步都亮" ASCII。该论据已在 BUSINESS-FEATURES.md 撤回——**per-tool-call 中间
+> 步可见度不是产品特性**，`PreToolUse` 在 boss-visibility 链路上**不需要**。
+> 真正交付的 hook 范围只有 **2 通道：`SessionStart` + `UserPromptSubmit`**。
+> 下文 Task description / Expected outputs / Q1 决策仍按旧版 5 通道写——在
+> 重写本 plan 前，请以本 retraction 与 BUSINESS-FEATURES.md § Feature #2
+> 「Scope 边界」为准。
+
 Forward references:
 - 业务锚点：[`docs/BUSINESS-FEATURES.md`](../../BUSINESS-FEATURES.md) § Feature #2
 - PR 计划骨架：[`docs/HOWTO-PLAN-PR.md`](../../HOWTO-PLAN-PR.md)
