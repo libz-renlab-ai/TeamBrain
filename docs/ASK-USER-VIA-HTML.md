@@ -47,6 +47,7 @@
   - 选项区用 `<label><input type="radio|checkbox">`，禁 `<select>`（屏幕小看不到全部）
   - 末尾一个 free-form `<textarea>` 给 "Other / 备注"
   - 一个 `<button>` 写"复制选择回 agent"（用 `navigator.clipboard.writeText` 把所有选中项序列化成 markdown），但**不依赖**网络请求或表单 submit
+  - **fallback**：某些 Chrome 配置下 `file://` 来源的 Clipboard API 会被禁；HTML 必须同时把序列化好的 markdown 渲染到一个**可选中的 `<pre>` 块**里，按钮失败也能让用户手动 `Ctrl-C` / `Cmd-C` 复制
 - prompt 末尾固定让 haiku 只输出 `SAVED:/tmp/<file>` 一行供 main agent 读路径。
 
 例（main agent 用 `Agent` 工具发的 prompt 骨架，**不**是要 user 跑的脚本）：
@@ -70,9 +71,9 @@ Constraints:
 ## STEP 2 — 路径约定
 
 - macOS / Linux：`/tmp/ask-<slug>-<unix-ts>.html`
-  - `<slug>` 用 kebab-case，≤30 字符，描述话题（`ask-auth-strategy-1715520000.html`）
+  - `<slug>` 用 kebab-case，正则强约束为 `^[a-z0-9-]{1,30}$`（不允许空格、shell 元字符、引号、`..` 等）——这是 defense-in-depth：哪怕调用方失误把用户输入拼进 `open -a` 的 argv，也不会被 shell 当成额外参数解析。
   - `<unix-ts>` 用 `date +%s` 防同名覆盖
-- Windows：`%TEMP%\ask-<slug>-<unix-ts>.html`
+- Windows：`%TEMP%\ask-<slug>-<unix-ts>.html`（注意 Windows 上 STEP 3 命令的 path 也必须是 `%TEMP%\...` 形式或 `file:///C:/...` URL，不要把 `/tmp/...` 直接喂给 `start chrome`）
 - 文件留在 `/tmp/`，session 结束不主动删；macOS 自带 `/tmp` cleanup 周期 (`/etc/periodic/daily/110.clean-tmps`)，3 天后自动回收。
 
 ## STEP 3 — 打开浏览器
