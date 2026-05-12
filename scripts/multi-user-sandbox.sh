@@ -92,9 +92,11 @@ cmd_init() {
   require_setup
   local user_root="$SANDBOX_USERS/$name"
   [[ -d "$user_root" ]] || { echo "error: user '$name' not added yet — run 'add $name' first." >&2; exit 2; }
-  HOME="$user_root/home" \
-  PATH="$SANDBOX_NPM/bin:$PATH" \
-    bash -c "cd '$user_root/project' && '$TEAMAGENT_BIN' init --target=both"
+  (
+    cd "$user_root/project"
+    HOME="$user_root/home" PATH="$SANDBOX_NPM/bin:$PATH" \
+      exec "$TEAMAGENT_BIN" init --target=both
+  )
 }
 
 cmd_as() {
@@ -104,9 +106,11 @@ cmd_as() {
   require_setup
   local user_root="$SANDBOX_USERS/$name"
   [[ -d "$user_root" ]] || { echo "error: user '$name' not added yet — run 'add $name' first." >&2; exit 2; }
-  HOME="$user_root/home" \
-  PATH="$SANDBOX_NPM/bin:$PATH" \
-    bash -c "cd '$user_root/project' && '$TEAMAGENT_BIN' \"\$@\"" _ "$@"
+  (
+    cd "$user_root/project"
+    HOME="$user_root/home" PATH="$SANDBOX_NPM/bin:$PATH" \
+      exec "$TEAMAGENT_BIN" "$@"
+  )
 }
 
 cmd_list() {
