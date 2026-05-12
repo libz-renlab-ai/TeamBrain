@@ -65,7 +65,7 @@ turn_id           : string  (turn-scoped events only)
 - `continue: false` — marks hook run as stopped
 - `stopReason` — recorded as stop reason
 - `systemMessage` — surfaced as UI warning
-- `suppressOutput` — **parsed but not implemented** (S1 verbatim)
+- `suppressOutput` — **parsed today but not yet implemented** (S1 verbatim)
 
 ### Output schema — event-specific (verbatim shapes)
 

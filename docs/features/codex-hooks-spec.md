@@ -75,7 +75,7 @@ Notes:
 - The inner `[[hooks.PreToolUse.hooks]]` table-of-arrays carries each **handler** (you can register multiple handlers per matcher).
 - Handler fields: `type` (only `command` documented in S1; `prompt` and `agent` are `unknown`), `command`, `timeout` (default 600s per S1 — *"If `timeout` is omitted, Codex uses `600` seconds."*), `statusMessage` (UI label).
 
-## 3. Canonical hooks.json example — verbatim from S6 reproducer
+## 3. Canonical hooks.json example — from S6 reproducer
 
 ```json
 {
@@ -140,7 +140,8 @@ Per #289 acceptance criterion #2 — *"Each `supported` event documents stdin sh
 | `cwd` | string | `cwd` | shared |
 | `hook_event_name` | string | `hook_event_name` | shared (literal event name as table key) |
 | `model` | string | **n/a** | Codex-only — active model slug carried into every payload |
-| `turn_id` | string | **n/a** | Codex-only — present on all turn-scoped events |
+
+Turn-scoped events (`PreToolUse`, `PermissionRequest`, `PostToolUse`, `UserPromptSubmit`, `Stop`) additionally carry a Codex-only `turn_id: string` field discriminating the turn. `SessionStart` is session-scoped and does NOT carry `turn_id` — the §5.2–§5.7 subsections below restate `turn_id` only on the events that actually carry it, matching S1.
 
 Claude SDK additionally puts `permission_mode` on every payload; Codex does not (Codex models permissions through `PermissionRequest` event).
 
@@ -216,7 +217,7 @@ Claude analog (`hooks-status.md` §5): Stop fires three concurrent handlers in T
 }
 ```
 
-Per S1: `suppressOutput` is **parsed but not implemented**. Treat as a no-op when wiring TeamBrain compatibility shims.
+Per S1: `suppressOutput` is **parsed today but not yet implemented** (verbatim from the Codex hooks docs page). Treat as a no-op when wiring TeamBrain compatibility shims.
 
 ### 6.2 Per-event extra fields
 
@@ -224,7 +225,7 @@ Per S1: `suppressOutput` is **parsed but not implemented**. Treat as a no-op whe
 |-------|--------------------|--------------------------------------------------------|
 | `SessionStart` | `hookSpecificOutput.additionalContext` (string injected as developer message) | same field name in Claude SessionStart output |
 | `UserPromptSubmit` | `hookSpecificOutput.additionalContext` | same |
-| `PreToolUse` | `hookSpecificOutput.permissionDecision` (`"deny"`) + `permissionDecisionReason`; OR legacy `{decision: "block", reason}` | same shape; Claude additionally supports `updatedInput` to mutate the tool call before it fires — Codex docs do **not** list `updatedInput` (treat as `unknown`) |
+| `PreToolUse` | `hookSpecificOutput.permissionDecision` (`"deny"`) + `permissionDecisionReason`; OR legacy `{decision: "block", reason}` | same shape; Claude additionally supports `updatedInput` to mutate the tool call before it fires — Codex docs do **not** list `updatedInput` (treat as `absent`; do not register an adapter shim that emits it) |
 | `PermissionRequest` | `hookSpecificOutput.decision` = `{behavior: "allow"}` or `{behavior: "deny", message}` | n/a — Codex-only event |
 | `PostToolUse` | `decision: "block"` + `reason` + `hookSpecificOutput.additionalContext` | same |
 | `Stop` | `decision: "block"` + `reason` (continuation prompt text) | Claude Stop output uses `decision: "block"` similarly; TeamBrain's three-handler chain (`hooks-status.md` §5) effectively never blocks but enforces the 12-field self-report block |

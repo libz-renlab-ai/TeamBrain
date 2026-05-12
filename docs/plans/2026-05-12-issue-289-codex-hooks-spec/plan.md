@@ -49,7 +49,7 @@ This is a **pure research + documentation** task. Zero TypeScript / no installer
 
 | # | Path | Kind | Acceptance |
 |---|------|------|------------|
-| 1 | `docs/features/codex-hooks-spec.md` | NEW file | Lists each of the 8 Claude events + Codex's PermissionRequest = 9 rows; each row has `supported \| absent \| unknown` verdict for Codex; each `supported` row documents stdin shape vs Claude. ASCII art header. ≥1 verbatim TOML snippet from S4 + ≥1 verbatim hooks.json snippet from S6. Cites all 6 research URLs. |
+| 1 | `docs/features/codex-hooks-spec.md` | NEW file | Lists 10 events = 8 Claude events from `hooks-status.md` (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `PreCompact`, `SessionEnd`, `SubagentStop`/`Notification` split into two rows) + Codex's `PermissionRequest`. Each row has `supported \| absent \| unknown` verdict for Codex; each `supported` row documents stdin shape vs Claude. ASCII art header. ≥1 verbatim TOML snippet from S4 + ≥1 from-S6 hooks.json snippet. Cites all 6 research URLs. |
 | 2 | `docs/features/hooks-status.md` | UPDATE (append section) | A new "## Codex hook parity (research draft, issue #289)" section appended to the existing file, with a parity table whose schema mirrors the existing "Channel-by-channel" structure. Marked DRAFT. Links back to `docs/features/codex-hooks-spec.md`. Does NOT touch any existing Claude content. |
 | 3 | `docs/plans/2026-05-12-issue-289-codex-hooks-spec/research.md` | NEW file | Already committed (raw evidence). |
 | 4 | `docs/plans/2026-05-12-issue-289-codex-hooks-spec/plan.md` | NEW file | This file. |
