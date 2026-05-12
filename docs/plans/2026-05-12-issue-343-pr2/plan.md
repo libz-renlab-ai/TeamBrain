@@ -1,4 +1,13 @@
-# plan.md — issue #343 PR-2: 30-prompt corpus + Counterfactual Ablation
+# plan.md — issue #343 PR-2: 17-task corpus + Counterfactual Ablation
+
+> **Update 5/12 mid-implementation**: Corpus settled at 17 unique tasks
+> (7 existing + 10 new 008-017), not the originally planned 30. Each new
+> task is precisely paired with a seed.sql rule (1:1 mapping rule↔task,
+> so the matcher fires on the wrong_pattern in TB-ON runs). Going from
+> 17 to 30 would require designing 13 more task↔rule pairs, doubling
+> the LOC budget without proportional statistical-power gain (paired
+> t-test at n=17 already has good power for moderate effects).
+> Future ADR can extend the corpus to 30+.
 
 > 走 `docs/HOWTO-PLAN-PR.md` 四段铁律（task / outputs / judge md playbook / claudefast probes）。
 > Research: [`./research.md`](./research.md) — 已锁定既有 `@teamagent/benchmark` 包结构。
