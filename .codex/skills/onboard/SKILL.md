@@ -1,6 +1,12 @@
 ---
 name: onboard
-description: Remote bootstrap of a new colleague's Mac via SSH — installs Homebrew, Node, and `@anthropic-ai/claude-code`, then completes interactive `claude login` over a tmux session whose OAuth URL the human relays to the colleague. Manually invoked via /onboard only (frontmatter pins `disable-model-invocation: true`), so it never auto-triggers from chat. Use when a teammate needs Claude Code stood up on their Mac and the operator has Tailscale SSH access plus a sudo password the teammate shared out-of-band.
+description: >-
+  Remote bootstrap of a new colleague's Mac via SSH. Installs Homebrew, Node,
+  and `@anthropic-ai/claude-code`, then completes interactive `claude login`
+  over a tmux session whose OAuth URL the human relays to the colleague.
+  Manually invoked via /onboard only, so it never auto-triggers from chat.
+  Use when a teammate needs Claude Code stood up on their Mac and the operator
+  has Tailscale SSH access plus a sudo password the teammate shared out-of-band.
 disable-model-invocation: true
 ---
 
