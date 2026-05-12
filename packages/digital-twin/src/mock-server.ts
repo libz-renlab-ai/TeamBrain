@@ -19,6 +19,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { join, resolve as resolvePath, sep } from 'node:path';
 import { DASHBOARD_HTML } from './dashboard-html.js';
+import { VIDEOS_DASHBOARD_HTML } from './videos-html.js';
 import { safeUserId, dateStamp } from './cc-status/path-safety.js';
 import {
   appendCcStatusSnapshot,
@@ -308,7 +309,114 @@ function handleGet(
     return;
   }
 
+  // Feature #3 wedge — polished Team Videos dashboard. Separate from the
+  // engineering `/` dashboard on purpose: this is the surface a team leader
+  // (not an SRE) actually clicks into.
+  if (path === '/videos' || path === '/videos.html') {
+    res.statusCode = 200;
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    res.end(VIDEOS_DASHBOARD_HTML);
+    return;
+  }
+
   const q = parseQuery(url);
+
+  // Feature #3 wedge — list every uploaded video across all users/dates so
+  // the /videos dashboard can render a single chronological feed.
+  if (path === '/api/videos') {
+    const videos: Array<{
+      id: string;
+      user_id: string;
+      date: string;
+      container: string;
+      size: number;
+      sha256?: string;
+      label?: string;
+      captured_at?: string;
+      link: string;
+    }> = [];
+    const allowedExts = new Set(['mov', 'mp4', 'webm', 'mkv']);
+    try {
+      for (const userName of listDirNames(outputDir)) {
+        if (safeUserId(userName) !== userName) continue;
+        const userDir = join(outputDir, userName);
+        if (!isUnder(outputDir, userDir)) continue;
+        for (const dateName of listDirNames(userDir)) {
+          if (!DATE_RE.test(dateName)) continue;
+          const dateDir = join(userDir, dateName);
+          if (!isUnder(outputDir, dateDir)) continue;
+          let files: string[];
+          try {
+            files = readdirSync(dateDir);
+          } catch {
+            continue;
+          }
+          for (const fname of files) {
+            const m = /^([A-Za-z0-9._-]+)\.([A-Za-z0-9]+)$/.exec(fname);
+            if (!m) continue;
+            const id = m[1]!;
+            const ext = m[2]!.toLowerCase();
+            if (!allowedExts.has(ext)) continue;
+            if (id.includes('..')) continue;
+            const full = join(dateDir, fname);
+            let size = 0;
+            let mtime = '';
+            try {
+              const st = statSync(full);
+              size = st.size;
+              mtime = st.mtime.toISOString();
+            } catch {
+              continue;
+            }
+            const link =
+              '/api/file?user=' + encodeURIComponent(userName) +
+              '&date=' + encodeURIComponent(dateName) +
+              '&id=' + encodeURIComponent(id) +
+              '&ext=' + encodeURIComponent(ext);
+            // Optional per-upload metadata sidecar: `<id>.meta.json`. Same
+            // user/date dir, written by the collector when an upload carried
+            // a `label` or a sender-supplied SHA. Absent metadata is fine —
+            // the dashboard degrades gracefully to just (id / size / date).
+            let label: string | undefined;
+            let sha256: string | undefined;
+            let capturedAt = mtime;
+            try {
+              const metaPath = join(dateDir, id + '.meta.json');
+              if (isUnder(outputDir, metaPath) && existsSync(metaPath)) {
+                const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
+                if (typeof meta.label === 'string') label = meta.label;
+                if (typeof meta.payload_sha256 === 'string') sha256 = meta.payload_sha256;
+                if (typeof meta.captured_at === 'string') capturedAt = meta.captured_at;
+              }
+            } catch {
+              // best-effort
+            }
+            videos.push({
+              id,
+              user_id: userName,
+              date: dateName,
+              container: ext,
+              size,
+              sha256,
+              label,
+              captured_at: capturedAt,
+              link,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      send(res, 500, {
+        error: 'list failed',
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    // Newest first (by captured_at, then mtime fallback).
+    videos.sort((a, b) => (a.captured_at && b.captured_at ? (a.captured_at < b.captured_at ? 1 : -1) : 0));
+    send(res, 200, { videos });
+    return;
+  }
 
   // ── Issue #350 — CC runtime status query API. Unauthenticated, like the
   //    other /api/* endpoints (the issue body flags LAN-readability as a known
@@ -629,6 +737,29 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
           }
           mkdirSync(targetDir, { recursive: true });
           atomicWriteFileSync(targetFile, buf);
+
+          // Sidecar: persist label / SHA / captured_at so the /videos
+          // dashboard can render upload metadata without rescanning the
+          // file. Optional — absent sidecar = dashboard falls back to
+          // `(id, size, mtime)`. Best-effort write.
+          try {
+            const labelRaw = envelope.label;
+            const shaRaw = envelope.payload_sha256;
+            const capturedRaw = envelope.captured_at;
+            const sidecar: Record<string, unknown> = {};
+            if (typeof labelRaw === 'string' && labelRaw.length > 0) sidecar.label = labelRaw;
+            if (typeof shaRaw === 'string' && shaRaw.length > 0) sidecar.payload_sha256 = shaRaw;
+            if (typeof capturedRaw === 'string' && capturedRaw.length > 0) sidecar.captured_at = capturedRaw;
+            if (Object.keys(sidecar).length > 0) {
+              const metaPath = join(targetDir, `${id}.meta.json`);
+              if (isUnder(outputDir, metaPath)) {
+                atomicWriteFileSync(metaPath, Buffer.from(JSON.stringify(sidecar), 'utf8'));
+              }
+            }
+          } catch {
+            // sidecar failures must never 5xx the upload
+          }
+
           // Build the share-link the CLI will print verbatim. We reuse the
           // existing GET /api/file query handler (which now accepts video
           // extensions) so a recipient who clicks the link gets the bytes
