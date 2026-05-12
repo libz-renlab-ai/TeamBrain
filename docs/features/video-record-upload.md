@@ -110,6 +110,16 @@ changes; the link format is stable.
 
 Source: [`packages/digital-twin/src/mock-server.ts`](../../packages/digital-twin/src/mock-server.ts).
 
+### Size limits
+
+Capped by `MAX_BODY_BYTES = 32 MB` (raw HTTP body, shared with `/v1/cc-sessions`
+and `/v1/recordings`) — effective ceiling ~24 MB of decoded video after base64.
+30-second `screencapture -v` clips at default settings fit easily; longer
+clips should be transcoded with `ffmpeg -crf 28 -preset slow` first or moved
+to the queue path on the Roadmap. The dashboard's `listSessions` regex still
+matches `jsonl`/`ogg` only, so videos round-trip via the returned link but
+don't appear in catch-all listings yet (follow-up listed below).
+
 ## OS-native recording one-liners
 
 The `teamagent` CLI does **not** spawn the recorder. Native tools are
@@ -171,17 +181,15 @@ fabricate a pass.
 
 | Step | Status | Where |
 |------|--------|-------|
-| Single-shot upload + path-link round-trip | **shipped** (this doc) | `packages/cli/src/commands/video.ts` |
+| Single-shot upload + path-link round-trip | **shipped** | `packages/cli/src/commands/video.ts` |
 | OS-native recording one-liners | **doc-level** | this file |
-| Queue/daemon retry + backoff (reuse `daemon/queue.ts` + `uploader.ts`) | **next** | follow-up: extend `LoadedEntryMetadata` union with `video-recording` kind |
-| Per-recipient ACL / signed share links | **future** | spec only; no plan yet |
-| Browser-side recorder (no native tool) | **future** | spec only; no plan yet |
+| Queue/daemon retry + backoff | **next** | extend `LoadedEntryMetadata` with `video-recording` kind |
+| `listSessions` regex covers video extensions (dashboard listing) | **next** | `packages/digital-twin/src/mock-server.ts:197` |
+| Per-recipient ACL / signed share links | **future** | spec only |
+| Browser-side recorder (no native tool) | **future** | spec only |
 
-The "next" item is intentionally scoped to **one** follow-up PR: add a
-`VideoRecordingMetadata` schema, teach `daemon/uploader.ts` to dispatch to
-`/v1/videos`, and let the CLI optionally `--queue` instead of POSTing
-inline. That's enough to upgrade Feature 3 from "shipped wedge" to
-"shipped with retry semantics".
+Each "next" item is one follow-up PR — schemas + dispatch for the queue
+upgrade, regex widening + tests for the dashboard listing.
 
 ## See also
 

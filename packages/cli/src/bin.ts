@@ -1469,7 +1469,7 @@ async function main(): Promise<void> {
           "                                   管理 TeamBrain Digital Twin sidecar 配置（~/.teamagent/digital-twin.json）；inject-mock 走端到端 smoke",
           "  teamagent record <start|stop|import>",
           "                                   本地工作录音子命令（ffmpeg → Opus/OGG → queue/pending/）",
-          "  teamagent video upload <file> [--endpoint <url>] [--label <l>] [--json]",
+          "  teamagent video upload <file> [--endpoint <url>] [--label <l>] [--user-id <id>] [--json]",
           "                                   Feature #3 wedge：上传屏幕录像到中心化存储（mov/mp4/webm/mkv），返回 shareable link",
           "                                   录制本身用系统原生工具（macOS `screencapture -v`/Linux `ffmpeg -f x11grab`/Win `ffmpeg -f gdigrab`）",
           "                                   详见 docs/features/video-record-upload.md",
