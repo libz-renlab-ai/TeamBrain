@@ -1,7 +1,7 @@
 {
   "version": "0.11.0",
-  "sha": "1e23a379cbe5f51af4130823d443104f62b1a898",
-  "releasedAt": "2026-05-12T08:30:30Z",
+  "sha": "861cf6f2e3a0e898ef359de442e4ce370c34aceb",
+  "releasedAt": "2026-05-12T08:36:35Z",
   "tarball": "https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz",
-  "generatedBy": "release-branch.yml@25722894064"
+  "generatedBy": "release-branch.yml@25723193563"
 }
