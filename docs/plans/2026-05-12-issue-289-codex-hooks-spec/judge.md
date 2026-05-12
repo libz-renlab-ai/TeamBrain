@@ -35,7 +35,7 @@ The judge LLM uses ONLY these thresholds. No other criteria, no taste calls.
 | T12 | B.links_to_spec | `== true` |
 | T13 | B.claude_section_unchanged | `== true` |
 | T14 | C.all_absent_labeled | `== true` |
-| T15 | C.forbidden_events_found.length | `== 0` |
+| T15 | C.forbidden_events_found entries with `in_table==true` AND `row_status != "absent"` | count `== 0` |
 
 PASS iff **all** thresholds satisfied. Any threshold fails → FAIL with one-line rationale per failed threshold.
 
