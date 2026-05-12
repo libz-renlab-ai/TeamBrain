@@ -1,0 +1,18 @@
+bug	Something isn't working	#d73a4a
+documentation	Improvements or additions to documentation	#0075ca
+duplicate	This issue or pull request already exists	#cfd3d7
+enhancement	New feature or request	#a2eeef
+good first issue	Good for newcomers	#7057ff
+help wanted	Extra attention is needed	#008672
+invalid	This doesn't seem right	#e4e669
+question	Further information is requested	#d876e3
+wontfix	This will not be worked on	#ffffff
+codex		#ededed
+needs-triage	Maintainer needs to evaluate	#fbca04
+needs-info	Waiting on reporter for more information	#f9d0c4
+ready-for-agent	Fully specified, ready for an AFK agent	#0e8a16
+ready-for-human	Needs human judgment / external access / design decision	#1d76db
+grill-ready	Issue has valid grill comment; FIXEDFLOW driver may pick up	#0e8a16
+epic	Tracking issue split into child issues per docs/TRIAGE-AND-SPLIT.md	#5319e7
+docs-grill-ready	/grill-with-docs has run the docs gate after /grill-via-web; ready for /fixed-flow-driver	#1d76db
+grill-working	Cross-host mutex: driver has claimed this grill-ready issue (PRE-IMPLEMENT-CLAIM.md)	#fbca04
