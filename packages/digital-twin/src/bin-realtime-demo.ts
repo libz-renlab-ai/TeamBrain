@@ -110,6 +110,12 @@ const INLINE_HTML = `<!doctype html>
     const evCountEl = document.getElementById('evCount');
     let firstSeen = null;
     let evCount = 0;
+    // Escape every untrusted cc-status field before splicing into HTML — POST
+    // bodies from teammate hooks can contain any string the producer chose, so
+    // raw interpolation would be a stored-XSS vector against the leader's tab.
+    const esc = (s) => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     const src = new EventSource('/v1/cc-status/stream');
     src.onmessage = (ev) => {
       const t = new Date().toISOString();
@@ -125,12 +131,12 @@ const INLINE_HTML = `<!doctype html>
         const ctxPct = r.context_pct != null ? (Math.round(r.context_pct * 100) + '%') : '—';
         const tokens = r.context_tokens != null ? r.context_tokens.toLocaleString() : '—';
         return \`<div class="\${cls}">
-          <div class="who">\${r.display_name || r.user_id}</div>
-          <div class="session">session: \${r.session_id}</div>
-          <div class="event">\${r.event}</div>
-          <div class="cwd">\${r.cwd || ''} @ \${r.git_branch || ''}</div>
-          <div class="ctx">ctx: \${tokens} (\${ctxPct}) · model: \${r.model || '—'}</div>
-          \${stale ? '<div class="stale-marker">stale ' + r.stale_seconds + 's</div>' : ''}
+          <div class="who">\${esc(r.display_name || r.user_id)}</div>
+          <div class="session">session: \${esc(r.session_id)}</div>
+          <div class="event">\${esc(r.event)}</div>
+          <div class="cwd">\${esc(r.cwd || '')} @ \${esc(r.git_branch || '')}</div>
+          <div class="ctx">ctx: \${esc(tokens)} (\${esc(ctxPct)}) · model: \${esc(r.model || '—')}</div>
+          \${stale ? '<div class="stale-marker">stale ' + esc(r.stale_seconds) + 's</div>' : ''}
         </div>\`;
       });
       grid.innerHTML = rows.join('');
