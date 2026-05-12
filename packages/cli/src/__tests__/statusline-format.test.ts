@@ -74,6 +74,23 @@ function runStatusline(home: string, cwd?: string): { stdout: string; stderr: st
   return { stdout: out.stdout, stderr: out.stderr, status: out.status ?? -1 };
 }
 
+// issue #331: CC pipes a JSON payload to the statusline command's stdin.
+// `runStatuslineWithStdin` runs the cjs with that payload supplied so we can
+// lock the new 模型/上下文/用量/5h/7d/会话 fields without spinning a real CC.
+function runStatuslineWithStdin(
+  home: string,
+  stdin: string,
+  cwd?: string,
+): { stdout: string; stderr: string; status: number } {
+  const out = spawnSync("node", [STATUSLINE], {
+    cwd: cwd ?? home,
+    env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config") },
+    encoding: "utf-8",
+    input: stdin,
+  });
+  return { stdout: out.stdout, stderr: out.stderr, status: out.status ?? -1 };
+}
+
 describe("statusline issue #168 — labelled fields + de-overlap + warning suppression", () => {
   it("uses Chinese labels with 今/周 suffix and pipe-with-space separator", () => {
     const home = mkTmpHome();
@@ -311,6 +328,196 @@ function cleanupFakeWorktree(dirs: { home: string; main: string; worktree: strin
     fs.rmSync(d, { recursive: true, force: true });
   }
 }
+
+// issue #331: expose Claude Code runtime state (模型/上下文/用量/5h/7d/会话健康)
+// when CC pipes its stdin JSON to the statusline command. Empty stdin must
+// remain byte-identical to the legacy 4-field output (existing tests above).
+describe("statusline issue #331 — CC runtime fields when stdin is supplied", () => {
+  function seedDbs(home: string): void {
+    fs.mkdirSync(path.join(home, ".teamagent"), { recursive: true });
+    for (const f of ["global.db", "events.db"] as const) {
+      const db = new DatabaseSync(path.join(home, ".teamagent", f));
+      if (f === "global.db") {
+        db.exec("CREATE TABLE knowledge (status TEXT, type TEXT, created_at TEXT)");
+      } else {
+        db.exec("CREATE TABLE events (kind TEXT, timestamp TEXT)");
+      }
+      db.close();
+    }
+  }
+
+  function writeTranscript(
+    home: string,
+    rows: Array<{ tsOffsetMs: number; input: number; cacheCreate?: number; cacheRead?: number; output: number }>,
+  ): string {
+    const dir = path.join(home, ".claude", "projects", "fake");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "sess.jsonl");
+    const now = Date.now();
+    const lines = rows
+      .map((r) => {
+        const obj = {
+          type: "assistant",
+          timestamp: new Date(now - r.tsOffsetMs).toISOString(),
+          message: {
+            model: "Test",
+            usage: {
+              input_tokens: r.input,
+              cache_creation_input_tokens: r.cacheCreate ?? 0,
+              cache_read_input_tokens: r.cacheRead ?? 0,
+              output_tokens: r.output,
+            },
+          },
+        };
+        return JSON.stringify(obj);
+      })
+      .join("\n");
+    fs.writeFileSync(file, lines, "utf-8");
+    return file;
+  }
+
+  it("appends 模型/上下文/用量/5h/7d/会话 fields when CC stdin supplied", () => {
+    const home = mkTmpHome();
+    try {
+      seedDbs(home);
+      const transcript = writeTranscript(home, [
+        // Most-recent line is the FIRST entry latest-by-timestamp (60s ago)
+        { tsOffsetMs: 60_000, input: 200, cacheCreate: 40_000, cacheRead: 60_000, output: 500 },
+        // Inside the 5h window but not the latest
+        { tsOffsetMs: 2 * 60 * 60 * 1000, input: 100, cacheRead: 900, output: 0 },
+        // Outside 5h but inside 7d
+        { tsOffsetMs: 3 * 24 * 60 * 60 * 1000, input: 50, cacheRead: 450, output: 0 },
+      ]);
+      const payload = JSON.stringify({
+        hook_event_name: "Status",
+        session_id: "sess",
+        transcript_path: transcript,
+        cwd: "/fake",
+        model: { id: "opus-4-7", display_name: "Opus 4.7 (1M)" },
+        cost: { total_cost_usd: 0.42 },
+        exceeds_200k_tokens: false,
+      });
+      const r = runStatuslineWithStdin(home, payload);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("模型:Opus 4.7 (1M)");
+      // 上下文 = latest assistant usage from transcript tail (LAST row order in
+      // file). The latest line in file order has output 0 and small cache_read,
+      // so ctx is the sum of its tokens. We assert presence rather than exact
+      // value so the test stays stable across rounding tweaks.
+      expect(r.stdout).toMatch(/上下文:\d/);
+      expect(r.stdout).toContain("用量:$0.42");
+      // 5h window contains the 60s-ago line (100,700 tokens) + 2h-ago line
+      // (1,000 tokens) = 101,700 → 101.7K. Use a loose regex since formatting
+      // may evolve.
+      expect(r.stdout).toMatch(/5h:\d+(?:\.\d+)?K/);
+      expect(r.stdout).toMatch(/7d:\d+(?:\.\d+)?K/);
+      expect(r.stdout).toContain("会话:OK");
+      // Legacy fields still present in exact form.
+      expect(r.stdout).toContain("TeamAgent | 规则:");
+      expect(r.stdout).toContain("帮过:");
+      expect(r.stdout).toContain("拦过:");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("renders 会话:⚠超长 when exceeds_200k_tokens is true", () => {
+    const home = mkTmpHome();
+    try {
+      seedDbs(home);
+      const transcript = writeTranscript(home, [
+        { tsOffsetMs: 60_000, input: 200_000, output: 0 },
+      ]);
+      const payload = JSON.stringify({
+        transcript_path: transcript,
+        model: { display_name: "Sonnet 4" },
+        exceeds_200k_tokens: true,
+      });
+      const r = runStatuslineWithStdin(home, payload);
+      expect(r.stdout).toContain("会话:⚠超长");
+      expect(r.stdout).not.toContain("会话:OK");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("skips missing CC fields gracefully (partial stdin → only present fields shown)", () => {
+    const home = mkTmpHome();
+    try {
+      seedDbs(home);
+      // Only model.display_name supplied — no transcript, no cost, no exceeds flag.
+      const payload = JSON.stringify({ model: { display_name: "Haiku 4.5" } });
+      const r = runStatuslineWithStdin(home, payload);
+      expect(r.stdout).toContain("模型:Haiku 4.5");
+      expect(r.stdout).not.toContain("上下文:");
+      expect(r.stdout).not.toContain("用量:");
+      expect(r.stdout).not.toContain("5h:");
+      expect(r.stdout).not.toContain("7d:");
+      // exceeds_200k_tokens absent → 会话 field skipped entirely (not OK, not 超长).
+      expect(r.stdout).not.toContain("会话:");
+      // Legacy fields still rendered.
+      expect(r.stdout).toContain("TeamAgent | 规则:0 | 帮过:0今/0周 | 拦过:0今");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("treats invalid JSON stdin like empty stdin (legacy 4-field output)", () => {
+    const home = mkTmpHome();
+    try {
+      seedDbs(home);
+      const r = runStatuslineWithStdin(home, "not-valid-json");
+      expect(r.status).toBe(0);
+      // Legacy bytes only — none of the new fields should leak through.
+      for (const anchor of ["模型:", "上下文:", "用量:", "5h:", "7d:", "会话:"]) {
+        expect(r.stdout).not.toContain(anchor);
+      }
+      expect(r.stdout).toMatch(/TeamAgent \| 规则:0 \| 帮过:0今\/0周 \| 拦过:0今 \| /);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores cost.total_cost_usd === 0 (no 用量:$0.00 noise)", () => {
+    const home = mkTmpHome();
+    try {
+      seedDbs(home);
+      const payload = JSON.stringify({
+        model: { display_name: "Sonnet 4" },
+        cost: { total_cost_usd: 0 },
+      });
+      const r = runStatuslineWithStdin(home, payload);
+      expect(r.stdout).toContain("模型:Sonnet 4");
+      expect(r.stdout).not.toContain("用量:");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("handles missing transcript file silently (上下文/5h/7d skipped)", () => {
+    const home = mkTmpHome();
+    try {
+      seedDbs(home);
+      const payload = JSON.stringify({
+        model: { display_name: "Opus" },
+        transcript_path: path.join(home, "does-not-exist.jsonl"),
+        cost: { total_cost_usd: 0.05 },
+        exceeds_200k_tokens: false,
+      });
+      const r = runStatuslineWithStdin(home, payload);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("模型:Opus");
+      expect(r.stdout).toContain("用量:$0.05");
+      expect(r.stdout).toContain("会话:OK");
+      // 上下文 / 5h / 7d skipped because transcript_path doesn't exist
+      expect(r.stdout).not.toContain("上下文:");
+      expect(r.stdout).not.toContain("5h:");
+      expect(r.stdout).not.toContain("7d:");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("statusline worktree handling — resolve project DB via main checkout", () => {
   it("reads project DB from the main checkout when cwd is a git worktree", () => {
