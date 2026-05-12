@@ -22,9 +22,18 @@
 
 适用范围：在本仓库（TeamBrain）认领（claim / assign）任意 issue 之后，**实施任何代码改动之前**。本文档放大 `docs/FIXEDFLOW.md` 第 3 步 (`/fixed-flow-driver` 启动后) 的「先摸 issue 再动手」契约，对手动接 issue 的 maintainer 同样适用。
 
+## 前置：两道 label gate 必须同时存在
+
+claim 之前先确认 issue 同时具备**两个 label**，缺任一不要进入下面三步：
+
+- `grill-ready` — issue grill 评论来自 `/grill-via-web`（ChatGPT / Claude.ai），整段贴回 issue comment，末尾以 `--- end grill ---` 结尾。
+- `docs-grill-ready` — 由 `/grill-with-docs`（Claude Code CLI）写回的 docs-grill comment，末尾以 `--- end docs grill ---`；`/grill-with-docs` 自己加这条 label。
+
+缺 `grill-ready` 提醒 reporter 跑 `/grill-via-web`；缺 `docs-grill-ready` 由 maintainer 自己跑 `/grill-with-docs` 把 grill 结果对照代码 + `docs/CONTEXT.md` + `docs/adr/` 后写 docs-grill 评论。具体 gate 语义见 `docs/FIXEDFLOW.md` §Dispatch policy 与 `docs/specs/2026-05-11-fixedflow-sessionstart-banner.zh.md`。
+
 ## TL;DR
 
-claim 完 issue 之后的第一动作是：
+两道 label gate 都满足之后，claim 完 issue 的第一动作是：
 
 > **use an explore agent to understand what is going on in the issue, explore the comments and related PRs and issues**.
 
@@ -33,7 +42,7 @@ claim 完 issue 之后的第一动作是：
 - 跳进代码改文件；
 - 凭 issue 标题 / 50 字 body 脑补需求；
 - 立刻开 worktree / branch / PR；
-- 跳过 grill 评论与 related PR / issue。
+- 跳过 grill / docs-grill 评论与 related PR / issue。
 
 ## 如果 issue 有 `ready-for-human` label — 先暂停联系 maintainer
 
@@ -67,7 +76,8 @@ maintainer 在 issue 创建之初判定为 epic / 需要 human coordination 时�
 
 1. **完整读 issue body**——`docs/FIXEDFLOW.md` 强制 ≤ 50 字，所以本身只是入口，关键约束都在 grill 评论。
 2. **逐条读 issue 的 comments**：
-   - **grill 评论**（`/grill-me` 或 `/grill-with-docs` 输出，以 `--- end grill ---` 结尾）是真正的 spec；
+   - **grill 评论**（`/grill-via-web` 输出，以 `--- end grill ---` 结尾）是真正的 spec；
+   - **docs-grill 评论**（`/grill-with-docs` 输出，以 `--- end docs grill ---` 结尾）记录的术语 / ADR / docs 更新是 plan 的 docs-context；
    - 历史讨论里也常埋着 reproduce 步骤、临时 workaround、被否决的方向。
 3. **枚举 related PRs**：
    - issue 顶部 / 底部的 "Linked pull requests"；
