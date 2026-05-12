@@ -83,4 +83,32 @@ re-runs.
 
 ### Verification subagent verdict
 
-_(appended after fixes)_
+**VERDICT: pass** (read-only Verification subagent, per `docs/AGENTIC-CODING-POLICY.md` §3,
+on commit `d0063c0`).
+
+- All 8 fix-plan items verified present in `git diff HEAD~1` (parseSinceMs clamp +
+  `EPOCH_MS_THRESHOLD`/`MAX_DATE_MS`; `rotateIfOversize` byte-bounded tail;
+  `sanitizeCcStatusSnapshot` string caps + `isUnreservedComponent` for `session_id`;
+  `readLatestAllUsers` 500-user cap; `readLatestPerSession` max-by-ts; statusline
+  push-via-stdin + corrected `claimCcStatusPushSlot` comment + `filePath` key;
+  `cc-status/path-safety.ts` extracted, `mock-server.ts` re-exports `safeUserId`/`dateStamp`
+  — public API unchanged).
+- Judge harness green: `pnpm exec vitest run <6 files>` → 109/109 passed
+  (compute 11, store 17, mock-server-cc-status 10, mock-server 45, statusline-cc-status-push 5,
+  statusline-format 21). `pnpm typecheck` exit 0.
+- Counter-examples now handled (were breakable pre-`d0063c0`):
+  `?since=99999999999999999` → was an uncaught `RangeError` → collector crash; now `200`.
+  50 KB `cwd` → was persisted verbatim; now clamped to 4096 chars.
+  Loop POSTing a fixed `session_id` → was unbounded `.cc-status.jsonl`; now ~1–2 MB (rotates).
+  `session_id` `..`/`con`/`nul`/`com1` → was accepted as a filename component; now `400`.
+  Out-of-order older-`ts` line written last → was returned as "latest"; now max-by-ts wins.
+  SIGKILL of the detached push child → was leaking a `teamagent-ccstatus-*.json` temp file;
+  now no temp file is created.
+
+REPRO:
+```bash
+git show d0063c0 --stat
+git diff HEAD~1 -- packages/digital-twin/src/mock-server.ts packages/digital-twin/src/cc-status/store.ts packages/digital-twin/src/cc-status/path-safety.ts scripts/teamagent-statusline.cjs
+pnpm exec vitest run packages/digital-twin/src/cc-status/__tests__/compute.test.ts packages/digital-twin/src/cc-status/__tests__/store.test.ts packages/digital-twin/src/__tests__/mock-server-cc-status.test.ts packages/digital-twin/src/__tests__/mock-server.test.ts packages/cli/src/__tests__/statusline-cc-status-push.test.ts packages/cli/src/__tests__/statusline-format.test.ts
+pnpm typecheck
+```
