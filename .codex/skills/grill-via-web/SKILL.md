@@ -17,6 +17,27 @@ description: Pop a clickable ChatGPT and Claude.ai URL that prefills a grill-me 
               human answers, repeat until convergence
 ```
 
+## 0. Pre-grill claim (cross-host mutex, mandatory)
+
+Per `docs/PRE-GRILL-CLAIM.md`, **before** generating any Chrome URL the agent must:
+
+> **make a comment claiming we have started grilling this issue and add tag "grilling"**
+
+Concretely (in the same order):
+
+1. `gh issue view <N> --json labels -q '.labels[].name' | grep -q '^grilling$' && exit`
+   — if `grilling` already present, another agent is on it; post `🚦 deferred: grill already in progress (grilling tag is set)` and stop. **Do NOT** force-remove.
+2. `gh issue view <N> --json labels -q '.labels[].name' | grep -q '^grill-ready$' && exit`
+   — if the issue is already grilled, do not re-grill; route the user to `/fixed-flow-driver` instead.
+3. `gh issue comment <N> --body "🍳 grill picked up at <ISO timestamp> on <hostname> via /grill-via-web. Following docs/PRE-GRILL-CLAIM.md."`
+4. `gh issue edit <N> --add-label grilling`
+
+Only after both the comment AND the label succeed: proceed to §1 URL generation.
+
+If `gh issue edit` fails because the label `grilling` does not exist on the repo, post `⛔ grilling label missing on repo; ask a maintainer to create it via gh api repos/<owner>/<repo>/labels --method POST -f name=grilling` and stop. Do NOT auto-create the label.
+
+When the human pastes the grill output back into the issue (later, after the browser-side grilling finishes), the same human is responsible for `gh issue edit <N> --remove-label grilling --add-label grill-ready` to swap the lock to the next-phase label.
+
 ## What it does
 
 Takes a public GitHub issue URL (default scope: `libz-renlab-ai/TeamBrain`),
