@@ -38,9 +38,10 @@ function disabledPath(): string { return path.join(home(), "auto-update.disabled
 function logFilePath(): string { return path.join(home(), "update.log"); }
 function rollbackDir(): string { return path.join(home(), "rollback"); }
 
-const REPO_OWNER = "libz-renlab-ai";
-const REPO_NAME = "TeamBrain";
-const REPO_BRANCH = "release";
+// Issue #313: REPO_OWNER/NAME/BRANCH constants removed from this module — they
+// were only used by the old fetchRemoteSha call in checkCmd, which now goes
+// through fetch-latest.ts (Pages + npm). bin-updater.ts still holds its own
+// copies for PACKAGE_SPEC (the tarball URL used by the install path).
 
 export type UpdateSubcommand =
   | "check" | "now" | "status" | "disable" | "enable" | "rollback" | "logs"

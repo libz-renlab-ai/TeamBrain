@@ -50,8 +50,7 @@ import {
   type UpdateState,
 } from "@teamagent/core";
 import { runUpdater, isDevModeTsExtensionError } from "./updater-logic.js";
-import { fetchRemoteSha } from "./github-api.js";
-import { resolveGithubToken } from "./commands/update.js";
+import { fetchLatestVersion } from "./update/fetch-latest.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
 import { withUpdateStateLock } from "./lib/update-state-lock.js";
 import { emitUpgradeEvent } from "./lib/upgrade-event-emitter.js";
@@ -306,19 +305,10 @@ async function main(): Promise<void> {
     handler: async () => {
       log("updater started");
       await runUpdater({
-        // Closure reads state + token per call so ETag and token are always
-        // fresh at call time (§ 2.6). State is read independently here from
-        // the state already read inside runUpdater; the extra read is cheap
-        // and ensures the latest persisted ETag is sent.
-        fetchRemoteSha: () => {
-          const s = readState();
-          return fetchRemoteSha({
-            owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH,
-            token: resolveGithubToken(),
-            ifNoneMatch: s.last_branch_etag || undefined,
-            cachedSha: s.last_branch_sha || undefined,
-          });
-        },
+        // Issue #313: version-check 走 Pages → npm 兜底，不再打 api.github.com。
+        // 无 token / ETag / 限速；helper 自带 timeout + 默认 URL，调用点不传任何
+        // input（用 default Pages URL = libz-renlab-ai.github.io/TeamBrain/latest.json）。
+        fetchLatestVersion: () => fetchLatestVersion(),
         runNpmInstall,
         runMigrateAuto,
         backupCurrentInstall,

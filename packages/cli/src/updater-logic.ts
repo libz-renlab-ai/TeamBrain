@@ -5,6 +5,7 @@ import {
 } from "@teamagent/core";
 import type { UpdateInstalledEvent } from "@teamagent/types";
 import type { FetchShaResult } from "./github-api.js";
+import type { FetchLatestResult } from "./update/fetch-latest.js";
 
 // Node prints ERR_UNKNOWN_FILE_EXTENSION as:
 //   TypeError [ERR_UNKNOWN_FILE_EXTENSION]: Unknown file extension ".ts" for /path/to/foo.ts
@@ -22,7 +23,21 @@ export function isDevModeTsExtensionError(stderr: string): boolean {
 }
 
 export interface UpdaterDeps {
-  fetchRemoteSha(): Promise<FetchShaResult>;
+  /**
+   * Issue #313 — primary version-check fetcher. Pages → npm fallback. Never
+   * calls api.github.com (the whole point of #313). Tests inject a stub.
+   * Required.
+   */
+  fetchLatestVersion(): Promise<FetchLatestResult>;
+
+  /**
+   * @deprecated since issue #313 — runUpdater no longer calls this in the
+   * main version-check path. Kept on the interface so existing test stubs
+   * still compile (they pass it as a no-op). Future install-path SHA pin /
+   * rollback tooling may use it. Will be removed when no callers remain.
+   */
+  fetchRemoteSha?(): Promise<FetchShaResult>;
+
   runNpmInstall(): Promise<{ ok: boolean; error?: string }>;
   runMigrateAuto(): Promise<{ ok: boolean; error?: string }>;
   /** Returns absolute path to backup directory (or empty string if backup not feasible). */
@@ -55,64 +70,63 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
   try {
     const state = deps.readState();
 
-    // Backoff guard (§ 2.5): if a previous rate-limit set next_check_after_ts,
-    // skip this cycle until the backoff window expires.
+    // Issue #313: Pages/npm 不限速，主路不再设新的 backoff。但仍 honor 旧
+    // state 文件遗留的 next_check_after_ts（来自 pre-#313 的 GitHub API 限速
+    // 退避），让老用户自然过渡。
     if (state.next_check_after_ts > 0 && deps.now() < state.next_check_after_ts) {
-      deps.log(`backoff active until ${new Date(state.next_check_after_ts).toISOString()}; skip`);
+      deps.log(`legacy backoff active until ${new Date(state.next_check_after_ts).toISOString()}; skip`);
       return;
     }
 
     state.last_check_ts = deps.now();
     deps.writeState(state);
 
-    // fetchRemoteSha contract: MUST NOT throw. But keep a defensive catch just
-    // in case a future mock or implementation violates the contract.
-    let result: FetchShaResult;
+    // fetchLatestVersion contract: MUST NOT throw. Defensive catch in case a
+    // future mock or impl violates it.
+    let result: FetchLatestResult;
     try {
-      result = await deps.fetchRemoteSha();
+      result = await deps.fetchLatestVersion();
     } catch (e) {
       deps.log(`fetch error: ${(e as Error).message}`);
       return;
     }
 
     if (!result.ok) {
-      if (result.reason === "rate_limit_anonymous" || result.reason === "rate_limit_authed") {
-        // Exponential backoff: 1h, 2h, 4h, 8h, 16h, 24h, 24h, …
-        const next = state.consecutive_rate_limits + 1;
-        const delayHours = Math.min(2 ** (next - 1), 24);
-        // IMPORTANT: do NOT bump consecutive_install_failures or set
-        // last_install_error here. Those fields are reserved for actual
-        // install/migrate failures (runNpmInstall / runMigrateAuto).
-        // Mixing rate-limit signals into install-failure counters would
-        // compound two backoffs and break shouldCheckUpdate gating.
-        deps.writeState({
-          ...state,
-          consecutive_rate_limits: next,
-          next_check_after_ts: deps.now() + delayHours * 3600 * 1000,
-        });
-        deps.log(`rate-limited (${result.reason}); backoff ${delayHours}h`);
-        return;
-      }
-      deps.log(`fetch failed (${result.reason}): ${result.message}`);
+      // Issue #313 Tier 3: persist a structured error string so SessionStart
+      // surfaces a human-readable banner instead of silently sleeping. Do NOT
+      // bump consecutive_rate_limits (no rate limit any more) and DO NOT add
+      // new backoff (Pages/npm aren't subject to one).
+      const errorMsg = `version-check failed: pages=${result.pagesReason} (${result.pagesMessage}); npm=${result.npmReason} (${result.npmMessage})`;
+      deps.writeState({
+        ...state,
+        consecutive_rate_limits: 0,
+        next_check_after_ts: 0,
+        last_install_error: errorMsg,
+      });
+      deps.log(errorMsg);
       return;
     }
 
-    // Success path: reset rate-limit counters, persist ETag/sha (§ 2.5)
-    const remoteSha = result.sha;
+    // Success: persist version + (when Pages provided) SHA. Reset legacy
+    // backoff counters so old state files heal.
+    const remoteVersion = result.version;
+    const remoteSha = result.sha ?? "";
     deps.writeState({
       ...state,
       consecutive_rate_limits: 0,
       next_check_after_ts: 0,
-      last_branch_etag: result.etag ?? "",
-      last_branch_sha: remoteSha,
+      last_branch_etag: "",
+      last_branch_sha: remoteSha || state.last_branch_sha,
     });
 
-    if (remoteSha === state.last_installed_sha) {
-      deps.log("up-to-date");
+    if (remoteVersion === state.last_installed_version) {
+      deps.log(`up-to-date (${remoteVersion}; source=${result.source})`);
       return;
     }
 
-    deps.log(`update available: ${state.last_installed_sha || "(none)"} -> ${remoteSha}`);
+    deps.log(`update available: ${state.last_installed_version || "(none)"} -> ${remoteVersion} (source=${result.source})`);
+    // Backup against installed_sha (install path concept) — separate from
+    // version-check (the field stays meaningful as the install fingerprint).
     const backupDir = deps.backupCurrentInstall(state.last_installed_sha);
     // Issue #245: track elapsed time across install + migrate so the
     // emitted update-installed event carries a real durationMs (CEO
@@ -141,12 +155,22 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
       return;
     }
 
-    const fromSha = state.last_installed_sha;
+    const fromVersion = state.last_installed_version;
     const installedAtMs = deps.now();
-    const banner: PendingBanner = { from: fromSha, to: remoteSha, at: installedAtMs, shown: false };
+    // PendingBanner.from / .to are now version strings (with SHA fallback for
+    // pre-#313 state files that only had SHAs persisted). Display layer in
+    // session-start-logic uses these as-is.
+    const banner: PendingBanner = {
+      from: fromVersion || state.last_installed_sha,
+      to: remoteVersion,
+      at: installedAtMs,
+      shown: false,
+    };
     const success: UpdateState = {
       ...state,
-      last_installed_sha: remoteSha,
+      last_installed_version: remoteVersion,
+      // When Pages gives us a SHA, pin it too for rollback bookkeeping.
+      last_installed_sha: remoteSha || state.last_installed_sha,
       installed_at: installedAtMs,
       consecutive_install_failures: 0,
       last_install_error: null,
@@ -164,8 +188,8 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
       try {
         await deps.emitInstalled(
           makeUpdateInstalledEvent({
-            fromVer: state.last_installed_version || fromSha.slice(0, 7) || "(none)",
-            toVer: remoteSha.slice(0, 7),
+            fromVer: fromVersion || state.last_installed_sha.slice(0, 7) || "(none)",
+            toVer: remoteVersion,
             durationMs: installedAtMs - installStartMs,
             nowMs: installedAtMs,
           }),
@@ -175,7 +199,7 @@ export async function runUpdater(deps: UpdaterDeps): Promise<void> {
       }
     }
     deps.pruneOldBackups();
-    deps.log(`updated to ${remoteSha}`);
+    deps.log(`updated to ${remoteVersion}`);
   } finally {
     deps.releaseLock();
   }
