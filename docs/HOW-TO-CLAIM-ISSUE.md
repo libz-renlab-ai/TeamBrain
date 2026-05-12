@@ -68,7 +68,7 @@ maintainer 在 issue 创建之初判定为 epic / 需要 human coordination 时�
 
 **特殊情况：grill 已经回来、maintainer 这一刻发现 issue 其实太大** → 走 `docs/TRIAGE-AND-SPLIT.md` 的 triage-and-split 流程，**不要**直接跑 `/fixed-flow-driver`：拆出 ≥ 2 个新 child issue（各自 ≤ 50 字 + 独立 grill 循环），原 issue 在 split 当刻升级为 epic tracking 贴。这一刻贴 `epic` / `ready-for-human` label **不算**事后追认 —— 因为 epic 结构本身就是这一刻"被创建"的，POSTMORTEM hard rule #6 禁止的是「已经在 ship 之后才补 label」，不是「grill 之后才意识到要 epic」。
 
-**Close 路径约束（issue #338）**：一旦 issue 带上 `ready-for-human` label，**任何 agent / bot 都不许调用 `gh issue close` 关闭它**——只能真人 maintainer 手动 close（PR 关键字 auto-close 仅在真人先 ack 走向后才合法）。详见 `docs/FIXEDFLOW.md` "Human-ready issues — never auto-close" 段。
+**Close 路径约束（issue #338，intent-based ban）**：一旦 issue 带上 `ready-for-human` label，**任何 agent / bot 都不许把它从 `open` 状态迁出**——包括 close / delete / transfer / convert-to-discussion / lock-as-resolved 等任何 state transition（不限 CLI 表面，REST API / GraphQL `closeIssue` / `octokit.issues.update` / 批量脚本等价同等禁止），也不许 strip `ready-for-human` / `grill-ready` / `docs-grill-ready` 任何保护 label。合法路径只有真人 maintainer 手动操作；PR 关键字 auto-close 例外必须满足 FIXEDFLOW 段定义的双因子可机器验证 human-ack。详见 `docs/FIXEDFLOW.md` "Human-ready issues — never auto-close" 段。
 
 ## 三步流程
 
