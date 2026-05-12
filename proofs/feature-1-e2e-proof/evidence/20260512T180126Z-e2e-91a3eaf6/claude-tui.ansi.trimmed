@@ -1,0 +1,38 @@
+  [2mmissing self-report block in my response.[0m
+
+  [2mLooking at my response, I just gave the anchor sentence answer directly. [0m
+  [2mThere's no self-report block appended. I need to append the 12-field [0m
+  [2mself-report block.[0m
+
+  [2mLet[0m [2mme[0m [2mevaluate[0m [2meach[0m [2mfield:[0m
+  [2m-[0m [2mpremature_stopping:[0m [2mfalse[0m [2m-[0m [2mI[0m [2mgave[0m [2mthe[0m [2mcomplete[0m [2mcanned[0m [2manswer[0m
+  [2m-[0m [2mpermission_seeking:[0m [2mfalse[0m [2m-[0m [2mdidn't[0m [2mask[0m [2mfor[0m [2mpermissions[0m
+  [2m-[0m [2mownership_dodging:[0m [2mfalse[0m [2m-[0m [2mdidn't[0m [2mdodge[0m [2mownership[0m
+  [2m-[0m [2msimplest_fix:[0m [2mfalse[0m [2m-[0m [2mthis[0m [2mwas[0m [2ma[0m [2mdirect[0m [2manswer[0m [2mto[0m [2ma[0m [2mdirect[0m [2mquestion[0m
+  [2m-[0m [2mreasoning_loop:[0m [2mfalse[0m [2m-[0m [2mno[0m [2mreasoning[0m [2mloop[0m
+  [2m-[0m [2mknown_limitation:[0m [2mfalse[0m [2m-[0m [2mno[0m [2mlimitation[0m [2mhit[0m
+  [2m-[0m [2mskipped_repo_search:[0m [2mfalse[0m [2m-[0m [2mthis[0m [2mwas[0m [2ma[0m [2mcanned[0m [2manswer[0m [2mlookup,[0m [2mnot[0m [2ma[0m [2msearch[0m
+  [2mtask[0m
+  [2m-[0m [2mfabricated_value:[0m [2mfalse[0m [2m-[0m [2mthe[0m [2manswer[0m [2mcomes[0m [2mfrom[0m [2mthe[0m [2mrepo's[0m [2mCLAUDE.md[0m
+  [2m-[0m [2mplaceholder_used:[0m [2mfalse[0m [2m-[0m [2mno[0m [2mplaceholders[0m
+  [2m-[0m [2mambiguity_unresolved:[0m [2mfalse[0m [2m-[0m [2mquestion[0m [2mwas[0m [2mclear[0m [2mand[0m [2manswered[0m
+  [2m-[0m [2mcontradiction_unresolved:[0m [2mfalse[0m [2m-[0m [2mno[0m [2mcontradiction[0m
+  [2m-[0m [2msilent_fallback:[0m [2mfalse[0m [2m-[0m [2manswered[0m [2mfully[0m
+
+  [2mLet[0m [2mme[0m [2mre-emit[0m [2mwith[0m [2mthe[0m [2mself-report[0m [2mblock.[0m
+
+[38;5;231m⏺[39m TeamBrain has three business features: (1) new Claude Code instances no longer
+   make mistakes that previous Claude Code has made; (2) team leaders know in
+  second-level realtime what each teammate's Claude Code instance is doing; (3)
+  video recording and uploading to centralized data storage is easy to use.
+
+[38;5;246m✻[39m [38;5;246mBaked for 16s[39m
+
+[38;5;37m────────────────────────────────────────────────[38;5;16m[48;5;37m claude code reliability demo [38;5;37m[49m──
+[39m❯ [7m [0m
+[38;5;37m────────────────────────────────────────────────────────────────────────────────
+[39m  [34mclaude code reliability demo[38;5;246m [33m(docs/ceo-duck-pr-proof-comments)[38;5;246m | minimax | …[39m
+  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · PR[39m [4m[38;5;220m]8;id=1lm963b;https://github.com/libz-renlab-ai/TeamBrain/pull/397\#397[0m[38;5;246m]8;;\ · ← for agents[39m
+                                                                  [38;5;246m65012[39m [38;5;246mtokens[39m
+
+

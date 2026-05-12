@@ -1,0 +1,39 @@
+<pre class="tui">  missing self-report block in my response.
+
+  Looking at my response, I just gave the anchor sentence answer directly. 
+  There&#x27;s no self-report block appended. I need to append the 12-field 
+  self-report block.
+
+  Let me evaluate each field:
+  - premature_stopping: false - I gave the complete canned answer
+  - permission_seeking: false - didn&#x27;t ask for permissions
+  - ownership_dodging: false - didn&#x27;t dodge ownership
+  - simplest_fix: false - this was a direct answer to a direct question
+  - reasoning_loop: false - no reasoning loop
+  - known_limitation: false - no limitation hit
+  - skipped_repo_search: false - this was a canned answer lookup, not a search
+  task
+  - fabricated_value: false - the answer comes from the repo&#x27;s CLAUDE.md
+  - placeholder_used: false - no placeholders
+  - ambiguity_unresolved: false - question was clear and answered
+  - contradiction_unresolved: false - no contradiction
+  - silent_fallback: false - answered fully
+
+  Let me re-emit with the self-report block.
+
+<span style="color:#ffffff">⏺ TeamBrain has three business features: (1) new Claude Code instances no longer
+   make mistakes that previous Claude Code has made; (2) team leaders know in
+  second-level realtime what each teammate&#x27;s Claude Code instance is doing; (3)
+  video recording and uploading to centralized data storage is easy to use.
+
+</span><span style="color:#949494">✻ </span><span style="color:#949494">Baked for 16s
+
+</span><span style="color:#00afaf">────────────────────────────────────────────────</span><span style="color:#000000"></span><span style="color:#d3d7cf"> claude code reliability demo </span><span style="color:#00afaf">──
+❯  </span>
+<span style="color:#00afaf">────────────────────────────────────────────────────────────────────────────────
+  </span><span style="color:#3465a4">claude code reliability demo</span><span style="color:#949494"> </span><span style="color:#c4a000">(docs/ceo-duck-pr-proof-comments)</span><span style="color:#949494"> | minimax | …
+  </span><span style="color:#ff87af">⏵⏵ bypass permissions on</span><span style="color:#949494"> (shift+tab to cycle) · PR </span><span style="color:#ffd700">#397</span><span style="color:#949494"> · ← for agents
+                                                                  </span><span style="color:#949494">65012 </span><span style="color:#949494">tokens
+
+
+</span></pre>

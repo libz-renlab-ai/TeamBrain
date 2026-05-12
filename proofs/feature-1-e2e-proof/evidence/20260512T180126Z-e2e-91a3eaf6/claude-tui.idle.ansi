@@ -1,0 +1,23 @@
+     [38;5;246m    - fd895aac docs: two-driver coexistence (Symphony + fixed-flow) (#396)[39m
+     [38;5;246m   [39m [38;5;246m- f2a14929 fix(ci): landing-deploy — install pnpm before setup-node@v5
+[39m     [38;5;246m(#394)[39m
+
+     [38;5;246m[2] 新功能 + 还没试过？[39m
+     [38;5;246m    还没试过？试试看：6a6e989b feat(landing): RocketTeam static export [39m
+     [38;5;246mreplaces apps/landing on GH Pages[39m
+     [38;5;246m    还没试过？试试看：fd895aac docs: two-driver coexistence (Symphony + [39m
+     [38;5;246mfixed-flow) (#396)[39m
+
+     [38;5;246m[4] 今日随机功能[39m
+     [38;5;246m    第 55 / 67 个：55. M5 LWW + tombstone conflict resolution merges [39m
+     [38;5;246mconcurrent edits and deletes deterministically[39m
+     [38;5;246m+--------------------------------------------------------+[39m
+
+[38;5;37m────────────────────────────────────────────────[38;5;16m[48;5;37m claude code reliability demo [38;5;37m[49m──
+[39m❯ [7m [0m
+[38;5;37m────────────────────────────────────────────────────────────────────────────────
+[39m  [34m46c9be22-afb3-4510-995a-fd2eb42a357f[38;5;246m [33m(docs/ceo-duck-pr-proof-comments)[38;5;246m |[39m [38;5;246mmi…[39m
+  [38;5;211m⏵⏵[39m [38;5;211mbypass[39m [38;5;211mpermissions[39m [38;5;211mon[38;5;246m (shift+tab[39m [38;5;246mto[39m [38;5;246mcycle)[39m [38;5;246m·[39m [38;5;246mPR[39m [4m[38;5;220m]8;id=1lm963b;https://github.com/libz-renlab-ai/TeamBrain/pull/397\#397[0m[38;5;246m]8;;\ ·[39m [38;5;246m←[39m [38;5;246mfor[39m [38;5;246magents[39m
+                                                                      [38;5;246m0[39m [38;5;246mtokens[39m
+                                                             [38;5;246m◉[39m [38;5;246mxhigh[39m [38;5;246m·[39m [38;5;246m/effort[39m
+
