@@ -32,7 +32,9 @@ async function main(): Promise<void> {
     ? path.join(fixturesDir, "tasks", "*.json")
     : path.join(fixturesDir, "tasks", `${config.tasks}*.json`);
 
-  if (config.groups.includes("teamagent")) {
+  // teamagent-disabled has the same install footprint as teamagent
+  // (issue-343 PR-2: kill-switch tested with the env, not by removing hooks).
+  if (config.groups.includes("teamagent") || config.groups.includes("teamagent-disabled")) {
     const required = ["bin-pre-tool-use.cjs", "bin-post-tool-use.cjs", "bin-user-prompt-submit.cjs"];
     for (const f of required) {
       if (!existsSync(path.join(hookDir, f))) {
@@ -65,17 +67,38 @@ async function main(): Promise<void> {
     }
     console.log(`Group ${groupName} workdir: ${workdir}`);
 
-    for (const task of tasks) {
-      for (let run = 1; run <= config.runs; run++) {
-        stepIdx++;
-        const useColor = process.env.BENCH_NO_COLOR !== "1" && process.stdout.isTTY !== false;
-        const col = (s: string, code: string) => useColor ? `\x1b[${code}m${s}\x1b[0m` : s;
-        const badge = groupName === "teamagent" ? col(" TEAMAGENT ", "1;44") : col(" BASELINE  ", "1;47;30");
-        process.stdout.write(`\n${badge} [${stepIdx}/${totalSteps}] ${task.id} run=${run}\n`);
-        const r = await runTask(task, groupCfg, sdk, workdir, run);
-        allResults.push(r);
-        const vColor = r.verdict === "correct" ? "1;32" : r.verdict === "wrong" ? "1;31" : "1;33";
-        process.stdout.write(`  ${col("→ " + r.verdict.toUpperCase(), vColor)} ${col(`(${r.durationMs}ms)`, "90")}\n`);
+    // issue-343 PR-2: the `teamagent-disabled` group is the same install
+    // footprint as `teamagent` but with TEAMAGENT_DISABLED=1 set in the
+    // parent process. The Claude Agent SDK spawns hooks as subprocesses;
+    // Node child_process inherits parent env, so PR-1's master kill switch
+    // fires and all 8 hook handlers early-return. Restored in finally so
+    // env never leaks into a later group's run.
+    const envWasSet = process.env.TEAMAGENT_DISABLED;
+    if (groupName === "teamagent-disabled") {
+      process.env.TEAMAGENT_DISABLED = "1";
+    }
+
+    try {
+      for (const task of tasks) {
+        for (let run = 1; run <= config.runs; run++) {
+          stepIdx++;
+          const useColor = process.env.BENCH_NO_COLOR !== "1" && process.stdout.isTTY !== false;
+          const col = (s: string, code: string) => useColor ? `\x1b[${code}m${s}\x1b[0m` : s;
+          const badge =
+            groupName === "teamagent" ? col(" TEAMAGENT ", "1;44") :
+            groupName === "teamagent-disabled" ? col(" TB-OFF    ", "1;45") :
+            col(" BASELINE  ", "1;47;30");
+          process.stdout.write(`\n${badge} [${stepIdx}/${totalSteps}] ${task.id} run=${run}\n`);
+          const r = await runTask(task, groupCfg, sdk, workdir, run);
+          allResults.push(r);
+          const vColor = r.verdict === "correct" ? "1;32" : r.verdict === "wrong" ? "1;31" : "1;33";
+          process.stdout.write(`  ${col("→ " + r.verdict.toUpperCase(), vColor)} ${col(`(${r.durationMs}ms)`, "90")}\n`);
+        }
+      }
+    } finally {
+      if (groupName === "teamagent-disabled") {
+        if (envWasSet === undefined) delete process.env.TEAMAGENT_DISABLED;
+        else process.env.TEAMAGENT_DISABLED = envWasSet;
       }
     }
     cleanupGroupWorkdir(workdir);
