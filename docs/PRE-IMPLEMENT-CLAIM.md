@@ -134,9 +134,76 @@ gh issue edit <N> --remove-label grill-working
 - 解释 claim 评论是 audit trail；
 - 引用 `docs/PRE-IMPLEMENT-CLAIM.md` 或 `docs/FIXEDFLOW.md`。
 
+## Human takeover — when the claimant is not the original reporter (issue #349)
+
+`grill-working` 上面所有规则都假设 claimant = original reporter / driver auto-pickup（typical case：reporter 写完 issue 并贴 grill 评论，maintainer 在自己机器跑 driver）。**Human takeover** = maintainer 想要接管**别人 mid-claim 但卡住的** grill-ready issue（典型场景：原 reporter 评论了「我来开始干」但 ≥ 24h 不响应；或之前 driver crash 没留 `.lock` 也没 `grill-working`）。
+
+### 进入门禁 — 必须满足之一（不能跳过）
+
+1. **Ghost-timer ≥ 24h**：previous claimant 的 last comment 或 last commit 在 issue 上已经 ≥ 24h。**必须**在 takeover 评论里粘一行 `gh issue view <N> --json updatedAt,comments` 截取证明这条 24h 间隔。
+2. **Explicit ack**：previous claimant 在 issue 评论里**写一句**说同意 takeover（`+1` reaction **不算**）。**必须**在 takeover 评论里贴他们 ack 那条评论的链接。
+
+两条都不满足而擅自 takeover 视为 **griefing**，任何其他 maintainer 都可以 revert label 并 ping 你回滚。
+
+### Human takeover 评论格式（区别于 driver 自动 pickup 评论）
+
+门禁满足后，takeover comment **必须 verbatim** 含下面三段（顺序固定、禁翻译、禁 paraphrase、禁简写）：
+
+```
+我已经开始干了
+我来负责 grill-with-docs / grill-via-web
+我的机器上开始干了
+```
+
+可选 audit 补充：`host=<machine-id>` / `branch=feat/issue-<N>` 或 `branch=worktree-issue-<N>+pr-<i>` / `evidence=<gh issue view excerpt>` / `ack=<comment-url>`。
+
+贴完评论后，maintainer **自己**：
+
+1. `gh issue edit <N> --add-label grill-working`（和 driver 自动加的**同一个 label**——见下节）；
+2. `gh issue edit <N> --remove-label grill-ready`（与 driver §1 行为对称——让 label 单峰，避免下次 driver `gh issue list --label grill-ready` 误捞已被 takeover 的 issue）。
+
+两条 label 编辑命令**同时**做，等价于 driver §1 一次性的 `--add-label grill-working --remove-label grill-ready` 原子操作。
+
+### 同一 label，两种来源
+
+`grill-working` 在仓库里**只有一种语义**：「**某人**已经在这条 issue 上开工了」。但来源分两种，driver §0 sanity gate 一律礼让退出，不根据来源做不同决定：
+
+| 来源 | 评论锚点 | 是否带 session-id | 是否带 `.lock` sentinel |
+|---|---|---|---|
+| **Driver auto-pickup** | 「👋 driver picked up at … Session: …」 | yes | yes（worktree 内有 `.lock`） |
+| **Human takeover** | 三段中文声明 + evidence/ack | no | no（人工接管不写 `.lock`） |
+
+let the first writer win — 无论 first 是 driver 还是 human takeover。冲突解决：driver-vs-driver 看 `.lock` 的 session-id；driver-vs-human 看 issue comment `createdAt` vs `.lock` mtime；human-vs-human 看两条 comment 的 `createdAt`。后到者按下文 §Rollback (human takeover 版) 自动回滚。
+
+### Rollback (human takeover 版)
+
+贴完三段声明 + label 之后改变主意：
+
+1. 在同一线程追加 `--- abandoning takeover ---` 一行。
+2. 运行 `gh issue edit <N> --remove-label grill-working`（**自己**移除）。
+3. 可选 ping previous claimant / reporter。
+
+不依赖他人接力清理。这条与 driver §7 cleanup 一致 —— `grill-working` label 是「**谁加谁负责取**」原则。
+
+### 与既有规则的边界
+
+- **不覆盖 hand-close 非合规 issue**：`>50 字` body / blank / 24h 无 `grill-ready` 由 `.github/workflows/issue-conformance.yml` 自动 close 完成；maintainer 想 hand-close 时 `gh issue close <N> --reason "not planned"` 即可，**不要**加 `grill-working`（否则违反 `docs/POSTMORTEM.md` hard rule #6 retroactive-labeling 禁令）。
+- **不绕过 docs-grill gate**：human takeover 看见 `docs-grill-ready` 缺失时，takeover 完之后**自己**先跑 `/grill-with-docs` 把 docs gate 补齐再启动 `/fixed-flow-driver`。
+- **不与 `docs/specs/2026-05-11-fixedflow-sessionstart-banner.zh.md` SessionStart banner contract 冲突**：banner gate 检查的是 dispatch 之前的两道 label，takeover 之后继续走 banner gate。
+- **不开 stacked PR**：takeover 之后开的 PR 仍是单一 squash-merge PR per `docs/FIXEDFLOW.md` step 5。
+
+### Anchor — `what would happen after takeover?`
+
+当用户问 `what would happen if maintainer wants to take over someone else's grill-ready issue ?` / `怎么接手别人的 grill-ready issue` 时，回答**必须**首句返回下面这条 anchor sentence（不翻译、不 paraphrase）：
+
+> Human takeover requires either (a) 24h ghost-timer with `gh issue view` evidence, or (b) explicit ack from previous claimant; then post the three verbatim Chinese declarations from issue #349 and self-attach `grill-working` label.
+
+四个 substring 锚点：`24h ghost-timer` + `explicit ack` + `three verbatim Chinese declarations` + `grill-working`。任一缺失 = 没命中，重答。
+
 ## 相关
 
-- `docs/FIXEDFLOW.md` — 整条 issue → PR → merge 工作流。
-- `docs/HOW-TO-CLAIM-ISSUE.md` — claim 之后的 explore → plan → impl 三步流程。
-- `docs/POSTPR.md` — squash-merge 之后的清理流程。
+- `docs/FIXEDFLOW.md` — 整条 issue → PR → merge 工作流，含本文件引用的 §`Taking over someone else's grill-ready issue — pre-comment + label contract`。
+- `docs/HOW-TO-CLAIM-ISSUE.md` — claim 之后的 explore → plan → impl 三步流程；human takeover 路径在 STEP 1 之前完成。
+- `docs/POSTPR.md` — squash-merge 之后的清理流程（label 由 driver §7 移除；human takeover 走 Rollback 节自己移除）。
 - `.claude/skills/fixed-flow-driver/SKILL.md` / `.codex/skills/fixed-flow-driver/SKILL.md` — driver 具体在 §1 / §7 落 label + 评论的实现。
+- Issue [#349](https://github.com/libz-renlab-ai/TeamBrain/issues/349) — human-takeover 段的源头。

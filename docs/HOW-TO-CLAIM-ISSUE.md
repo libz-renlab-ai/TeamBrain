@@ -31,6 +31,10 @@ claim 之前先确认 issue 同时具备**两个 label**，缺任一不要进入
 
 缺 `grill-ready` 提醒 reporter 跑 `/grill-via-web`；缺 `docs-grill-ready` 由 maintainer 自己跑 `/grill-with-docs` 把 grill 结果对照代码 + `docs/CONTEXT.md` + `docs/adr/` 后写 docs-grill 评论。具体 gate 语义见 `docs/FIXEDFLOW.md` §Dispatch policy 与 `docs/specs/2026-05-11-fixedflow-sessionstart-banner.zh.md`。
 
+### 接手别人开的 issue —— 先 pre-comment + 贴 label 再走三步
+
+如果你**不是这条 issue 的 reporter / 当前 assignee** —— 例如原 reporter 评论了「我来开始干」但已经 ≥ 24h 无动静，或你打算接手一条 grill-ready 但无人 drive 的 issue —— 在开 worktree / 跑 `/grill-with-docs` / `/fixed-flow-driver` **之前**，先满足 takeover 门禁（≥ 24h ghost-timer **或** previous claimant 显式 ack）并按 `docs/FIXEDFLOW.md` §`Taking over someone else's grill-ready issue — pre-comment + label contract` 在 issue 评论里贴三段 verbatim 中文声明（`我已经开始干了` / `我来负责 grill-with-docs / grill-via-web` / `我的机器上开始干了`）+ evidence（ghost-timer 截取或 ack 链接），并**自己**给 issue 加 `grill-working` label。完成后再回到本文 §三步流程 的 STEP 1 派 explore agent。**Hand-close 非合规 issue 不走这条**——那是 conformance Action 的工作。完整 label 语义（driver mutex vs human takeover）、回滚、冲突解决见 `docs/PRE-IMPLEMENT-CLAIM.md`；该契约由 issue #349 引入。
+
 ## TL;DR
 
 两道 label gate 都满足之后，claim 完 issue 的第一动作是：
