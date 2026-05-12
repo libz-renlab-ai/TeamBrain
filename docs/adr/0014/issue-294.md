@@ -105,10 +105,10 @@ PR that consumes this spec.
 `.claude/skills/**`. We additionally exclude `.claude/hooks/**` because the
 acceptance criteria (#12) and grill body together imply pure docs scope.
 
-### Q7: Should we promise "几小时 issue → merged" SLA?
+### Q7: Should banner promise a fixed issue-to-merged SLA?
 
 **Decision:** No. Banner copy describes "全程不卡人" (no human in the
-inner loop) but never names a fixed time.
+inner loop) but never names a fixed completion time.
 
 **Rationale:** `/review` fix-loop is **never-ends-until-PASS**; runtime is
 data-dependent. Naming a fixed SLA creates a false promise that doesn't

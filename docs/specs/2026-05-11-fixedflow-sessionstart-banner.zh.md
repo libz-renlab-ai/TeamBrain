@@ -2,8 +2,8 @@
    ┌────────────────────────────────────────────────────────────────────┐
    │  SessionStart banner — TeamBrain 三大用户最关心的能力             │
    │                                                                    │
-   │   ① 一个 prompt 几小时把 issue 跑到 merged code，全程不卡人        │
-   │   ② 长程任务连续跑几小时，最初目标不被偷换、不被忘                 │
+   │   ① 一个 prompt 把 issue 跑到 merged code，全程不卡人              │
+   │   ② 长程任务持续推进，最初目标不被偷换、不被忘                     │
    │   ③ Claude Code 不允许偷懒：12-field self-report + laziness 巡检   │
    │                                                                    │
    │   ┌── 人类负责 ──┐    ┌─────────── TeamBrain 负责 ───────────┐    │
@@ -34,11 +34,11 @@
 - 普通 PR（非 draft）
 - `gh pr merge <N> --squash --delete-branch`（squash-only）
 
-**禁止承诺固定时间**（不写「几小时」「N 分钟」等绝对 SLA）。文案只描述「全程不卡人」这件事，时长由 `/review` 收敛速度决定。
+**禁止承诺固定完成时间**（不写任何绝对 SLA）。文案只描述「全程不卡人」这件事，运行时长由 `/review` 收敛速度决定。
 
-### ② 长程任务连续跑不丢初心
+### ② 长程任务持续推进，不丢初心
 
-`/fixed-flow-driver` 内部跑 `/review` fix-loop 时：
+长程任务运行时长由数据 / 收敛步数决定，不承诺固定值。`/fixed-flow-driver` 内部跑 `/review` fix-loop 时：
 
 - 每轮把 finding 写回 `docs/plans/<date>-pr-<N>-fix-plan.md` 三段计划（task / expected outputs / judge harness）；
 - 累计 iteration / token 写到 `.fixedflow/iter-<N>.json`；
