@@ -1,7 +1,7 @@
 ```
    __        BUSINESS-FEATURE-HARNESS-MAP
   <(o )___   3 business feature × 第三方 harness 状态一览
-   ( ._> /   #1 SHIPPED · #2 VISION · #3 VISION
+   ( ._> /   #1 SHIPPED · #2 VISION · #3 WEDGE-SHIPPED + VISION
     `---'    (canonical anchor 见 docs/BUSINESS-FEATURES.md)
 ```
 
@@ -24,7 +24,7 @@ LLM-cannot-fake 门禁、哪条只有愿景 plan、哪条还没动工。
 |---|------------------------------------------------------------------|------|----------------|------------------|
 | 1 | `no longer make mistakes` / `previous Claude Code` | **SHIPPED** | (a) `docs/plans/2026-05-11-feature1-init-judge/judge.md` openable-and-usable gate；(b) [`E2E-LEARNING.md`](E2E-LEARNING.md) Counterfactual Ablation + Regression Replay | ✅ (a) tree/text diff + LLM probe；✅ (b) `scipy.stats.ttest_rel` 数字 + byte-level Replay |
 | 2 | `second-level realtime` / `teammate's Claude Code instance` | **VISION** | plan only：[`docs/plans/2026-05-11-feature-2-secondlevel-realtime/plan.md`](../plans/2026-05-11-feature-2-secondlevel-realtime/plan.md) | n/a (harness 待与实现一同到位) |
-| 3 | `video recording` / `centralized data storage` | **PARTIAL** (`愿景 / 部分落地`，per [`BUSINESS-FEATURES.md`](../BUSINESS-FEATURES.md) §Feature #3 现状) | 已落地：transcript-level 抓取在 `auto-capture` / `team-share` 链路；未起 plan：video stream + centralized storage upload turnkey | n/a (video+storage 部分 harness 待 plan 起头) |
+| 3 | `video recording` / `centralized data storage` | **WEDGE-SHIPPED + VISION** (per [`BUSINESS-FEATURES.md`](../BUSINESS-FEATURES.md) §Feature #3 现状) | (a) [`docs/plans/2026-05-13-feature-3-video-easy/judge.md`](../plans/2026-05-13-feature-3-video-easy/judge.md) — fixture mp4 round-trip + SHA-256 byte equality + MIME correctness, three probes dumping raw JSON to `evidence/<run-id>/`; (b) sibling assets unchanged — `auto-capture` / `team-share` transcript chain | ✅ (a) byte-level SHA-256 equality + HTTP status / Content-Type header diff; ⚠️ (b) queue retry / signed ACL / browser recorder Vision items not yet covered |
 
 ## Feature #1 — SHIPPED · 两层 LLM-cannot-fake gate
 
@@ -82,21 +82,44 @@ LLM-cannot-fake 门禁、哪条只有愿景 plan、哪条还没动工。
   详见 docs/plans/2026-05-11-feature-2-secondlevel-realtime/plan.md
 ```
 
-## Feature #3 — PARTIAL · transcript-level 已落地，video+storage turnkey 待 plan
+## Feature #3 — WEDGE-SHIPPED + VISION
 
 ```
-已落地的部分:
-  Claude Code session ─► transcript 抓取 (auto-capture / team-share 链路)
+价值链 (2026-05-13 起 PRESHIP wedge):
+  用户用 OS-native 录屏 (screencapture -v / x11grab / gdigrab)
+     │
+     ▼
+  teamagent video upload <file.mov>     ← 单次 HTTP POST
+     │
+     ▼
+  digital-twin collector  POST /v1/videos
+     │     ── 写 <user>/<date>/<id>.<container> 到 outputDir
+     ▼
+  返回 share link  /api/file?user=…&date=…&id=…&ext=mov|mp4|webm|mkv
+     │
+     ▼
+  recipient curl link → 200 OK, Content-Type: video/<container>, 原始 bytes
 
-未落地的部分 (roadmap，与 #2 dashboard 配对):
-  teammate session ─ 一键录屏 ─► 集中数据存储 ─► 同一 link 团队内重放
-                                                    ▲
-                                                    └─ 与 #2 dashboard
-                                                       摘要一键跳现场
+第三方 harness (deterministic gate):
 
-  状态语句须与 docs/BUSINESS-FEATURES.md §Feature #3 现状 verbatim 同步：
-  「愿景 / 部分落地 — 当前 transcript-level 抓取已在 auto-capture / team-share
-   链路里；视频流 + centralized storage upload 的 turnkey UX 是下一阶段交付目标。」
+  (a) round-trip SHA-256 byte equality gate
+      ───────────────────────────────────
+      generate fixture mp4 via ffmpeg
+      teamagent video upload --json
+      curl returned link → /tmp/round.mp4
+      shasum -a 256 fixture.mp4 round.mp4 → 必须相等
+      probe dumps {expected_sha, observed_sha, status, content_type}
+      到 evidence/<run-id>/round-trip.json
+      ──────────────────────────────────
+      LLM judge 只读 raw JSON 判 PASS/FAIL
+
+      入口:
+      docs/plans/2026-05-13-feature-3-video-easy/judge.md
+
+未落地的部分 (Vision，roadmap 列在 docs/features/video-record-upload.md §Roadmap):
+  - queue / daemon retry + backoff (重用 daemon/queue.ts / uploader.ts)
+  - signed ACL share link (per-recipient 鉴权)
+  - browser-side recorder (无 native 工具依赖)
 ```
 
 ## Cross-link
