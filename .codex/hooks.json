@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "repo=\"${CODEX_PROJECT_DIR:-$PWD}\"; root=$(git -C \"$repo\" rev-parse --show-toplevel 2>/dev/null || printf '%s' \"$repo\"); bash \"$root/.codex/hooks/newsboard-session-start.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "repo=\"${CODEX_PROJECT_DIR:-$PWD}\"; root=$(git -C \"$repo\" rev-parse --show-toplevel 2>/dev/null || printf '%s' \"$repo\"); bash \"$root/.codex/hooks/self-report-fused.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

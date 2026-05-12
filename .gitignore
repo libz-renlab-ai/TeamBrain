@@ -64,6 +64,7 @@ docs/dogfood/.last-verify.out
 # feature-verify-kit LLM output (regenerated per run by verify-claude-stream-json.sh).
 docs/feature-verify-kit/runs/
 .gstack/
+.agents/skills/gstack/
 .sandbox/
 # M5 viral sync 钩子由 `teamagent m5-bootstrap --apply` 在每台机器本地生成；
 # 启用方式：git config --local core.hooksPath .githooks
