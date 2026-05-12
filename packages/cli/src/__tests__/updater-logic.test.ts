@@ -515,6 +515,115 @@ describe("runUpdater (#313 version-check)", () => {
     await runUpdater(deps);
     expect(deps.backupCurrentInstall).toHaveBeenCalledWith("sha-prev");
   });
+
+  // Post-merge PR-creator force-update feature.
+  it("stamps pending_banner.pr_creator + pr_number when local user matches latest.pr_creator_login", async () => {
+    const state = { ...defaultUpdateState(), last_installed_version: "0.11.5" };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue({
+        ok: true,
+        version: "0.11.6",
+        source: "pages",
+        sha: "sha-new",
+        pr_creator_login: "alice",
+        pr_number: 348,
+        merged_at: "2026-05-12T03:14:02Z",
+      }),
+      gatherIdentity: () => ({ ghLogin: "alice", gitEmail: "", env: {} }),
+    });
+    await runUpdater(deps);
+    const final = lastWrittenState(deps);
+    expect(final.pending_banner?.pr_creator).toBe(true);
+    expect(final.pending_banner?.pr_number).toBe(348);
+    expect(final.pending_banner?.from).toBe("0.11.5");
+    expect(final.pending_banner?.to).toBe("0.11.6");
+  });
+
+  it("does NOT stamp pr_creator when local user is someone else", async () => {
+    const state = { ...defaultUpdateState(), last_installed_version: "0.11.5" };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue({
+        ok: true,
+        version: "0.11.6",
+        source: "pages",
+        pr_creator_login: "alice",
+        pr_number: 348,
+      }),
+      gatherIdentity: () => ({ ghLogin: "bob", gitEmail: "", env: {} }),
+    });
+    await runUpdater(deps);
+    const final = lastWrittenState(deps);
+    expect(final.pending_banner?.pr_creator).toBeUndefined();
+    expect(final.pending_banner?.pr_number).toBeUndefined();
+    expect(final.pending_banner?.to).toBe("0.11.6"); // normal install still happens
+  });
+
+  it("does NOT stamp pr_creator when latest.json omits pr_creator_login (legacy payload)", async () => {
+    const state = { ...defaultUpdateState(), last_installed_version: "0.11.5" };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue(okLatest("0.11.6")), // no PR fields
+      gatherIdentity: () => ({ ghLogin: "alice", gitEmail: "", env: {} }),
+    });
+    await runUpdater(deps);
+    const final = lastWrittenState(deps);
+    expect(final.pending_banner?.pr_creator).toBeUndefined();
+    expect(final.pending_banner?.pr_number).toBeUndefined();
+  });
+
+  it("does NOT call gatherIdentity when latest.json omits pr_creator_login (no spurious spawn)", async () => {
+    const state = { ...defaultUpdateState(), last_installed_version: "0.11.5" };
+    const gather = vi.fn().mockReturnValue({ ghLogin: "alice", gitEmail: "", env: {} });
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue(okLatest("0.11.6")),
+      gatherIdentity: gather,
+    });
+    await runUpdater(deps);
+    expect(gather).not.toHaveBeenCalled();
+  });
+
+  it("legacy: when gatherIdentity is not injected, never stamps pr_creator (back-compat)", async () => {
+    const state = { ...defaultUpdateState(), last_installed_version: "0.11.5" };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue({
+        ok: true,
+        version: "0.11.6",
+        source: "pages",
+        pr_creator_login: "alice",
+        pr_number: 348,
+      }),
+      // No gatherIdentity — simulating old bin-updater that doesn't wire it.
+    });
+    await runUpdater(deps);
+    const final = lastWrittenState(deps);
+    expect(final.pending_banner?.pr_creator).toBeUndefined();
+  });
+
+  it("matches via noreply email even without ghLogin", async () => {
+    const state = { ...defaultUpdateState(), last_installed_version: "0.11.5" };
+    const deps = makeDeps({
+      readState: vi.fn().mockReturnValue(state),
+      fetchLatestVersion: vi.fn().mockResolvedValue({
+        ok: true,
+        version: "0.11.6",
+        source: "pages",
+        pr_creator_login: "alice",
+        pr_number: 348,
+      }),
+      gatherIdentity: () => ({
+        ghLogin: "",
+        gitEmail: "12345+alice@users.noreply.github.com",
+        env: {},
+      }),
+    });
+    await runUpdater(deps);
+    const final = lastWrittenState(deps);
+    expect(final.pending_banner?.pr_creator).toBe(true);
+  });
 });
 
 describe("isDevModeTsExtensionError (W15-001)", () => {

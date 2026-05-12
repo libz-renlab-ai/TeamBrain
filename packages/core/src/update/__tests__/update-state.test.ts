@@ -232,4 +232,56 @@ describe("UpdateState", () => {
     expect(d.next_check_after_ts).toBe(0);
     expect(d.consecutive_rate_limits).toBe(0);
   });
+
+  // PR-creator force-update feature — additive PendingBanner fields.
+  it("PendingBanner with pr_creator + pr_number round-trips", () => {
+    const s: UpdateState = {
+      ...defaultUpdateState(),
+      pending_banner: {
+        from: "0.11.5",
+        to: "0.11.6",
+        at: 1234,
+        shown: false,
+        pr_creator: true,
+        pr_number: 348,
+      },
+    };
+    const parsed = parseUpdateState(serializeUpdateState(s));
+    expect(parsed.pending_banner).toEqual({
+      from: "0.11.5",
+      to: "0.11.6",
+      at: 1234,
+      shown: false,
+      pr_creator: true,
+      pr_number: 348,
+    });
+  });
+
+  it("old PendingBanner (no pr_creator/pr_number) still parses; new fields absent (NOT coerced to false/0)", () => {
+    const oldJson = JSON.stringify({
+      pending_banner: { from: "0.11.4", to: "0.11.5", at: 0, shown: false },
+    });
+    const s = parseUpdateState(oldJson);
+    expect(s.pending_banner).not.toBeNull();
+    expect(s.pending_banner?.from).toBe("0.11.4");
+    expect("pr_creator" in (s.pending_banner ?? {})).toBe(false);
+    expect("pr_number" in (s.pending_banner ?? {})).toBe(false);
+  });
+
+  it("PendingBanner with wrong-type pr_creator/pr_number drops them silently", () => {
+    const malformed = JSON.stringify({
+      pending_banner: {
+        from: "0.11.4",
+        to: "0.11.5",
+        at: 0,
+        shown: false,
+        pr_creator: "yes",   // wrong type: string
+        pr_number: "348",    // wrong type: string
+      },
+    });
+    const s = parseUpdateState(malformed);
+    expect(s.pending_banner).not.toBeNull();
+    expect("pr_creator" in (s.pending_banner ?? {})).toBe(false);
+    expect("pr_number" in (s.pending_banner ?? {})).toBe(false);
+  });
 });

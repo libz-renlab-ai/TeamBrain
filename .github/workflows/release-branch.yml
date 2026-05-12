@@ -118,15 +118,74 @@ jobs:
             "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" \
             release
 
+      - name: Resolve PR creator for merge commit (post-merge auto-update feature)
+        id: pr_lookup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Post-merge PR-creator force-update feature. For each push to main
+          # (which on this repo is always a squash-merged PR per docs/POSTPR.md),
+          # resolve the merged PR's number + creator login so the auto-update
+          # client can force-update the PR creator's own machine on next session.
+          #
+          # API: GET /repos/{owner}/{repo}/commits/{sha}/pulls returns an array
+          # of PRs associated with the commit (squash-merge → exactly one PR).
+          # We extract .number, .user.login, .merged_at. The shell-injection
+          # surface is bounded — the values flow into a heredoc via env vars,
+          # never into a sourced/eval'd command line. We also strict-pattern
+          # validate them defensively before emitting GITHUB_OUTPUT lines so
+          # an attacker-controlled login (e.g. "alice\nFOO=bar") can't smuggle
+          # extra outputs.
+          set -u
+          # Fail-soft: a missing/private PR lookup MUST NOT fail the release.
+          # Empty values flow through to the heredoc below, where the writer
+          # omits the optional fields.
+          if ! PR_JSON=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" 2>/dev/null); then
+            PR_JSON="[]"
+          fi
+          PR_NUMBER=$(printf '%s' "$PR_JSON" | jq -r '.[0].number // empty')
+          PR_CREATOR=$(printf '%s' "$PR_JSON" | jq -r '.[0].user.login // empty')
+          PR_MERGED_AT=$(printf '%s' "$PR_JSON" | jq -r '.[0].merged_at // empty')
+
+          # Validation guards (defense-in-depth — keeps malicious inputs out of
+          # latest.json even if the API ever leaked something unexpected).
+          # - number: small positive integer (PR numbers grow ~linearly)
+          # - login: GitHub login charset = [A-Za-z0-9-], <= 39 chars
+          # - merged_at: RFC 3339 UTC produced by GitHub's API
+          if ! [[ "$PR_NUMBER" =~ ^[0-9]{1,9}$ ]]; then PR_NUMBER=""; fi
+          if ! [[ "$PR_CREATOR" =~ ^[A-Za-z0-9-]{1,39}$ ]]; then PR_CREATOR=""; fi
+          # RFC 3339 UTC as produced by GitHub's API: YYYY-MM-DDTHH:MM:SSZ
+          # (we don't accept fractional seconds or non-Z timezones — GitHub never
+          # emits those for /pulls .merged_at).
+          if ! [[ "$PR_MERGED_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then PR_MERGED_AT=""; fi
+
+          printf 'pr_number=%s\n' "$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          printf 'pr_creator=%s\n' "$PR_CREATOR" >> "$GITHUB_OUTPUT"
+          printf 'merged_at=%s\n' "$PR_MERGED_AT" >> "$GITHUB_OUTPUT"
+
+          echo "Resolved PR: number=$PR_NUMBER creator=$PR_CREATOR merged_at=$PR_MERGED_AT"
+
       - name: Publish latest.json to gh-pages (issue #313 Tier 1)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr_lookup.outputs.pr_number }}
+          PR_CREATOR: ${{ steps.pr_lookup.outputs.pr_creator }}
+          PR_MERGED_AT: ${{ steps.pr_lookup.outputs.merged_at }}
         run: |
           # Issue #313: TeamAgent auto-update version-check 主路读这个文件
           # (https://libz-renlab-ai.github.io/TeamBrain/latest.json)。
           # 该路径走 GitHub Pages 的 Fastly CDN，无 60 req/hr quota，
           # 替代之前的 api.github.com/repos/.../branches/release 调用。
           # Schema documented in docs/features/auto-update-channel.md.
+          #
+          # Post-merge PR-creator force-update feature: this step ALSO merges
+          # pr_number / pr_creator_login / merged_at (resolved by the previous
+          # step) into the payload so the auto-update client can identify the
+          # PR creator and force their own machine to update on next session.
+          # All three fields are OPTIONAL — when the PR lookup couldn't resolve
+          # (e.g. a direct push to main bypassing PR flow, private fork race,
+          # API hiccup) the fields are omitted and downstream code falls back
+          # to the legacy "no PR-creator stamping" behaviour.
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${TAG#v}"
           REPO_DIR=$(mktemp -d)
@@ -136,15 +195,30 @@ jobs:
             "$REPO_DIR"
           cd "$REPO_DIR"
 
-          cat > latest.json <<EOF
-          {
-            "version": "$VERSION",
-            "sha": "$GITHUB_SHA",
-            "releasedAt": "$(date -u +%FT%TZ)",
-            "tarball": "https://github.com/${{ github.repository }}/archive/refs/heads/release.tar.gz",
-            "generatedBy": "release-branch.yml@${{ github.run_id }}"
-          }
-          EOF
+          # Build the JSON with jq (avoids manual string concatenation +
+          # double-escaping pitfalls; validation guard in the prior step
+          # already constrains every value to a safe character set).
+          jq -n \
+            --arg version    "$VERSION" \
+            --arg sha        "$GITHUB_SHA" \
+            --arg releasedAt "$(date -u +%FT%TZ)" \
+            --arg tarball    "https://github.com/${{ github.repository }}/archive/refs/heads/release.tar.gz" \
+            --arg generatedBy "release-branch.yml@${{ github.run_id }}" \
+            --arg pr_creator_login "$PR_CREATOR" \
+            --arg merged_at  "$PR_MERGED_AT" \
+            --arg pr_number_str "$PR_NUMBER" \
+            '
+            {
+              version: $version,
+              sha: $sha,
+              releasedAt: $releasedAt,
+              tarball: $tarball,
+              generatedBy: $generatedBy,
+            }
+            + (if ($pr_number_str | length) > 0 then { pr_number: ($pr_number_str | tonumber) } else {} end)
+            + (if ($pr_creator_login | length) > 0 then { pr_creator_login: $pr_creator_login } else {} end)
+            + (if ($merged_at | length) > 0 then { merged_at: $merged_at } else {} end)
+            ' > latest.json
 
           git config user.name "TeamAgent Release Bot"
           git config user.email "bot@teamagent.local"

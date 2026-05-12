@@ -225,4 +225,91 @@ describe("fetchLatestVersion", () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.source).toBe("npm"); // fell through to npm
   });
+
+  // Post-merge PR-creator force-update feature: latest.json carries three
+  // optional fields that fetchLatestVersion plumbs through to the updater.
+  it("plumbs pr_creator_login + pr_number + merged_at from Pages latest.json", async () => {
+    const mock = makeMockHttpsGet((url) => {
+      if (url === DEFAULT_PAGES_URL) {
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            version: "0.11.6",
+            sha: "feedface",
+            releasedAt: "2026-05-12T03:14:02Z",
+            pr_number: 348,
+            pr_creator_login: "LiuShiyuMath",
+            merged_at: "2026-05-12T03:13:00Z",
+          }),
+          headers: {},
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    const r = await fetchLatestVersion({ httpsGet: mock.get });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.version).toBe("0.11.6");
+      expect(r.sha).toBe("feedface");
+      expect(r.source).toBe("pages");
+      expect(r.pr_creator_login).toBe("LiuShiyuMath");
+      expect(r.pr_number).toBe(348);
+      expect(r.merged_at).toBe("2026-05-12T03:13:00Z");
+    }
+  });
+
+  it("leaves PR-creator fields undefined when latest.json omits them (back-compat)", async () => {
+    const mock = makeMockHttpsGet((url) => {
+      if (url === DEFAULT_PAGES_URL) return pagesOk("0.11.5", "deadbeef");
+      throw new Error(`unexpected url ${url}`);
+    });
+    const r = await fetchLatestVersion({ httpsGet: mock.get });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.pr_creator_login).toBeUndefined();
+      expect(r.pr_number).toBeUndefined();
+      expect(r.merged_at).toBeUndefined();
+    }
+  });
+
+  it("drops wrong-type PR-creator fields silently", async () => {
+    const mock = makeMockHttpsGet((url) => {
+      if (url === DEFAULT_PAGES_URL) {
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            version: "0.11.6",
+            pr_creator_login: 348,          // wrong type: number
+            pr_number: "348",               // wrong type: string
+            merged_at: 12345,               // wrong type: number
+          }),
+          headers: {},
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    const r = await fetchLatestVersion({ httpsGet: mock.get });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.version).toBe("0.11.6"); // version still parses
+      expect(r.pr_creator_login).toBeUndefined();
+      expect(r.pr_number).toBeUndefined();
+      expect(r.merged_at).toBeUndefined();
+    }
+  });
+
+  it("npm source never carries PR-creator fields (only Pages does)", async () => {
+    const mock = makeMockHttpsGet((url) => {
+      if (url === DEFAULT_PAGES_URL) return status(503);
+      if (url === DEFAULT_NPM_URL) return npmOk("0.11.0");
+      throw new Error(`unexpected url ${url}`);
+    });
+    const r = await fetchLatestVersion({ httpsGet: mock.get });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.source).toBe("npm");
+      expect(r.pr_creator_login).toBeUndefined();
+      expect(r.pr_number).toBeUndefined();
+    }
+  });
 });
