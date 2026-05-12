@@ -4,7 +4,9 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+  M5_INFECT_DEPRECATION_BANNER,
   parseM5InfectArgs,
+  renderM5InfectResult,
   runM5Infect,
 } from "../commands/m5-infect.js";
 import { runM5Bootstrap } from "../commands/m5-bootstrap.js";
@@ -314,5 +316,33 @@ describe("m5-bootstrap command", () => {
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+// Issue #284 slice 1: m5-infect soft-archive.
+describe("m5-infect deprecation banner", () => {
+  it("renderM5InfectResult prepends the [legacy] banner pointing at `teamagent init .`", () => {
+    const out = renderM5InfectResult({
+      written_files: [".githooks/pre-commit"],
+      written_dirs: [".teamagent/team"],
+      skipped: false,
+    });
+    const lines = out.split("\n");
+    expect(lines[0]).toBe(M5_INFECT_DEPRECATION_BANNER);
+    expect(lines[0]).toContain("[legacy]");
+    expect(lines[0]).toContain("teamagent init");
+  });
+
+  it("renderM5InfectResult emits the banner even when skipped (already infected)", () => {
+    const out = renderM5InfectResult({
+      written_files: [],
+      written_dirs: [],
+      skipped: true,
+    });
+    expect(out.startsWith(M5_INFECT_DEPRECATION_BANNER)).toBe(true);
+  });
+
+  it("banner string mentions teamagent init . exactly (grill canonical replacement)", () => {
+    expect(M5_INFECT_DEPRECATION_BANNER).toContain("teamagent init .");
   });
 });
