@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "id": "01KRENSE1EHW3D6Q5PZFR68AP8",
+  "user_id": "dogfood",
+  "date": "2026-05-12",
+  "link": "http://127.0.0.1:19100/api/file?user=dogfood&date=2026-05-12&id=01KRENSE1EHW3D6Q5PZFR68AP8&ext=mov",
+  "payload_size": 1351090,
+  "payload_sha256": "86406a82f221f921292865ebaa02f4d87f663a5567f33e8aacb7af65d3388b5e",
+  "container": "mov",
+  "file": "screen.mov"
+}

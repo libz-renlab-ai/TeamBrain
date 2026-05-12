@@ -1,0 +1,31 @@
+clear; cd /Users/m1/projects/TeamBrain/.claude/worktrees/feat-feature3-video-upload; echo "=== pane 0: digital-twin collector ==="; PORT=19100 TEAMAGENT_COLLECTOR_DIR=/tmp/feature3-evidence/collector npx tsx packages/dig
+ital-twin/src/bin-prod-server.ts
+
+feat-feature3-video-upload on  worktree-feat-feature3-video-upload:feat/m6-feature3-video-upload-wedge [$] via  v22.21.1
+❯ clear; cd /Users/m1/projects/TeamBrain/.claude/worktrees/feat-feature3-video-upload; echo "=== pane 0: digital-twin collector ==="; PORT=19100 TEAMAGENT_COLLECTOR_DIR=/tmp/feature3-evidence/collector npx tsx packages/d
+igital-twin/src/bin-prod-server.ts
+=== pane 0: digital-twin collector ===
+[teamagent-collector] listening on http://0.0.0.0:19100
+[teamagent-collector] outputDir = /tmp/feature3-evidence/collector
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

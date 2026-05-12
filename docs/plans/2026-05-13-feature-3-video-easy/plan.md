@@ -68,6 +68,30 @@ The harness deliberately excludes anything an LLM could fabricate:
 A PASS verdict that lacks one of the four probe JSON files in
 `evidence/<run-id>/` is by definition a fabrication.
 
+## 4. Wild-world visual proof (run `20260513-feature3-wild-020505`)
+
+Evidence: [`evidence/20260513-feature3-wild-020505/`](evidence/20260513-feature3-wild-020505/).
+
+A live tmux session was orchestrated with three panes — collector / upload
+CLI / recipient curl — and the entire happy path executed end-to-end on
+real macOS:
+
+| Artifact | What it proves | File |
+|----------|----------------|------|
+| `pane-{0,1,2}.txt` | Real tmux session text snapshot of each pane | `evidence/<run>/pane-*.txt` |
+| `screen-1600.png` | `screencapture -x` of the desktop showing the tmux panes | `evidence/<run>/screen-1600.png` |
+| `upload.json` | CLI returned HTTP 200 + share link for `demo-clip.mp4` | `evidence/<run>/upload.json` |
+| `dogfood-upload.json` | We re-uploaded our own `screencapture -V 3` recording (`screen.mov`, 1.35 MB) through the same CLI | `evidence/<run>/dogfood-upload.json` |
+| `recipient-headers.txt` | Recipient `curl -D` shows status 200 + correct `Content-Type` | `evidence/<run>/recipient-headers.txt` |
+| `manifest.json` | Aggregator with byte-equality verdict for both round-trips | `evidence/<run>/manifest.json` |
+| `proof.html` | Self-contained boss-UI report (inline CSS + base64 PNG) — `open` in Chrome | `evidence/<run>/proof.html` |
+| `chrome-proof-1600.png` | Second screencap showing the proof.html rendered live in Chrome on the same desktop | `evidence/<run>/chrome-proof-1600.png` |
+
+The dogfood step is the strongest social proof: the CLI shipping Feature 3
+was used to publish a recording of its own demo session, and the bytes
+round-trip with SHA `86406a82f221f921292865ebaa02f4d87f663a5567f33e8aacb7af65d3388b5e`
+intact.
+
 ## See also
 
 - [`judge.md`](judge.md) — third-party verification playbook

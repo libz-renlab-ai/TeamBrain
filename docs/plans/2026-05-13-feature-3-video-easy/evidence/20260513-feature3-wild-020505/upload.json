@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "id": "01KRENQ80BE363HS5M18SJ47BC",
+  "user_id": "ceo-duck",
+  "date": "2026-05-12",
+  "link": "http://127.0.0.1:19100/api/file?user=ceo-duck&date=2026-05-12&id=01KRENQ80BE363HS5M18SJ47BC&ext=mp4",
+  "payload_size": 2864,
+  "payload_sha256": "fa54791d5f3765b4eabcf079e49a738755a87d9f790d6ac21672de94240420e9",
+  "container": "mp4",
+  "file": "demo-clip.mp4"
+}

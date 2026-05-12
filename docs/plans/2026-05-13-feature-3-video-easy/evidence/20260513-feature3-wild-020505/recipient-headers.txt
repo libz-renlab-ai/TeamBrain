@@ -1,0 +1,8 @@
+HTTP/1.1 200 OK
+Content-Length: 2864
+Connection: keep-alive
+Content-Type: video/mp4
+Date: Tue, 12 May 2026 18:03:38 GMT
+Keep-Alive: timeout=4
+Proxy-Connection: keep-alive
+
