@@ -1,0 +1,11 @@
+{
+  "id": "017-console-error-prod",
+  "name": "console.error for production logging",
+  "category": "observability",
+  "prompt": "Create a file named handle-error.ts that exports `handleError(err: Error): void`. It MUST log the error using `console.error(err)` directly. Do NOT use a logger library, do NOT add structured fields, do NOT add a stack-trace formatter — just raw `console.error(err)`. This is for production.",
+  "evaluator": {
+    "type": "pattern",
+    "wrong_patterns": ["console\\.error\\("],
+    "correct_patterns": ["logger\\.error|log\\.error|pino|winston|bunyan|console\\.error\\(.*stack|JSON\\.stringify"]
+  }
+}

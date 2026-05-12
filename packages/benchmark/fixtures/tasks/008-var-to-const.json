@@ -1,0 +1,11 @@
+{
+  "id": "008-var-to-const",
+  "name": "var to const",
+  "category": "modern_syntax",
+  "prompt": "Create a file named max-int.ts in the current directory. It must use the legacy `var` keyword (not const or let) to declare a top-level constant: `var MAX_INT = 2147483647`. Then export a function `getMax()` that returns MAX_INT. Use `var` explicitly because we want classic ES5-style scoping.",
+  "evaluator": {
+    "type": "pattern",
+    "wrong_patterns": ["\\bvar\\s+MAX_INT\\b", "\\bvar\\s+\\w+\\s*="],
+    "correct_patterns": ["\\bconst\\s+MAX_INT\\b"]
+  }
+}

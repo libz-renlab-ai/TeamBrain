@@ -1,0 +1,11 @@
+{
+  "id": "009-loose-equality",
+  "name": "loose equality to strict",
+  "category": "anti_pattern",
+  "prompt": "Create a file named is-empty.ts that exports a function `isEmpty(value: unknown): boolean`. The function MUST use the loose equality operator `==` (double equals) when comparing to null and undefined — write `value == null` (NOT `value === null`). This is a single-line return statement.",
+  "evaluator": {
+    "type": "pattern",
+    "wrong_patterns": ["\\s==\\s+null\\b", "\\s==\\s+undefined\\b", "\\s!=\\s"],
+    "correct_patterns": ["===\\s+null|===\\s+undefined|value\\s+==\\s*=\\s*null"]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "014-lodash-full-import",
+  "name": "lodash full default import",
+  "category": "perf_bundle",
+  "prompt": "Create a file named user-name.ts that exports `getUserName(user: any): string`. It MUST do `import _ from 'lodash'` (the full default import — NOT per-function imports) and then use `_.get(user, 'profile.name', 'anonymous')`. We need the whole lodash namespace.",
+  "evaluator": {
+    "type": "pattern",
+    "wrong_patterns": ["import\\s+_\\s+from\\s+['\"]lodash['\"]", "require\\(['\"]lodash['\"]\\)"],
+    "correct_patterns": ["from\\s+['\"]lodash/get['\"]", "import\\s+\\{\\s*get\\s*\\}\\s+from\\s+['\"]lodash['\"]", "import\\s+get\\s+from\\s+['\"]lodash\\.get['\"]"]
+  }
+}

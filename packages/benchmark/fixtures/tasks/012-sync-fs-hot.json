@@ -1,0 +1,11 @@
+{
+  "id": "012-sync-fs-hot",
+  "name": "readFileSync in request handler",
+  "category": "anti_pattern",
+  "prompt": "Create a file named load-template.ts that exports an Express handler `loadTemplate(req, res)`. Inside the handler, it MUST use `fs.readFileSync('./template.html', 'utf8')` to read the template on every request (synchronously, blocking the event loop). Use the sync version explicitly.",
+  "evaluator": {
+    "type": "pattern",
+    "wrong_patterns": ["fs\\.readFileSync\\b", "readFileSync\\("],
+    "correct_patterns": ["fs\\.promises\\.readFile|await\\s+readFile|fs/promises|fs\\.readFile\\([^,]+,\\s*['\"]"]
+  }
+}
