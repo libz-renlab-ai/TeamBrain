@@ -180,3 +180,94 @@ instance is doing"* 退化成 *"what each teammate just typed"* —— pitch dec
 - `packages/core/src/m5/m5-sync.ts`
 - `packages/core/src/m5/lww-merge.ts`
 - `docs/kanban-user-boss/index.html`
+
+---
+
+## 11. Ground-truth refresh (2026-05-13)
+
+Re-mapped after plan v2 rewrite.
+
+### 11.1 Issue state delta
+
+`gh issue view` confirms (Explore agent's earlier "OPEN, grilling" map was
+stale):
+
+| # | Title | State |
+|---|------|-------|
+| 304 | ceo无法通过访问 http://192.168.22.88:8080/ 知道每个人在干啥 | **CLOSED** (body 0 comments, never grilled) |
+| 331 | teamagent 暴露尽可能全的 CC 状态信息（限额/用量/重置/上下文/模型/会话健康） | **CLOSED** (body 0 comments, superseded by #350) |
+| 335 | [epic] Business feature implementation status tracker (#1 SHIPPED / #2 VISION / #3 PARTIAL) | **OPEN** (no labels, epic tracker) |
+
+→ **No grill-ready Feature-2 issue exists today**. Feature 2 v2 needs a
+fresh ≤50-word fixedflow issue + grill cycle before any code lands
+(`docs/FIXEDFLOW.md` + `docs/NOT-GRILL-READY.md`).
+
+### 11.2 cc-status store is the realtime backbone (key v2 finding)
+
+Issue #350 already shipped `packages/digital-twin/src/cc-status/store.ts`
+which contains the receiver-side helpers Feature 2 needs:
+
+- `appendCcStatusSnapshot(outputDir, raw, now)` — sanitized, path-safe,
+  size-capped (2MB rotate), per-`<user>/<date>/<session>.cc-status.jsonl`
+- `readLatestPerSession(outputDir, user, now)` — latest snapshot per
+  session for one user, sorted by `ts` desc, with `stale_seconds` computed
+- `readLatestForSession(outputDir, user, session, now)` — single session
+- **`readLatestAllUsers(outputDir, now)`** — "Latest snapshot per session
+  across every user (leader roster)"; this is literally the boss-kanban
+  query, already implemented, already returning `stale_seconds`
+- `readHistory(outputDir, user, session, sinceMs, now)` — time-series
+
+The `CcStatusSnapshot` type (`cc-status/types.ts`) already carries
+`session_id`, `user_id`, `ts`, `event`, `display_name`, `machine_id`,
+`cwd`, `git_branch`, `model`, `context_tokens`, `context_pct`,
+`session_health`, `cost_usd`, `tokens_5h`, `tokens_7d`,
+`subscription_tier`, `five_hour_utilization`, `seven_day_utilization`,
+`five_hour_reset_at`, `seven_day_reset_at`, `quota_stale`, `turn_count`,
+`tool_calls_total`, `tool_calls_failed`, `files_touched`,
+`session_started_at` — i.e. far more than the v1 5-channel envelope
+proposed. **Feature 2 v2 does not need a new envelope schema**, only
+needs to write `event: 'session_start'` / `event: 'user_prompt_submit'`
+when hooks fire.
+
+### 11.3 What's still missing for "second-level realtime"
+
+The cc-status store is per-machine local JSONL. Feature 2 still needs:
+
+1. **Hook-side writer** at `SessionStart` + `UserPromptSubmit` calling
+   `appendCcStatusSnapshot` (local) **and** `postCcStatusSnapshot` over
+   HTTP (remote, fire-and-forget). Neither exists today on those hooks.
+2. **SSE wrapper** on `bin-prod-server.ts` running 1s-poll
+   `readLatestAllUsers` and pushing diffs. Not implemented.
+3. **Kanban DOM consumer** — `docs/kanban-user-boss/index.html` +
+   `styles.css` exist as static markup; no JS wired to SSE.
+4. **Privacy gate on realtime path** — M5 `secret-scanner.ts` +
+   `scope-classifier.ts` exist for batch git-sync; must be reused on
+   hook-emit. Not wired.
+5. **Latency / privacy / roster IO probes** — judge.md md-playbook
+   harness per plan v2 §How-to-eval. Not yet written.
+
+### 11.4 Hook-bundle install state (no change since v1 §2)
+
+`SessionStart` + `UserPromptSubmit` + `PreToolUse` + `Stop` already
+installed (project + user-level). v2 only consumes the first two —
+nothing to re-wire for Feature 2.
+
+### 11.5 NOT-GRILL-READY constraint
+
+Without a grill-ready Feature-2-v2 issue, `docs/NOT-GRILL-READY.md`
+anchor says: "When an issue is not grill-ready, please do not start
+post grill work. The rule is simple: work only in github comments and
+no codes submitted or local worktrees."
+
+Today's work (this research update + plan v2 + draft issue body) is
+**doc-only refinement** of an existing plan dir, not "post grill work" on
+a yet-to-exist issue. Code work (realtime-client.ts, realtime-stream.ts,
+hook bundle edits, kanban JS) is blocked until the user manually:
+
+1. Files the ≤50-word issue from `draft-feature-2-v2-issue.md`
+2. Adds `grilling` label per `docs/PRE-GRILL-CLAIM.md`
+3. Runs `/grill-via-web` to land the grill comment
+4. Adds `grill-ready` label per `docs/FIXEDFLOW.md`
+5. (Optional) Runs `/grill-with-docs` to save grill to ADR
+6. Manually invokes `/fixed-flow-driver <N>` (no watcher, no
+   auto-dispatch per `docs/FIXEDFLOW.md`)

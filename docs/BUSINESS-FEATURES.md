@@ -106,7 +106,7 @@ the user asks for the business features.**
 - 现状：**已落地**（M4-B 起 BM25+dense RRF matcher，72+ 条 active 规则在 `Project Knowledge Index`）
 - Third-party judge harness：
   - `docs/plans/docs--features--auto-capture--verify-canned-answer/judge.md` — Wilson/recall/precision 检测器 + real-session 实测（auto-capture 行为 gate）
-  - `docs/plans/2026-05-11-feature1-init-judge/judge.md` — **openable-and-usable gate**：在 fresh tmp git repo 跑 `teamagent init`，dump stdout/stderr/tree 到 evidence/，由独立 LLM probe 按 5 题判 PASS/FAIL。**取代了原方案里的 `teamagent --help` 字符串检查**（菜单可读不等于产品能装能用）。最近一次 PASS：`docs/plans/2026-05-11-feature1-init-judge/evidence/20260511T130402Z-feature1-76e8d1d0/`。
+  - `docs/plans/2026-05-11-feature1-init-judge/judge.md` — **openable-and-usable gate**：在 fresh tmp git repo 跑 `teamagent init`，dump stdout/stderr/tree 到 evidence/，由独立 LLM probe 按 5 题判 PASS/FAIL。**取代了原方案里的 `teamagent --help` 字符串检查**（菜单可读不等于产品能装能用）。Harness 现在 pin 到 repo-local `node_modules/.bin/tsx`（fresh worktree 必须先 `pnpm install`；guard 在缺失时 exit 127 with 修复提示）。最近一次 PASS：`docs/plans/2026-05-11-feature1-init-judge/evidence/20260512T172508Z-feature1-4bc3b9b7/`（exit 0、5/5 checks、`.teamagent/{knowledge.db,required.json,.project-root}` + 1 个 exported skill）。
 
 ### Feature #2 — Team leader 秒级可见
 
