@@ -285,6 +285,177 @@ function formatMetric(value) {
   return typeof value === "number" ? String(value) : "-";
 }
 
+// issue #331: Claude Code 把 statusline 渲染的 stdin 一次性写完即关闭，shape:
+//   { hook_event_name:"Status", session_id, transcript_path, cwd,
+//     model:{ id, display_name }, workspace:{ current_dir, project_dir },
+//     cost:{ total_cost_usd, ... }, exceeds_200k_tokens, ... }
+// 读 stdin 同步、有上限、空 stdin → null，容错最大化（任何一项失败都让整行
+// 回落到老 4 字段，不挂状态栏）。
+function readStdinJsonSync(maxBytes) {
+  try {
+    // fd 0 同步读到 EOF。CC 写完会 close，所以 readFileSync 不会卡。
+    // 老调用（test、手跑）没人喂 stdin → ENOENT/EAGAIN → 返回 null。
+    const raw = fs.readFileSync(0, { encoding: "utf-8" });
+    if (!raw || raw.length === 0) return null;
+    if (typeof maxBytes === "number" && raw.length > maxBytes) {
+      // 防御性：CC 不太可能塞超大 JSON 给 statusline，但 cap 一下避免 OOM。
+      return null;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function formatTokens(n) {
+  if (typeof n !== "number" || !isFinite(n) || n < 0) return null;
+  if (n < 1000) return `${n}`;
+  if (n < 1_000_000) return `${Math.round(n / 100) / 10}K`.replace(/\.0K$/, "K");
+  return `${Math.round(n / 100_000) / 10}M`.replace(/\.0M$/, "M");
+}
+
+// 读 transcript JSONL 文件末尾若干 KB，反向找最近一条 assistant `usage`。
+// 不读全文件——transcript 在长 session 里可能几十 MB。
+function readLatestUsage(transcriptPath) {
+  try {
+    if (typeof transcriptPath !== "string" || transcriptPath.length === 0) return null;
+    const stat = fs.statSync(transcriptPath);
+    const tailBytes = Math.min(stat.size, 256 * 1024);
+    const fd = fs.openSync(transcriptPath, "r");
+    try {
+      const buf = Buffer.alloc(tailBytes);
+      fs.readSync(fd, buf, 0, tailBytes, stat.size - tailBytes);
+      const text = buf.toString("utf-8");
+      const lines = text.split("\n");
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i];
+        if (!line || line[0] !== "{") continue;
+        let obj;
+        try { obj = JSON.parse(line); } catch { continue; }
+        const usage = obj?.message?.usage;
+        if (!usage) continue;
+        const input = Number(usage.input_tokens) || 0;
+        const creation = Number(usage.cache_creation_input_tokens) || 0;
+        const read = Number(usage.cache_read_input_tokens) || 0;
+        const output = Number(usage.output_tokens) || 0;
+        return {
+          ctx: input + creation + read,
+          output,
+          turn_total: input + creation + read + output,
+        };
+      }
+      return null;
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+}
+
+// 同一 transcript 目录下 mtime > now - 7d 的 JSONL，按行扫 timestamp >= since
+// 的 assistant usage 累加 input+creation+read+output。bounded：每个文件只读
+// 末尾 256 KB；目录文件数 cap 20，单次预算 < 200 ms。
+function aggregateWindowedTokens(transcriptPath, since5hMs, since7dMs) {
+  const result = { h5: null, d7: null };
+  try {
+    if (typeof transcriptPath !== "string" || transcriptPath.length === 0) return result;
+    const dir = path.dirname(transcriptPath);
+    const now = Date.now();
+    const cutoff7d = now - since7dMs;
+    const cutoff5h = now - since5hMs;
+    let entries;
+    try { entries = fs.readdirSync(dir); } catch { return result; }
+    const files = entries
+      .filter((n) => n.endsWith(".jsonl"))
+      .map((n) => path.join(dir, n))
+      .map((p) => {
+        try { return { p, m: fs.statSync(p).mtimeMs, size: fs.statSync(p).size }; }
+        catch { return null; }
+      })
+      .filter((x) => x && x.m >= cutoff7d)
+      .sort((a, b) => b.m - a.m)
+      .slice(0, 20);
+
+    let h5 = 0;
+    let d7 = 0;
+    let any = false;
+    for (const f of files) {
+      let buf;
+      try {
+        const tail = Math.min(f.size, 256 * 1024);
+        const fd = fs.openSync(f.p, "r");
+        try {
+          buf = Buffer.alloc(tail);
+          fs.readSync(fd, buf, 0, tail, f.size - tail);
+        } finally {
+          fs.closeSync(fd);
+        }
+      } catch { continue; }
+      const lines = buf.toString("utf-8").split("\n");
+      for (const line of lines) {
+        if (!line || line[0] !== "{") continue;
+        let obj;
+        try { obj = JSON.parse(line); } catch { continue; }
+        const usage = obj?.message?.usage;
+        if (!usage) continue;
+        const ts = obj?.timestamp ? Date.parse(obj.timestamp) : NaN;
+        if (!isFinite(ts)) continue;
+        const tokens =
+          (Number(usage.input_tokens) || 0) +
+          (Number(usage.cache_creation_input_tokens) || 0) +
+          (Number(usage.cache_read_input_tokens) || 0) +
+          (Number(usage.output_tokens) || 0);
+        if (ts >= cutoff7d) { d7 += tokens; any = true; }
+        if (ts >= cutoff5h) { h5 += tokens; }
+      }
+    }
+    if (any) { result.h5 = h5; result.d7 = d7; }
+    return result;
+  } catch {
+    return result;
+  }
+}
+
+// 把 CC stdin 中 6 项渲染成 ["模型:X", "上下文:YK", ...] 数组，缺的字段跳过。
+function buildCcFields(cc) {
+  const out = [];
+  if (!cc || typeof cc !== "object") return out;
+  try {
+    const model = cc?.model?.display_name ?? cc?.model?.id;
+    if (typeof model === "string" && model.trim().length > 0) {
+      out.push(`模型:${model.trim()}`);
+    }
+  } catch { /* skip */ }
+  try {
+    const usage = readLatestUsage(cc?.transcript_path);
+    if (usage && usage.ctx > 0) {
+      const t = formatTokens(usage.ctx);
+      if (t) out.push(`上下文:${t}`);
+    }
+  } catch { /* skip */ }
+  try {
+    const cost = cc?.cost?.total_cost_usd;
+    if (typeof cost === "number" && cost > 0) {
+      out.push(`用量:$${cost.toFixed(2)}`);
+    }
+  } catch { /* skip */ }
+  try {
+    const FIVE_H = 5 * 60 * 60 * 1000;
+    const SEVEN_D = 7 * 24 * 60 * 60 * 1000;
+    const win = aggregateWindowedTokens(cc?.transcript_path, FIVE_H, SEVEN_D);
+    const h5 = formatTokens(win.h5);
+    const d7 = formatTokens(win.d7);
+    if (h5) out.push(`5h:${h5}`);
+    if (d7) out.push(`7d:${d7}`);
+  } catch { /* skip */ }
+  try {
+    if (cc?.exceeds_200k_tokens === true) out.push("会话:⚠超长");
+    else if (cc?.exceeds_200k_tokens === false) out.push("会话:OK");
+  } catch { /* skip */ }
+  return out;
+}
+
 function main() {
   // 未 init 且像项目 → 显眼提醒 (此路径在 --dangerously-skip-permissions 下也触发,
   // 因为 statusline 不经过 hook 系统)
@@ -345,8 +516,16 @@ function main() {
 
   // issue #168: 字段加中文标签 + 时间窗后缀（今/周），分隔符 " | "。
   // 老格式 `helped:T/W · risk:T` 让新用户三秒内连环三问；新格式让数字自带语义。
+  //
+  // issue #331: CC stdin 有内容时，把 模型 / 上下文 / 用量 / 5h / 7d / 会话健康
+  // 6 项拼到老 4 字段后面、hint 之前。空 stdin（test/legacy 调用）→ ccFields = []
+  // → 老格式 byte-identical。
+  const cc = readStdinJsonSync(64 * 1024);
+  const ccFields = buildCcFields(cc);
+  const ccSegment = ccFields.length > 0 ? ` | ${ccFields.join(" | ")}` : "";
+
   process.stdout.write(
-    `TeamAgent | 规则:${formatMetric(count)} | 帮过:${formatMetric(helpedToday)}今/${formatMetric(helpedWeek)}周 | 拦过:${formatMetric(riskToday)}今 | ${hint}`,
+    `TeamAgent | 规则:${formatMetric(count)} | 帮过:${formatMetric(helpedToday)}今/${formatMetric(helpedWeek)}周 | 拦过:${formatMetric(riskToday)}今${ccSegment} | ${hint}`,
   );
 }
 
