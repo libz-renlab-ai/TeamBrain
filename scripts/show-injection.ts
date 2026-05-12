@@ -73,6 +73,9 @@ async function runRetrieval(prompt: string): Promise<void> {
 
   let result: Awaited<ReturnType<typeof retrieveRulesForPrompt>>;
   try {
+    // Issue #315: retrieveRulesForPrompt now requires explicit embedder.
+    // This is a CLI debug script (not a hook), so in-process Xenova is OK —
+    // hooks go through DaemonFirstEmbedder.
     result = await retrieveRulesForPrompt({
       userMessage: prompt,
       cwd: CWD,
@@ -80,6 +83,7 @@ async function runRetrieval(prompt: string): Promise<void> {
       globalDbPath: GLOBAL_DB,
       sessionSeenIds: seenIds,
       isFirstPrompt: firstPrompt,
+      embedder: new XenovaRuleEmbedder(),
     });
   } catch (e) {
     console.log(`  ❌ 检索失败：${String(e)}`);

@@ -55,8 +55,22 @@ import {
   touchSessionInjected,
 } from "./session-rule-injected.js";
 import { runHook } from "./hook-shell/index.js";
+import { DaemonFirstEmbedder } from "./daemon-first-embedder.js";
 
 const HOOK_TIMEOUT_MS = 5_000;
+
+// ---- Lazy singleton for semantic path (per-process, reused if process is long-lived) ----
+// Issue #315: UserPromptSubmit was the one hook that #164 missed wiring to
+// the embedder daemon — every prompt submission loaded the 650MB ONNX model
+// in-process via `new XenovaRuleEmbedder()` default in retrieveRulesForPrompt.
+// Multi-session × per-prompt = RAM bomb → 卡死. Same pattern as
+// bin-pre-tool-use / bin-stop: one singleton DaemonFirstEmbedder per process
+// that talks to the long-running daemon over HTTP.
+let _embedder: DaemonFirstEmbedder | null = null;
+function getEmbedder(): DaemonFirstEmbedder {
+  if (!_embedder) _embedder = new DaemonFirstEmbedder();
+  return _embedder;
+}
 
 interface UserPromptInput {
   readonly prompt: string;
@@ -186,6 +200,7 @@ async function main(): Promise<void> {
               globalDbPath: paths.globalDbPath,
               sessionSeenIds: seenIds,
               isFirstPrompt: firstPrompt,
+              embedder: getEmbedder(),
             }),
             new Promise<null>((resolve) =>
               setTimeout(() => resolve(null), HOOK_TIMEOUT_MS),

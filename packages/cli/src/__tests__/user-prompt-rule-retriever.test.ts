@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatRuleInjection, buildTechStackText, buildTerminalSummary, passesCoOccurrenceGuard } from "../user-prompt-rule-retriever.js";
+import { formatRuleInjection, buildTechStackText, buildTerminalSummary, passesCoOccurrenceGuard, retrieveRulesForPrompt } from "../user-prompt-rule-retriever.js";
 import type { KnowledgeEntry } from "@teamagent/types";
 
 function makeRule(id: string, trigger: string, correct: string, conf = 0.9): KnowledgeEntry {
@@ -149,5 +149,26 @@ describe("passesCoOccurrenceGuard", () => {
   it("is case-insensitive for token matching", () => {
     const msg = "LIST PRODUCT FEATURES NOT TECH FEATURES EXPLAIN TO A CHINESE CUTE DUCK";
     expect(passesCoOccurrenceGuard(threeElementRule, msg)).toBe(true);
+  });
+});
+
+describe("retrieveRulesForPrompt embedder requirement (issue #315)", () => {
+  // Issue #315 hardens against silent regression: the previous default
+  // `?? new XenovaRuleEmbedder()` allowed any future caller that forgot
+  // to pass the daemon-first embedder to silently load 650MB of ONNX
+  // in-process per UserPromptSubmit. Throwing on missing embedder makes
+  // this drift impossible.
+  it("throws when args.embedder is missing", async () => {
+    await expect(
+      retrieveRulesForPrompt({
+        userMessage: "hello",
+        cwd: process.cwd(),
+        projectDbPath: ":memory:",
+        globalDbPath: ":memory:",
+        sessionSeenIds: new Set(),
+        isFirstPrompt: false,
+        // intentionally omit embedder
+      }),
+    ).rejects.toThrow(/explicit `embedder`/);
   });
 });

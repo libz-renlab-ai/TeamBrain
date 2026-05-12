@@ -3,10 +3,10 @@ import path from "node:path";
 import type { KnowledgeEntry } from "@teamagent/types";
 import { detectStack, semanticMatch, rerankByConfidence } from "@teamagent/core";
 import {
-  XenovaRuleEmbedder,
   SqliteSemanticRetriever,
   openDb,
 } from "@teamagent/adapters";
+import type { RuleEmbedder } from "@teamagent/ports";
 import type { SemanticMatch } from "@teamagent/core";
 
 const TOP_K = 3;
@@ -50,7 +50,7 @@ export interface RetrieveRulesArgs {
   globalDbPath: string;
   sessionSeenIds: Set<string>;
   isFirstPrompt: boolean;
-  embedder?: XenovaRuleEmbedder;
+  embedder?: RuleEmbedder;
 }
 
 export interface RuleRetrievalResult {
@@ -121,7 +121,7 @@ export function formatRuleInjection(rules: KnowledgeEntry[], tier: "T1" | "T2"):
 
 async function queryRules(
   text: string,
-  embedder: XenovaRuleEmbedder,
+  embedder: RuleEmbedder,
   projectDbPath: string,
   globalDbPath: string,
   excludeIds: Set<string>,
@@ -176,7 +176,16 @@ async function queryRules(
 export async function retrieveRulesForPrompt(
   args: RetrieveRulesArgs,
 ): Promise<RuleRetrievalResult> {
-  const embedder = args.embedder ?? new XenovaRuleEmbedder();
+  // Issue #315: previous default `?? new XenovaRuleEmbedder()` was the
+  // bug source. Every UserPromptSubmit fired this and loaded the 650MB
+  // ONNX in-process. Throw now so any future caller that forgets to
+  // pass the daemon-first embedder cannot silently regress.
+  if (!args.embedder) {
+    throw new Error(
+      "retrieveRulesForPrompt requires an explicit `embedder` (use DaemonFirstEmbedder for hook paths; XenovaRuleEmbedder remains for CLI/scripts)",
+    );
+  }
+  const embedder = args.embedder;
   const allSeen = new Set(args.sessionSeenIds);
 
   let tier1Rules: KnowledgeEntry[] = [];
