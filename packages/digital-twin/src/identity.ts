@@ -1,19 +1,34 @@
-import { execSync } from 'node:child_process';
+import { execSync, type ExecSyncOptionsWithStringEncoding } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { hostname, userInfo } from 'node:os';
 import { dirname } from 'node:path';
 import { ulid } from 'ulid';
 import { DEFAULT_PATHS } from './paths.js';
 
-export function getUserId(): string {
+export interface GetUserIdOptions {
+  /**
+   * Hard cap (ms) on the `git config user.email` shell-out. When the
+   * subprocess overruns, execSync throws and we fall back to
+   * `${username}@${hostname()}`. Useful on hooks' critical paths where a
+   * stuck git (NFS HOME, slow corporate proxy) would otherwise block the
+   * caller. Defaults to undefined (no timeout — preserves prior behavior).
+   */
+  timeoutMs?: number;
+}
+
+export function getUserId(opts: GetUserIdOptions = {}): string {
   try {
-    const email = execSync('git config user.email', {
+    const execOpts: ExecSyncOptionsWithStringEncoding = {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
+    };
+    if (typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0) {
+      execOpts.timeout = opts.timeoutMs;
+    }
+    const email = execSync('git config user.email', execOpts).trim();
     if (email) return email;
   } catch {
-    // git not available, or user.email not configured
+    // git not available, user.email not configured, or timeout exceeded
   }
   return `${userInfo().username}@${hostname()}`;
 }

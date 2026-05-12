@@ -38,15 +38,37 @@ Each teammate opts in by exporting the receiver URL in their shell rc file
 (or via `teamagent`'s settings):
 
 ```bash
-export TEAMAGENT_REALTIME_URL="http://10.0.0.42:9787"
+# Default: loopback-only. Safe out of the box for `bin-realtime-demo`.
+export TEAMAGENT_REALTIME_URL="http://127.0.0.1:9787"
 # Optional — bearer for the receiver if it's auth-gated.
 export TEAMAGENT_REALTIME_TOKEN="..."
 # Optional — log every emit outcome to stderr (debug only).
 export TEAMAGENT_REALTIME_DEBUG=1
+# Required ONLY when pushing to a non-loopback team receiver (LAN / VPN).
+# Without this, any non-loopback URL is rejected — see "Safety defaults" below.
+export TEAMAGENT_REALTIME_ALLOW_REMOTE=1
 ```
 
-Unset → the hooks emit nothing. There is **no default endpoint**: a teammate
-must explicitly opt in for any cc-status to leave their machine.
+Unset `TEAMAGENT_REALTIME_URL` → the hooks emit nothing. There is **no
+default endpoint**: a teammate must explicitly opt in for any cc-status to
+leave their machine.
+
+## Safety defaults
+
+The emitter applies three guards before it touches the network. They exist
+because anyone who can set `TEAMAGENT_REALTIME_URL` (hostile dotfile sync,
+supply-chain pnpm script, social engineering) would otherwise exfiltrate
+cwd + git email + machine id + bearer token on every hook fire.
+
+| Guard | When it kicks in | Override |
+|-------|------------------|----------|
+| Kill switch | `TEAMAGENT_DISABLED=1` set | None — the kill switch wins |
+| Loopback-only | URL host is not `127.0.0.1` / `localhost` / `::1` | `TEAMAGENT_REALTIME_ALLOW_REMOTE=1` |
+| Scheme allowlist | URL scheme is not `http:` / `https:` | None — `file://`, `javascript:` etc. always rejected |
+| Token bound to URL | Bearer token only sent to the URL configured here, never anywhere else | n/a (existing behavior) |
+
+Each rejection is silent in production. Set `TEAMAGENT_REALTIME_DEBUG=1` to
+see the reason printed to stderr.
 
 ## Contract (what the helper guarantees)
 

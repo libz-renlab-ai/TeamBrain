@@ -70,6 +70,11 @@ export async function postCcStatusSnapshot(
     timedOut = true;
     ctrl.abort();
   }, timeoutMs);
+  // unref so a long-lived Node process can exit cleanly even if a hook fires
+  // right before exit and the timer hasn't elapsed yet.
+  if (typeof (timer as { unref?: () => void }).unref === 'function') {
+    (timer as { unref: () => void }).unref();
+  }
 
   try {
     const resp = await fetchImpl(url, {
@@ -78,14 +83,26 @@ export async function postCcStatusSnapshot(
       body: JSON.stringify(snapshot),
       signal: ctrl.signal,
     });
-    clearTimeout(timer);
+    // Cancel the response body immediately — we never read it, and undici
+    // otherwise buffers up to its high-water mark until GC. A malicious
+    // receiver returning a huge chunked body would otherwise OOM the hook
+    // process over a long-lived session. Best-effort; ignore cancel errors.
+    try {
+      const body = (resp as unknown as { body?: { cancel?: () => Promise<void> } }).body;
+      if (body && typeof body.cancel === 'function') {
+        void body.cancel().catch(() => { /* best-effort */ });
+      }
+    } catch { /* best-effort */ }
     if (resp.status >= 500) opts.onOutcome?.('http_5xx');
     else if (resp.status >= 400) opts.onOutcome?.('http_4xx');
     else opts.onOutcome?.('ok');
   } catch (err) {
-    clearTimeout(timer);
     if (timedOut) opts.onOutcome?.('timeout');
     else if (err instanceof Error && err.name === 'AbortError') opts.onOutcome?.('aborted');
     else opts.onOutcome?.('network');
+  } finally {
+    // Always clear the timer — earlier code only cleared on resolve/reject,
+    // so a sync throw inside fetchImpl would leak the timer for `timeoutMs`.
+    clearTimeout(timer);
   }
 }

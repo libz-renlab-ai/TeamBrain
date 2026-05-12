@@ -14,22 +14,30 @@
  *   - getUserId throws → snapshot still builds with hostname fallback.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { emitCcStatus } from "../realtime-emit.js";
+import { emitCcStatus, __resetIdentityCacheForTests } from "../realtime-emit.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_ENV_URL = process.env.TEAMAGENT_REALTIME_URL;
 const ORIGINAL_ENV_TOKEN = process.env.TEAMAGENT_REALTIME_TOKEN;
+const ORIGINAL_ENV_DISABLED = process.env.TEAMAGENT_DISABLED;
+const ORIGINAL_ENV_ALLOW_REMOTE = process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE;
 
 describe("emitCcStatus", () => {
   beforeEach(() => {
     delete process.env.TEAMAGENT_REALTIME_URL;
     delete process.env.TEAMAGENT_REALTIME_TOKEN;
+    delete process.env.TEAMAGENT_DISABLED;
+    delete process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE;
+    __resetIdentityCacheForTests();
   });
 
   afterEach(() => {
     globalThis.fetch = ORIGINAL_FETCH;
     if (ORIGINAL_ENV_URL) process.env.TEAMAGENT_REALTIME_URL = ORIGINAL_ENV_URL;
     if (ORIGINAL_ENV_TOKEN) process.env.TEAMAGENT_REALTIME_TOKEN = ORIGINAL_ENV_TOKEN;
+    if (ORIGINAL_ENV_DISABLED) process.env.TEAMAGENT_DISABLED = ORIGINAL_ENV_DISABLED;
+    if (ORIGINAL_ENV_ALLOW_REMOTE)
+      process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE = ORIGINAL_ENV_ALLOW_REMOTE;
   });
 
   it("is a no-op when TEAMAGENT_REALTIME_URL is unset", () => {
@@ -101,6 +109,69 @@ describe("emitCcStatus", () => {
     ).not.toThrow();
     await new Promise((r) => setTimeout(r, 5));
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses non-loopback URLs by default (SSRF / exfil guard)", () => {
+    process.env.TEAMAGENT_REALTIME_URL = "http://evil.example.com:9787";
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({ event: "session_start", sessionId: "s-attack" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("allows non-loopback URLs when TEAMAGENT_REALTIME_ALLOW_REMOTE=1", async () => {
+    process.env.TEAMAGENT_REALTIME_URL = "http://lan-receiver.local:9787";
+    process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE = "1";
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({ event: "session_start", sessionId: "s-lan" });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts 127.0.0.1, localhost, and ::1 without the override", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    for (const host of ["http://127.0.0.1:9787", "http://localhost:9787", "http://[::1]:9787"]) {
+      process.env.TEAMAGENT_REALTIME_URL = host;
+      emitCcStatus({ event: "session_start", sessionId: "s-loop" });
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects file:// and javascript: schemes regardless of host", () => {
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    for (const url of ["file:///etc/passwd", "javascript:alert(1)", "not-a-url"]) {
+      process.env.TEAMAGENT_REALTIME_URL = url;
+      emitCcStatus({ event: "session_start", sessionId: "s-bad" });
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("respects TEAMAGENT_DISABLED=1 even when REALTIME_URL is set", () => {
+    process.env.TEAMAGENT_REALTIME_URL = "http://127.0.0.1:9787";
+    process.env.TEAMAGENT_DISABLED = "1";
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({ event: "session_start", sessionId: "s-killswitch" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("clamps non-finite contextTokens to omitted (no NaN/Infinity in body)", async () => {
+    process.env.TEAMAGENT_REALTIME_URL = "http://127.0.0.1:9787";
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({
+      event: "session_start",
+      sessionId: "s-bad-tokens",
+      contextTokens: Number.POSITIVE_INFINITY,
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.context_tokens).toBeUndefined();
+    expect(body.context_pct).toBeUndefined();
   });
 
   it("returns synchronously even when fetch never resolves", () => {

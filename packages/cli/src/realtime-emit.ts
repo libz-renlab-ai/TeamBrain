@@ -38,6 +38,31 @@ import {
   type PostCcStatusOutcome,
 } from "@teamagent/digital-twin";
 
+// Hosts considered safe to push cc-status to without TEAMAGENT_REALTIME_ALLOW_REMOTE=1.
+// Adversarial review on PR #404: an attacker who can set the env var (hostile
+// dotfile sync, supply-chain pnpm script, social engineering) gets cwd + git
+// email + machine id + bearer token exfiltrated to any URL. Default to
+// loopback-only so an "innocent" remote URL fails closed.
+const LOOPBACK_HOSTS = new Set([
+  "127.0.0.1",
+  "localhost",
+  "::1",
+  "[::1]",
+  "0.0.0.0",
+]);
+
+function urlIsLoopback(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  // hostname strips brackets from IPv6 already
+  return LOOPBACK_HOSTS.has(parsed.hostname);
+}
+
 export interface EmitInput {
   /** Which hook fired ("session_start" | "user_prompt_submit" | ...). */
   readonly event: string;
@@ -75,20 +100,38 @@ function debugLog(line: string): void {
 // read/write the machine-id sentinel. Both are stable for the process
 // lifetime and called per-hook, so caching keeps emitCcStatus well under
 // the 50ms hook-critical-path target.
+//
+// Empty-string guard: getUserId() returns the unix-account fallback when git
+// is installed but `user.email` is unset (common on fresh CI runners). We
+// still want to treat empty as "not yet resolved" so a later working git
+// config picks up — the `|| !cachedUserId` clause handles that.
 let cachedUserId: string | null = null;
 let cachedMachineId: string | null = null;
 
+/** Test-only — clears the in-process identity cache. */
+export function __resetIdentityCacheForTests(): void {
+  cachedUserId = null;
+  cachedMachineId = null;
+}
+
 function buildSnapshot(input: EmitInput): CcStatusSnapshot {
-  if (cachedUserId === null) {
+  if (!cachedUserId) {
     try {
-      cachedUserId = getUserId();
+      // Hard 200ms cap on the git shell-out. A stuck git config (NFS HOME,
+      // corporate proxy resolving git LFS, etc.) would otherwise block the
+      // SessionStart critical path on the FIRST emit. Cache hits after that.
+      const resolved = getUserId({ timeoutMs: 200 });
+      cachedUserId = resolved && resolved.length > 0
+        ? resolved
+        : `unknown@${hostname()}`;
     } catch {
       cachedUserId = `unknown@${hostname()}`;
     }
   }
-  if (cachedMachineId === null) {
+  if (!cachedMachineId) {
     try {
-      cachedMachineId = getMachineId();
+      const resolved = getMachineId();
+      cachedMachineId = resolved && resolved.length > 0 ? resolved : hostname();
     } catch {
       cachedMachineId = hostname();
     }
@@ -107,9 +150,17 @@ function buildSnapshot(input: EmitInput): CcStatusSnapshot {
   if (input.cwd) snap.cwd = input.cwd;
   if (input.gitBranch) snap.git_branch = input.gitBranch;
   if (input.model) snap.model = input.model;
-  if (typeof input.contextTokens === "number") {
-    snap.context_tokens = input.contextTokens;
-    snap.context_pct = Math.round((input.contextTokens / 200_000) * 100) / 100;
+  // Clamp contextTokens to a finite non-negative integer so a future caller
+  // can't pump NaN/Infinity/objects through. Math.floor coerces a bool to a
+  // number, but the typed param already excludes that.
+  if (
+    typeof input.contextTokens === "number" &&
+    Number.isFinite(input.contextTokens) &&
+    input.contextTokens >= 0
+  ) {
+    const tokens = Math.floor(input.contextTokens);
+    snap.context_tokens = tokens;
+    snap.context_pct = Math.round((tokens / 200_000) * 100) / 100;
   }
   return snap;
 }
@@ -120,9 +171,32 @@ function buildSnapshot(input: EmitInput): CcStatusSnapshot {
  * the outcome, and the contract is "never block the hook path".
  */
 export function emitCcStatus(input: EmitInput): void {
+  // Defense-in-depth: the kill switch is also honored by the two existing
+  // hook bundles before they call here, but any future direct caller (a
+  // third hook, a CLI subcommand, an integration test) gets the same opt-out
+  // for free by reading the env var here.
+  if (readEnv("TEAMAGENT_DISABLED") === "1") {
+    debugLog(`skip (TEAMAGENT_DISABLED=1) event=${input.event}`);
+    return;
+  }
   const baseUrl = readEnv("TEAMAGENT_REALTIME_URL");
   if (!baseUrl) {
     debugLog(`skip (TEAMAGENT_REALTIME_URL unset) event=${input.event}`);
+    return;
+  }
+  // Loopback-only by default. A teammate who actually wants to push to a
+  // team-shared LAN receiver opts in explicitly with
+  // TEAMAGENT_REALTIME_ALLOW_REMOTE=1. Adversarial review on PR #404 caught
+  // that without this default, an attacker who can set TEAMAGENT_REALTIME_URL
+  // (compromised dotfile, supply-chain pnpm script, hostile teammate-config
+  // sync) gets cwd + git email + bearer token exfiltrated on every hook.
+  if (
+    !urlIsLoopback(baseUrl) &&
+    readEnv("TEAMAGENT_REALTIME_ALLOW_REMOTE") !== "1"
+  ) {
+    debugLog(
+      `skip (non-loopback URL, set TEAMAGENT_REALTIME_ALLOW_REMOTE=1 to override) event=${input.event} url=${baseUrl}`,
+    );
     return;
   }
   let snapshot: CcStatusSnapshot;
