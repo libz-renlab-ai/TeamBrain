@@ -15,6 +15,28 @@ artifacts the user sees) do NOT need an entry.
 
 ### Fixed
 
+- **Multi-session no longer multiplies the 650MB embedder model**. Issue #315.
+  Previously, opening multiple Claude Code dialogs concurrently caused each
+  `bin-user-prompt-submit` invocation to load `Xenova/multilingual-e5-small`
+  in-process (~650MB RSS per process). Five dialogs sending prompts at once
+  was enough to freeze a 16GB machine. The fix has three parts:
+    1. UserPromptSubmit now uses the same `DaemonFirstEmbedder` singleton
+       as PreToolUse / Stop — talks to the long-running daemon over HTTP
+       instead of loading the model itself. PR #227 (issue #164) wired
+       the other three hooks but never UserPromptSubmit.
+    2. When the daemon is unreachable (cold-start window, missing
+       `onnxruntime-node`, daemon crash), `DaemonFirstEmbedder.embed()`
+       now returns empty vectors instead of loading the model in-process.
+       The semantic retriever degrades to BM25-only via its existing
+       per-stage try/catch — same behaviour you'd get if vec0 itself
+       were unavailable.
+    3. Atomic `fs.openSync(wx)` locks at the spawn site
+       (`tryDetachedSpawn`) and inside the daemon's own startup
+       (`bin-embedder`'s `tryAcquireLock` window) so concurrent
+       SessionStart hooks cannot race to spawn N independent daemon
+       children each loading the model. 30s mtime stale-cleanup
+       handles crashed holders.
+
 - **Auto-update no longer silently sleeps for 24h on shared NAT / mobile networks (#313, closes #305)**.
   Pre-#313 the version-check fired `GET https://api.github.com/repos/libz-renlab-ai/TeamBrain/branches/release`,
   which hits the **60 req/hr anonymous quota per IP**. On corporate NAT, mobile cells, CI runners — any place
