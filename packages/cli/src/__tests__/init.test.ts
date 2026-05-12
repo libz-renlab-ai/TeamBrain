@@ -127,6 +127,132 @@ describe("executeInit", () => {
     expect(mirrorStep?.detail).toContain("不存在");
   });
 
+  // Issue #284 slice 1: required-mode artifacts.
+  it("writes .teamagent/required.json + .claude/hooks/check-teamagent.sh for claude target", async () => {
+    nodeFs.writeFileSync(
+      path.join(tmp.cwd, "CLAUDE.md"),
+      "# Team rules\n- Prefer fetch over axios\n",
+    );
+
+    const r = await executeInit({
+      ...commonOpts(),
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+
+    expect(r.ok).toBe(true);
+    const reqPath = path.join(tmp.cwd, ".teamagent", "required.json");
+    const shPath = path.join(tmp.cwd, ".claude", "hooks", "check-teamagent.sh");
+    expect(nodeFs.existsSync(reqPath)).toBe(true);
+    expect(nodeFs.existsSync(shPath)).toBe(true);
+
+    // required.json shape: schema/mode/check match the grill spec
+    const raw = nodeFs.readFileSync(reqPath, "utf8");
+    const cfg = JSON.parse(raw);
+    expect(cfg.schema).toBe("teamagent.required.v1");
+    expect(cfg.mode).toBe("required");
+    expect(cfg.scope).toBe("claude-assisted-work");
+    expect(cfg.check.installed).toBe("command -v teamagent");
+    expect(cfg.check.required).toBe(
+      'teamagent required-check --project "$CLAUDE_PROJECT_DIR"',
+    );
+
+    // .sh contains the deny pattern
+    const sh = nodeFs.readFileSync(shPath, "utf8");
+    expect(sh).toContain("#!/usr/bin/env bash");
+    expect(sh).toContain("command -v teamagent");
+    expect(sh).toContain('teamagent required-check --project');
+    expect(sh).toContain('"permissionDecision": "deny"');
+
+    // Executable bit set on POSIX
+    if (process.platform !== "win32") {
+      const mode = nodeFs.statSync(shPath).mode & 0o777;
+      expect(mode & 0o100).toBe(0o100);
+    }
+
+    // Step registered as ok
+    const step = r.steps.find((s) => s.step === "write-required-artifacts");
+    expect(step?.status).toBe("ok");
+  });
+
+  it("idempotency: re-running init does not rewrite required-mode artifacts when content matches", async () => {
+    nodeFs.writeFileSync(
+      path.join(tmp.cwd, "CLAUDE.md"),
+      "# Team rules\n- Prefer fetch over axios\n",
+    );
+
+    // First run
+    await executeInit({
+      ...commonOpts(),
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+
+    const reqPath = path.join(tmp.cwd, ".teamagent", "required.json");
+    const shPath = path.join(tmp.cwd, ".claude", "hooks", "check-teamagent.sh");
+    const reqContentBefore = nodeFs.readFileSync(reqPath, "utf8");
+    const shContentBefore = nodeFs.readFileSync(shPath, "utf8");
+    const reqMtimeBefore = nodeFs.statSync(reqPath).mtimeMs;
+    const shMtimeBefore = nodeFs.statSync(shPath).mtimeMs;
+
+    // Second run — content already byte-identical, so writeManagedFile
+    // should short-circuit before the atomic rename.
+    await executeInit({
+      ...commonOpts(),
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+
+    const reqContentAfter = nodeFs.readFileSync(reqPath, "utf8");
+    const shContentAfter = nodeFs.readFileSync(shPath, "utf8");
+    const reqMtimeAfter = nodeFs.statSync(reqPath).mtimeMs;
+    const shMtimeAfter = nodeFs.statSync(shPath).mtimeMs;
+
+    expect(reqContentAfter).toBe(reqContentBefore);
+    expect(shContentAfter).toBe(shContentBefore);
+    // mtime preserved (no rewrite when content matches)
+    expect(reqMtimeAfter).toBe(reqMtimeBefore);
+    expect(shMtimeAfter).toBe(shMtimeBefore);
+  });
+
+  it("dry-run does not write required-mode artifacts", async () => {
+    nodeFs.writeFileSync(
+      path.join(tmp.cwd, "CLAUDE.md"),
+      "# Team rules\n",
+    );
+
+    const r = await executeInit({
+      ...commonOpts(),
+      dryRun: true,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+
+    expect(r.dryRun).toBe(true);
+    expect(
+      nodeFs.existsSync(path.join(tmp.cwd, ".teamagent", "required.json")),
+    ).toBe(false);
+    expect(
+      nodeFs.existsSync(
+        path.join(tmp.cwd, ".claude", "hooks", "check-teamagent.sh"),
+      ),
+    ).toBe(false);
+  });
+
+  it("target=codex does not write required-mode artifacts", async () => {
+    const r = await executeInit({
+      ...commonOpts(),
+      target: "codex",
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+
+    expect(r.ok).toBe(true);
+    expect(
+      nodeFs.existsSync(path.join(tmp.cwd, ".teamagent", "required.json")),
+    ).toBe(false);
+    expect(
+      nodeFs.existsSync(
+        path.join(tmp.cwd, ".claude", "hooks", "check-teamagent.sh"),
+      ),
+    ).toBe(false);
+  });
+
   it("target=codex exports Skills and links .codex/skills", async () => {
     const r = await executeInit({
       ...commonOpts(),
