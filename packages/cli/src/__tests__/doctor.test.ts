@@ -889,11 +889,16 @@ describe("checkHookSpawn (issue #280)", () => {
  * staged bin's presence is faked on disk.
  */
 describe("checkDigitalTwinUploader (issue #368)", () => {
-  function makeHomeWithStagedBin(): { home: string; cleanup: () => void } {
+  // A staged bin built post-#368 contains the dry-run marker; the probe spawns
+  // it. A pre-#368 bin lacks the marker; the check must skip (never spawn it).
+  function makeHomeWithStagedBin(content = "// staged bin\nprocess.env.TEAMAGENT_UPLOADER_DRYRUN;\n"): {
+    home: string;
+    cleanup: () => void;
+  } {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-dtup-"));
     const dir = digitalTwinPaths(home).digitalTwinDir;
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "bin-uploader.cjs"), "// staged bin\n", "utf-8");
+    fs.writeFileSync(path.join(dir, "bin-uploader.cjs"), content, "utf-8");
     return { home, cleanup: () => fs.rmSync(home, { recursive: true, force: true }) };
   }
   function probeReturning(result: HookProbeResult): UploaderProbe {
@@ -909,6 +914,24 @@ describe("checkDigitalTwinUploader (issue #368)", () => {
       expect(out.detail).toContain("未安装");
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("skips (does NOT spawn) when the staged bin predates the dry-run probe", async () => {
+    // Pre-#368 binary: no TEAMAGENT_UPLOADER_DRYRUN marker. Spawning it would
+    // run the real upload loop + race the live daemon for the PID lock.
+    const { home, cleanup } = makeHomeWithStagedBin("// old staged bin, no marker\n");
+    let probeCalled = false;
+    try {
+      const out = await checkDigitalTwinUploader(home, async () => {
+        probeCalled = true;
+        return { exitCode: 0, stderr: "", timedOut: false };
+      });
+      expect(out.status).toBe("skip");
+      expect(out.detail).toContain("install-hook");
+      expect(probeCalled).toBe(false);
+    } finally {
+      cleanup();
     }
   });
 

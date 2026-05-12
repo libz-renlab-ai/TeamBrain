@@ -13,14 +13,16 @@ import { digitalTwinPaths } from '../paths.js';
 
 /**
  * Heuristic for "this log line looks like an error / crash" — used to pick the
- * line to surface in `status` / `doctor`. Deliberately broad: the daemon's
- * normal diagnostics ("daemon exiting (idle)", "another daemon is already
- * running") don't match, but Node module-resolution failures, the uploader's
- * own `digital-twin daemon crash:` / `auth failed` lines, and raw stack-trace
- * `Error:` lines do.
+ * line to surface in `status` / `doctor`. Tuned to the daemon's actual output:
+ * its normal diagnostics ("daemon exiting (idle)", "another daemon is already
+ * running", "dry-run OK", "config missing or disabled") don't match, but Node
+ * module-resolution failures, the uploader's own `digital-twin daemon crash:` /
+ * `auth failed` lines, and stack-trace `Error: ` / `TypeError: ` &c. lines do.
+ * Anchored to error-class names + known prefixes rather than loose keywords so
+ * a benign line that merely mentions "throw" isn't surfaced as `last_error`.
  */
 const ERROR_LINE_RE =
-  /MODULE_NOT_FOUND|Cannot find module|daemon crash|auth failed|\bError\b:|EACCES|ENOENT|ECONNREFUSED|ETIMEDOUT|UnhandledPromiseRejection|\bthrow\b/i;
+  /MODULE_NOT_FOUND|Cannot find module|daemon crash|auth failed|UnhandledPromiseRejection|\b(?:Error|TypeError|ReferenceError|SyntaxError|RangeError|EvalError|URIError)\b:|\b(?:EACCES|ENOENT|EPERM|EISDIR|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND)\b/;
 
 /** Max length of a surfaced log line before it is truncated with an ellipsis. */
 const MAX_LINE_LEN = 400;

@@ -945,9 +945,15 @@ const defaultUploaderProbe: UploaderProbe = (binPath, opts = {}) => {
       clearTimeout(timer);
       resolve({ exitCode: code, stderr, timedOut: false });
     });
+    // The child may exit before we finish writing — swallow the EPIPE so the
+    // probe (and `teamagent doctor`) don't crash on a fast-exiting daemon.
+    child.stdin?.on("error", () => { /* EPIPE / already closed */ });
     child.stdin?.end();
   });
 };
+
+/** Marker the issue #368 build emits into `bin-uploader.cjs` — its presence means the dry-run probe branch exists in the staged binary. */
+const UPLOADER_DRYRUN_MARKER = "TEAMAGENT_UPLOADER_DRYRUN";
 
 /**
  * Issue #368: health check for the staged digital-twin uploader daemon.
@@ -955,7 +961,11 @@ const defaultUploaderProbe: UploaderProbe = (binPath, opts = {}) => {
  * uploader (transcripts never reach the collector) is visible.
  *
  * - `skip` — `~/.teamagent/digital-twin/bin-uploader.cjs` not staged yet
- *   (digital-twin not initialised on this machine; nothing to probe).
+ *   (digital-twin not initialised on this machine), OR the staged binary
+ *   predates the dry-run probe (issue #368). In the latter case running the
+ *   probe would spawn the real `loadConfig → acquirePidLock → mainLoop` upload
+ *   path, race the live Stop-hook daemon for the PID lock, then get SIGKILLed
+ *   mid-flight — so we don't spawn it; we tell the user to re-stage.
  * - `pass` — the daemon loads and dry-run-exits 0. If `uploader.log` has a
  *   recent error line it's appended as a note (the crash happened before;
  *   the fix may already be in place).
@@ -975,6 +985,28 @@ export async function checkDigitalTwinUploader(
       name,
       status: "skip",
       detail: "digital-twin-uploader: 未安装 (本机未跑过 teamagent init / install-hook)",
+    };
+  }
+  // Pre-#368 staged binaries have no dry-run branch — spawning them runs the
+  // real upload loop. Detect via the marker and skip (don't probe) instead.
+  let staged = "";
+  try {
+    staged = fs.readFileSync(binPath, "utf-8");
+  } catch (err) {
+    return {
+      name,
+      status: "fail",
+      detail: `digital-twin-uploader: BROKEN — 无法读取 ${binPath}: ${String(err).slice(0, 160)}`,
+      fix: "pnpm --filter @teamagent/digital-twin build && pnpm teamagent install-hook",
+    };
+  }
+  if (!staged.includes(UPLOADER_DRYRUN_MARKER)) {
+    return {
+      name,
+      status: "skip",
+      detail:
+        "digital-twin-uploader: 跳过 — 已装的 bin-uploader.cjs 早于本探针 (issue #368)，" +
+        "跑 `teamagent install-hook` 重新 stage 后再 doctor 验证",
     };
   }
   const result = await probe(binPath);
