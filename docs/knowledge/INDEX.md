@@ -35,6 +35,28 @@ block.
 - Normal new rule ingestion should not require the user to run `migrate-v6` or
   `migrate-v7` manually.
 
+## FIXEDFLOW and SessionStart Banner
+
+The current docs-first FIXEDFLOW issue chain and the Chinese SessionStart
+banner copy are sourced from:
+
+- **Banner copy + gate contract + hard rules** (single source of truth for the
+  three user-facing capabilities + `grill-ready` / `docs-grill-ready` gate
+  semantics): [`../specs/2026-05-11-fixedflow-sessionstart-banner.zh.md`](../specs/2026-05-11-fixedflow-sessionstart-banner.zh.md).
+- **5+1 step workflow** (issue → `/grill-via-web` → `/grill-with-docs` → both
+  labels → `/fixed-flow-driver` → `/review` fix loop → PR → squash merge):
+  [`../FIXEDFLOW.md`](../FIXEDFLOW.md).
+- **Claim-time gate** (both labels required before explore / plan / driver):
+  [`../HOW-TO-CLAIM-ISSUE.md`](../HOW-TO-CLAIM-ISSUE.md).
+- **Save grilled comments to ADR** (where `/grill-with-docs` persists the grill
+  decisions): [`../adr/0014-save-grilled-comments-to-adr.md`](../adr/0014-save-grilled-comments-to-adr.md)
+  plus per-issue siblings under `../adr/0014/`.
+
+There is no watcher, cron, daemon, background dispatcher, or repo-wide
+scanner. Implementation only proceeds after both `grill-ready` and
+`docs-grill-ready` are set, and the driver is always invoked manually by a
+maintainer in Claude Code.
+
 ## Product Features and Landing Copy
 
 When asked about product features, route by scope:
