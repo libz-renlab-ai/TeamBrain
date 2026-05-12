@@ -3,6 +3,16 @@
 Companion to [`plan.md`](./plan.md). Sediment of repo context gathered before
 plan was written; **not** a plan substitute.
 
+> **2026-05-12 retraction（产品决策）**：本 research 文件中所有
+> 「5 通道实际可见度 / 中间每一步都亮 / Q1=B」的论述均已被产品决定撤回。
+> Feature #2 真正交付的 hook 范围只有 **2 通道：`SessionStart` +
+> `UserPromptSubmit`**；`PreToolUse` 在 boss-visibility 链路上**不需要**，
+> `Stop` / `SessionEnd` 在 Feature #1 的 auto-capture 链路里另有用途但
+> Feature #2 不依赖它们。下文 § "5 通道实际可见度" ASCII、§ "选 5 通道" 论证
+> 与 hook 资产清单中标 ❌ 的通道（SessionEnd）**不再是 Feature #2 实施前提**；
+> 重写本 research 前请以 `docs/BUSINESS-FEATURES.md` § Feature #2「Scope 边界」
+> 与 `plan.md` 顶部 retraction 为准。
+
 ---
 
 ## 1. 业务锚点（不可降级）
