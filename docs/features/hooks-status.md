@@ -160,6 +160,6 @@ The TeamBrain Claude hook inventory documented above maps to Codex's officially-
 | 7 | `SessionEnd` | absent | Same — Codex docs do not promise this event |
 | 8 | `SubagentStop` / `Notification` | absent | TeamBrain does not currently use them either; no parity work needed |
 
-**Verdict: 6/9 Claude events have a Codex equivalent**; 3 are absent (`PreCompact`, `SessionEnd`, `SubagentStop`/`Notification`); 1 Codex-unique event (`PermissionRequest`) has no Claude analog and would map to TeamBrain's existing `permission_mode` handling inside `bin-pre-tool-use.cjs`.
+**Verdict: 5/8 Claude events have a Codex equivalent** (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`); 3 are absent (`PreCompact`, `SessionEnd`, `SubagentStop`/`Notification`); 1 Codex-unique event (`PermissionRequest`) has no Claude analog and would map to TeamBrain's existing `permission_mode` handling inside `bin-pre-tool-use.cjs`. Total Codex-supported events including the Codex-unique one: 6.
 
 For the per-event stdin field diff, output schema diff, registry file format (`~/.codex/{config.toml,hooks.json}` + project-level variants), trust gate, and the active Codex Desktop 0.129.0-alpha.15 hook regression (upstream issue #21639), see [`./codex-hooks-spec.md`](./codex-hooks-spec.md). For the research evidence + verbatim source URLs, see [`../plans/2026-05-12-issue-289-codex-hooks-spec/research.md`](../plans/2026-05-12-issue-289-codex-hooks-spec/research.md).
