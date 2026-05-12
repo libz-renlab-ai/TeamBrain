@@ -3,7 +3,7 @@
 > **给 Claude Code 装一个会学习的大脑** · 自进化 AI 规则引擎
 > *Self-evolving rule engine for Claude Code and Codex — learn from every mistake, never repeat it.*
 
-[![npm](https://badge.fury.io/js/teamagent.svg)](https://www.npmjs.com/package/teamagent) ![Node ≥22](https://img.shields.io/badge/node-%3E%3D22-green) ![tests 1230 passing](https://img.shields.io/badge/tests-1230%20passing-brightgreen) ![open bugs](https://img.shields.io/badge/open%20bugs-0-brightgreen) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![npm](https://badge.fury.io/js/teamagent.svg)](https://www.npmjs.com/package/teamagent) ![Node ≥22](https://img.shields.io/badge/node-%3E%3D22-green) ![tests 3251 passing](https://img.shields.io/badge/tests-3251%20passing-brightgreen) ![open bugs](https://img.shields.io/badge/open%20bugs-0-brightgreen) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ---
 
@@ -318,9 +318,9 @@ teamagent demo hook Bash command='...'  # 离线模拟 PreToolUse 看会拦谁
 
 | 指标 | 数值 |
 |---|---|
-| 测试 | **1230 / 1230** 全绿（vitest，全 monorepo） |
+| 测试 | **3251 / 3299** 全绿（48 skipped；vitest，全 monorepo；283 test files） |
 | 历史 bug 候选 | 90 条投资性调查（fixed 76 / withdrawn 8 / wontfix-merged 1 / **open 0**） |
-| Chaos QA 覆盖 | 9 轮（Wave 1–9）自我对抗测试，含 215 文件白盒 + 全 35 CLI 命令攻击 |
+| Chaos QA 覆盖 | 15 轮（Wave 1–15）自我对抗测试，含 283 文件白盒 + 全 35 CLI 命令攻击 |
 | TypeScript 严格度 | `tsc --noEmit` 干净，全 monorepo |
 | 增量扫描 | scan-cursor 只看新 turn，避免会话越长扫描越慢 |
 
