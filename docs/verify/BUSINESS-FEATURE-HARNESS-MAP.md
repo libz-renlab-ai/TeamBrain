@@ -67,13 +67,17 @@ LLM-cannot-fake 门禁、哪条只有愿景 plan、哪条还没动工。
 
 ```
 目标可见度 vs 现状:
-  老板 dashboard 目标:   🟦 🟢 🟢 🟢 🟦 🟢 🟢 🟢 🟦   (每一步都亮)
-  当前 M5 viral sync:    🟦 ───────  🟦 ───────  🟦   (hour/day 粒度, 中间黑)
+  老板 dashboard 目标:   🟦 ──────  🟦 ──────  🟦   (prompt 边界粒度, ≤1s)
+  当前 M5 viral sync:    🟦 ───────  🟦 ───────  🟦   (hour/day 粒度)
 
   delta:
     - 端到端 latency 要降到 ≤ 1s (second-level realtime)
-    - 5 通道接入 (PreToolUse / UserPromptSubmit / Stop / SessionStart / SessionEnd)
+    - 2 通道接入 (SessionStart + UserPromptSubmit) 推送 prompt-boundary 事件
     - 至少 1 个 dashboard live view
+
+  out-of-scope (2026-05-12 撤回):
+    - per-tool-call 中间步可见 (PreToolUse / Stop / SessionEnd 不接, 见
+      docs/BUSINESS-FEATURES.md § Feature #2 Scope 边界)
 
   详见 docs/plans/2026-05-11-feature-2-secondlevel-realtime/plan.md
 ```
