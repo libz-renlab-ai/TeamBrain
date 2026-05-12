@@ -11,7 +11,7 @@
     "./bin-prod-server": "./src/bin-prod-server.ts"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/mock-server.ts --format esm --dts && tsup src/bin-prod-server.ts src/bin-uploader.ts --format cjs --target node16 --out-dir dist",
+    "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
