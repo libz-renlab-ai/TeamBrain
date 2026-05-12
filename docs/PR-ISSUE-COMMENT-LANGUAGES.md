@@ -84,6 +84,8 @@
 
 GitHub comment 不是一个单一通道；按用途分三桶：
 
+Proof-of-work image comments for already merged PRs are documented in `docs/PR-PROOF-IMAGE-COMMENTS.md`: they are Chinese Bucket (c) human-facing comments with marker `teambrain-pr-proof-work:image:v1`, backed by the imagehost-only repo `LiuShiyuMath/teambrain-pr-proof-images`.
+
 ### Bucket (a) — FIXEDFLOW takeover / claim 评论：**verbatim 中文**（硬规则）
 
 `docs/FIXEDFLOW.md` §`Taking over someone else's grill-ready issue` + `docs/PRE-GRILL-CLAIM.md` + `docs/PRE-IMPLEMENT-CLAIM.md` 共同要求接手 grill-ready issue 时在 issue 评论里贴下面三段 verbatim 中文声明（顺序固定，**禁翻译、禁 paraphrase、禁简写**）：
