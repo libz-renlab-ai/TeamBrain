@@ -56,6 +56,7 @@ import {
 } from "./session-rule-injected.js";
 import { runHook } from "./hook-shell/index.js";
 import { DaemonFirstEmbedder } from "./daemon-first-embedder.js";
+import { emitCcStatus } from "./realtime-emit.js";
 
 const HOOK_TIMEOUT_MS = 5_000;
 
@@ -116,6 +117,20 @@ async function main(): Promise<void> {
       const { input, cwd, home, env, paths, bus } = ctx;
       const prompt = input.prompt;
       const sessionId = input.session_id ?? "";
+
+      // Feature #2 v3: fire-and-forget cc-status push so the boss kanban
+      // gets one snapshot per teammate prompt. The 2-channel scope in
+      // docs/BUSINESS-FEATURES.md is exactly SessionStart + UserPromptSubmit —
+      // this is the second channel. We fire BEFORE the (slow) rule retrieval
+      // path so the kanban reflects "what prompt just landed" as early as
+      // possible, even when the rest of the hook is still running.
+      try {
+        emitCcStatus({
+          event: "user_prompt_submit",
+          ...(sessionId ? { sessionId } : {}),
+          cwd,
+        });
+      } catch { /* never propagate */ }
       const sessionsDir = path.join(home, ".teamagent", "sessions");
       const eventLog = ctx.eventLog as unknown as SqliteEventLog;
       const store = ctx.store as unknown as DualLayerStore;
