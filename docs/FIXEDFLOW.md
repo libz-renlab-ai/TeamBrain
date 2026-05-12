@@ -53,10 +53,13 @@ The FIXEDFLOW driver may **only** be dispatched on **docs-gated grilled-issues**
 - ❌ stale or missing grill comment (>24h without `grill-ready`)
 - ❌ `grill-ready` set but `docs-grill-ready` missing (docs gate not run)
 - ❌ retroactive AI-triage labels (see `docs/HOW-TO-CLAIM-ISSUE.md`)
-- ❌ any watcher / cron / daemon / background poller / repo-wide scanner / auto-dispatch
+- ❌ any watcher / cron / daemon / background poller / repo-wide scanner / auto-dispatch **on the fixed-flow track** (see scoping note below for the Symphony track carve-out)
 - ❌ epic-style issues without `epic` label + named coordinator (see §Epic carve-out)
+- ❌ **`track:symphony` label present** — this issue is routed to the Symphony driver, not fixed-flow. Driver §0 must refuse + post a 1-line comment citing `docs/TWO-DRIVER-COEXISTENCE.md` §2 + exit. Same refusal applies for `symphony-working` / `symphony-blocked` labels.
 
-**No automatic scanner / sweep / poller.** Humans write issues, grill in the web (`/grill-via-web`), then run `/grill-with-docs` to update docs; only after both gates land do humans manually `/fixed-flow-driver` to continue.
+**No automatic scanner / sweep / poller on the fixed-flow track.** Humans write issues, grill in the web (`/grill-via-web`), then run `/grill-with-docs` to update docs; only after both gates land do humans manually `/fixed-flow-driver` to continue.
+
+**Scope note — watcher prohibition applies to fixed-flow track only.** The `禁止任何 watcher / cron / daemon / 后台轮询 / 自动 dispatch / repo-wide sweep` rule (also stated in the banner above) applies to the fixed-flow track. The Symphony track (issues labeled `track:symphony`) explicitly opts in to autonomous polling and auto-dispatch per `docs/SYMPHONY-FLOW.md`; the cross-track contract — including how the two never claim the same issue — lives in `docs/TWO-DRIVER-COEXISTENCE.md`.
 
 ## Claim an issue — what happens (2-outcome contract)
 
