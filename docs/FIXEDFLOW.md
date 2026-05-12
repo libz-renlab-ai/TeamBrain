@@ -176,8 +176,8 @@ driver 启动时会同时校验 grill comment + docs-grill comment + 两个 labe
 - ✅ 只有真人 maintainer（libz 的任一 GitHub 账号 / 其它有 maintain 权限的真人）在浏览器 / CLI 里手动操作，才是合法路径。
 - ✅ **PR 关键字 auto-close 例外（必须双因子可机器验证的 human-ack）**：若真人 maintainer 已经手动判定该 issue 「等 PR fix 即可结案」，可以在 PR body 写 `Closes #N`，让 GitHub 在 squash-merge 时 auto-close。但 agent 必须**同时**满足下列**两个**独立 factor（任一缺失 = 走默认禁令 ❌；单 factor 不足，**两因子设计是为了让单一 PAT 失陷无法独立完成 bypass**）：
   - **Factor (a) — label removed by non-agent human**：`ready-for-human` label 已被在 PR open **之前**手动 remove，且必须**同时**满足：(i) `gh api repos/:owner/:repo/issues/:N/events` 查到 `unlabeled` 事件；(ii) 事件 actor 的 `actor.type == "User"` 且 `actor.login` 不在 repo 已知 bot allowlist（例如不匹配 `*-bot` / `dependabot` / `github-actions` / 任何 PAT-driven agent identity）；(iii) actor permission ≥ maintain（`gh api repos/:owner/:repo/collaborators/:user/permission`）；(iv) actor 不是即将合 PR 的作者本人；(v) label **从 PR open 到 squash-merge 之间持续保持 absent**（events API 不出现新的 `labeled ready-for-human` 事件——禁止 add-then-strip 时序绕过）。
-  - **Factor (b) — explicit ack comment by another human maintainer**：issue 上有一条 repo maintainer（与 Factor (a) 的 actor 不同人；permission 通过 `gh api repos/:owner/:repo/collaborators/:user/permission` 返回 `admin` / `maintain` / `write`，并且账号是 `user.type == "User"` 而非 bot）authored 的评论包含字面字符串 `ack: close-via-PR #<PR-N>`（`<PR-N>` 必须等于即将合 PR 的编号）；评论发布在 PR squash-merge **之前**；评论作者必须能在 issue audit log 中独立可见。
-  - **PR body 必须明文引用两份证据**（label-removed event URL + actor 用户名 + permission level + bot-check 通过；ack 评论 URL + 评论作者 + permission level）。任一未引用 / 任一 factor 缺失 / 两个 factor 的 actor 同人 / 两个 factor 由同一 PAT 触发 = 走默认禁令 = ❌。**单凭 "我觉得 maintainer 应该同意" / "讨论里似乎有共识" / 单 factor 满足，都不算合规 ack。**
+  - **Factor (b) — explicit ack comment by another human maintainer**：issue 上有一条 repo maintainer（与 Factor (a) 的 actor 不同人——「不同人」以 `actor.login` 字符串严格不等判定，不接受同一人换 device / session / IP 的辩解；permission 通过 `gh api repos/:owner/:repo/collaborators/:user/permission` 返回 `admin` / `maintain` / `write`；账号必须 `user.type == "User"` 且 `actor.login` 不在 repo 已知 bot allowlist——例如不匹配 `*-bot` / `dependabot` / `github-actions` / 任何 PAT-driven agent identity，与 Factor (a) 的 bot-exclusion 完全对称）authored 的评论包含字面字符串 `ack: close-via-PR #<PR-N>`（`<PR-N>` 必须等于即将合 PR 的编号）；评论发布在 PR squash-merge **之前**；评论作者必须能在 issue audit log 中独立可见。
+  - **PR body 必须明文引用两份证据**（label-removed event URL + actor 用户名 + permission level + bot-check 通过；ack 评论 URL + 评论作者 + permission level + bot-check 通过）。任一未引用 / 任一 factor 缺失 / 两个 factor 的 `actor.login` 同字符串 / 两个 factor 由同一 PAT 触发 = 走默认禁令 = ❌。**单凭 "我觉得 maintainer 应该同意" / "讨论里似乎有共识" / 单 factor 满足，都不算合规 ack。**
 
 ### 与 `grill-ready` 互斥
 
@@ -186,7 +186,7 @@ driver 启动时会同时校验 grill comment + docs-grill comment + 两个 labe
 | Label | Dispatcher | Close 路径 |
 |---|---|---|
 | `grill-ready` + `docs-grill-ready` | `/fixed-flow-driver`（maintainer 手动启动） | PR squash-merge 含 `Closes #N` 触发 GitHub auto-close（PR 关闭副作用，非 agent 主动） |
-| `ready-for-human` | **没有自动 dispatcher** | **只能真人手动 close**（或 maintainer 先 remove label 后才允许 PR-keyword auto-close） |
+| `ready-for-human` | **没有自动 dispatcher** | **只能真人手动 close**（PR-keyword auto-close 例外要求 §适用范围 的双因子 human-ack：label-removed-by-non-bot-human-maintainer + 另一位真人 maintainer 的 `ack: close-via-PR #<N>` 评论；单 remove label 不够） |
 
 如果同一条 issue 同时挂 `ready-for-human` 与 `grill-ready`：**先 remove `grill-ready`** 再让 driver 介入；如果反向决策（升级为人手处理），先 remove `grill-ready` + `docs-grill-ready` 再贴 `ready-for-human`。driver 看到 `ready-for-human` label 一律拒绝 dispatch（参见 §Dispatch policy）。
 
