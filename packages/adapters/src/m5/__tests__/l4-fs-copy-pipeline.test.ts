@@ -75,14 +75,20 @@ describe("L4 fs-copy pipeline — avoidance rule propagation A → B", () => {
     const copied = await bridge.copyTeamRules(ctx.projectA, ctx.projectB);
     expect(copied).toBe(1);
 
-    // The file landed at the canonical path B's matcher would scan.
-    const landedPath = path.join(
+    // Enumerate the destination so a future bridge change that copies an
+    // unexpected extra file (e.g. an aggregate `index.json`) is caught,
+    // rather than passing this test for the wrong reason.
+    const landedAuthorDir = path.join(
       ctx.projectB,
       ".teamagent",
       "team",
       "A",
-      `${rule.rule_id}.json`,
     );
+    const landedEntries = await fs.readdir(landedAuthorDir);
+    expect(landedEntries).toEqual([`${rule.rule_id}.json`]);
+
+    // The file landed at the canonical path B's matcher would scan.
+    const landedPath = path.join(landedAuthorDir, `${rule.rule_id}.json`);
     const landed = JSON.parse(
       await fs.readFile(landedPath, "utf8"),
     ) as TeamRuleFile;
@@ -103,10 +109,72 @@ describe("L4 fs-copy pipeline — avoidance rule propagation A → B", () => {
     expect(on.citations.length).toBeGreaterThan(off.citations.length);
   });
 
-  it("cleanup() is idempotent (slice 1 DualHomeContext contract preserved e2e)", async () => {
-    // After the responder has touched paths under projectB, a second cleanup
-    // call must still not throw — slice 1's setupDualHomes contract.
+  it("cleanup() is idempotent and actually removes the dirs (slice 1 contract)", async () => {
+    // /review F7: the original test had zero expect() calls — vitest treats a
+    // body that throws nothing as passing, so a silent state-corruption bug
+    // in setupDualHomes would have slipped through. Assert the dirs are gone
+    // after the first cleanup AND that a second cleanup is a true no-op.
+    const probeA = ctx.projectA;
+    const probeB = ctx.projectB;
+
+    expect(await dirExists(probeA)).toBe(true);
+    expect(await dirExists(probeB)).toBe(true);
+
     await ctx.cleanup();
+    expect(await dirExists(probeA)).toBe(false);
+    expect(await dirExists(probeB)).toBe(false);
+
+    // Second cleanup is a structural no-op — must not throw, must not
+    // re-create any dirs, must not error on missing parent.
     await ctx.cleanup();
+    expect(await dirExists(probeA)).toBe(false);
+  });
+
+  it("tombstone propagation: deleted rule on A does NOT block B after fs-copy (L4 contract)", async () => {
+    // /review T5: lock in the tombstone-respecting L4 observable. A future
+    // bridge bug that strips the deleted flag (e.g. only-copy-content
+    // optimisation) would otherwise only surface in slice 3 nightly.
+    const ruleId = "avoid-rm-rf-tombstoned";
+    const tombstone: TeamRuleFile = {
+      rule_id: ruleId,
+      author: "A",
+      current: {
+        deleted: true,
+        deleted_by: "A",
+        deleted_ts: "2026-05-12T08:00:00Z",
+        reason: "rescinded by author",
+      },
+    };
+
+    const aDir = path.join(ctx.projectA, ".teamagent", "team", "A");
+    await fs.mkdir(aDir, { recursive: true });
+    await fs.writeFile(
+      path.join(aDir, `${ruleId}.json`),
+      JSON.stringify(tombstone),
+      "utf8",
+    );
+
+    const bridge = createFsCopyBridge();
+    const copied = await bridge.copyTeamRules(ctx.projectA, ctx.projectB);
+    expect(copied).toBe(1);
+
+    const responder = createMockLlmResponder();
+    const result = await responder.evaluate({
+      projectRoot: ctx.projectB,
+      toolName: "Bash",
+      // Would block if the rule were alive with content "rm -rf"; tombstone
+      // must skip the match entirely.
+      toolInput: { command: "rm -rf /tmp" },
+    });
+    expect(result).toEqual({ block: false, citations: [], skipped: 0 });
   });
 });
+
+async function dirExists(p: string): Promise<boolean> {
+  try {
+    await fs.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
