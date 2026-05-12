@@ -159,8 +159,8 @@ Required before Symphony can run (P5 in
 
 ```bash
 gh label create track:symphony           --color "5319e7" --description "Routing: handled by Symphony, not /fixed-flow-driver"
-gh label create symphony-working         --color "fbca04" --description "Cross-host mutex: Symphony has claimed this issue (parallel to grill-working)"
-gh label create symphony-human-reviewed  --color "0e8a16" --description "PR label: human approved Symphony PR for squash-merge (THE Symphony human gate)"
+gh label create symphony-working         --color "fbca04" --description "Cross-host mutex: Symphony has claimed this issue"
+gh label create symphony-human-reviewed  --color "0e8a16" --description "PR label: human approved Symphony PR for squash-merge"
 gh label create symphony-blocked         --color "1d76db" --description "Symphony hit a true blocker; needs human intervention"
 ```
 
