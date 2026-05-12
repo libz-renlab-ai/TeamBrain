@@ -293,6 +293,10 @@ function formatMetric(value) {
 // 回落到老 4 字段，不挂状态栏）。
 function readStdinJsonSync(maxBytes) {
   try {
+    // 守卫：如果 stdin 是 TTY（手工 `node scripts/teamagent-statusline.cjs`
+    // 直接跑、没有 stdin redirect），`readFileSync(0)` 会 block 等 Ctrl-D。
+    // CC spawn 时 stdin 是 pipe，isTTY 为 undefined / false → 进 read 路径。
+    if (process.stdin.isTTY) return null;
     // fd 0 同步读到 EOF。CC 写完会 close，所以 readFileSync 不会卡。
     // 老调用（test、手跑）没人喂 stdin → ENOENT/EAGAIN → 返回 null。
     const raw = fs.readFileSync(0, { encoding: "utf-8" });
