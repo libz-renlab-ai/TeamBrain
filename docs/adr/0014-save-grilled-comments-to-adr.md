@@ -173,8 +173,18 @@ and this ADR until the probe passes.
 ## Grill log: this ADR's own grill
 
 This ADR was itself written in response to a maintainer prompt — there
-is no GitHub issue grill comment to canonicalize for it. Future
-maintainers using `/grill-with-docs` against real `grill-ready` issues
-will append `## Grill log: issue #<N>` sections below this line.
+is no GitHub issue grill comment to canonicalize for it.
 
-<!-- /grill-with-docs appends grill logs below -->
+## Per-issue grill log siblings
+
+Per-issue grill logs live under [`./0014/`](./0014/) (one file per issue,
+verbatim grill comment + issue metadata + closing PR refs). The
+discoverable entry point is [`./0014/INDEX.md`](./0014/INDEX.md).
+
+The 17 pre-existing `grill-ready` issues that predated this ADR's
+acceptance date (2026-05-11) were backfilled to the sibling directory on
+2026-05-12 in save mode (no new grilling). New `grill-ready` issues
+populate a fresh sibling at the moment their grill comment lands per
+ADR-0014 §"Operational shape".
+
+<!-- /grill-with-docs appends new siblings to ./0014/ and updates ./0014/INDEX.md -->
