@@ -70,6 +70,15 @@ async function main(): Promise<void> {
     channel: "SessionEnd",
     parseInput: normalizeStopHookInput,
     handler: async (ctx) => {
+      // Issue #343 PR-1: master kill switch. When TEAMAGENT_DISABLED=1 the
+      // SessionEnd hook bails before the embedder daemon shutdown POST,
+      // before the full-rescan pipeline (detached path), and before the
+      // foreground self-spawn (sync path). One check at handler entry
+      // covers both branches.
+      if (ctx.env.TEAMAGENT_DISABLED === "1") {
+        return;
+      }
+
       // Genuine detached child: env flag + valid tmp-file argv[2]. Run full
       // rescan pipeline (clears cursor + ignores incremental cursor). Pipeline
       // is unbounded — the harness kills us at its own ~300s timeout if needed.

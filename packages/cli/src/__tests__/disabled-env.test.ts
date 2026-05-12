@@ -102,9 +102,23 @@ function assertNoTbRuntimeNoise(stderr: string): void {
 const SESSION_START_BIN = path.join(CLI_DIST, "bin-session-start.cjs");
 const PRE_TOOL_USE_BIN = path.join(CLI_DIST, "bin-pre-tool-use.cjs");
 const STOP_BIN = path.join(CLI_DIST, "bin-stop.cjs");
+const USER_PROMPT_SUBMIT_BIN = path.join(CLI_DIST, "bin-user-prompt-submit.cjs");
+const POST_TOOL_USE_BIN = path.join(CLI_DIST, "bin-post-tool-use.cjs");
+const PRE_COMPACT_BIN = path.join(CLI_DIST, "bin-pre-compact.cjs");
+const SESSION_END_BIN = path.join(CLI_DIST, "bin-session-end.cjs");
+const DIGITAL_TWIN_TAP_BIN = path.join(CLI_DIST, "bin-digital-twin-tap.cjs");
 
 beforeAll(() => {
-  for (const bin of [SESSION_START_BIN, PRE_TOOL_USE_BIN, STOP_BIN]) {
+  for (const bin of [
+    SESSION_START_BIN,
+    PRE_TOOL_USE_BIN,
+    STOP_BIN,
+    USER_PROMPT_SUBMIT_BIN,
+    POST_TOOL_USE_BIN,
+    PRE_COMPACT_BIN,
+    SESSION_END_BIN,
+    DIGITAL_TWIN_TAP_BIN,
+  ]) {
     if (!fs.existsSync(bin)) {
       throw new Error(
         `Missing ${bin}. Run \`pnpm -F @teamagent/cli build\` (or \`pnpm build\` at repo root) before running this integration test.`,
@@ -154,6 +168,92 @@ describe("TEAMAGENT_DISABLED=1 master kill switch", () => {
         transcript_path: path.join(
           os.tmpdir(),
           `issue-343-disabled-nonexistent-${Date.now()}.jsonl`,
+        ),
+      }),
+      { TEAMAGENT_DISABLED: "1" },
+    );
+    expect(report.exitCode).toBe(0);
+    assertNoTbRuntimeNoise(report.stderr);
+  });
+
+  it("UserPromptSubmit hook bails before injection / matcher / embedder", async () => {
+    const report = await spawnHook(
+      USER_PROMPT_SUBMIT_BIN,
+      JSON.stringify({
+        hook_event_name: "UserPromptSubmit",
+        session_id: "issue-343-disabled-userprompt",
+        cwd: process.cwd(),
+        prompt: "hello world",
+      }),
+      { TEAMAGENT_DISABLED: "1" },
+    );
+    expect(report.exitCode).toBe(0);
+    assertNoTbRuntimeNoise(report.stderr);
+  });
+
+  it("PostToolUse hook bails before event-log write", async () => {
+    const report = await spawnHook(
+      POST_TOOL_USE_BIN,
+      JSON.stringify({
+        hook_event_name: "PostToolUse",
+        session_id: "issue-343-disabled-posttool",
+        cwd: process.cwd(),
+        tool_name: "Read",
+        tool_input: { file_path: "/tmp/x" },
+        tool_response: "ok",
+      }),
+      { TEAMAGENT_DISABLED: "1" },
+    );
+    expect(report.exitCode).toBe(0);
+    assertNoTbRuntimeNoise(report.stderr);
+  });
+
+  it("PreCompact hook bails before detached child spawn", async () => {
+    const report = await spawnHook(
+      PRE_COMPACT_BIN,
+      JSON.stringify({
+        hook_event_name: "PreCompact",
+        session_id: "issue-343-disabled-precompact",
+        cwd: process.cwd(),
+        transcript_path: path.join(
+          os.tmpdir(),
+          `issue-343-disabled-precompact-${Date.now()}.jsonl`,
+        ),
+      }),
+      { TEAMAGENT_DISABLED: "1" },
+    );
+    expect(report.exitCode).toBe(0);
+    assertNoTbRuntimeNoise(report.stderr);
+  });
+
+  it("SessionEnd hook bails before embedder /shutdown POST + rescan", async () => {
+    const report = await spawnHook(
+      SESSION_END_BIN,
+      JSON.stringify({
+        hook_event_name: "SessionEnd",
+        session_id: "issue-343-disabled-sessionend",
+        cwd: process.cwd(),
+        transcript_path: path.join(
+          os.tmpdir(),
+          `issue-343-disabled-sessionend-${Date.now()}.jsonl`,
+        ),
+      }),
+      { TEAMAGENT_DISABLED: "1" },
+    );
+    expect(report.exitCode).toBe(0);
+    assertNoTbRuntimeNoise(report.stderr);
+  });
+
+  it("digital-twin-tap bails before stdin read / tapSession", async () => {
+    const report = await spawnHook(
+      DIGITAL_TWIN_TAP_BIN,
+      JSON.stringify({
+        hook_event_name: "Stop",
+        session_id: "issue-343-disabled-digital-twin",
+        cwd: process.cwd(),
+        transcript_path: path.join(
+          os.tmpdir(),
+          `issue-343-disabled-digital-twin-${Date.now()}.jsonl`,
         ),
       }),
       { TEAMAGENT_DISABLED: "1" },

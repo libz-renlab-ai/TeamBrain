@@ -50,9 +50,14 @@ Set in the shell environment, this env disables every TeamAgent hook handler at 
 
 | Hook | Behaviour when `TEAMAGENT_DISABLED=1` |
 |------|---------------------------------------|
-| `bin-session-start.cjs` | Returns minimal envelope; no embedder daemon spawn, no wiki residue cleanup, no schema-migration backup prune, no M5 pipeline |
+| `bin-session-start.cjs` | Returns minimal envelope; no embedder daemon spawn, no wiki residue cleanup, no schema-migration backup prune, no M5 pipeline, no update banner |
+| `bin-user-prompt-submit.cjs` | Returns undefined (no injection); no pending-injection drain, no rule semantic retrieval, no recording-memory retrieval |
 | `bin-pre-tool-use.cjs` | Returns `{permissionDecision: "allow"}`; no matcher, retriever, attribution |
-| `bin-stop.cjs` | Returns; no singleton lock claim, no detached self-spawn, no sync pipeline; covers all three internal paths (detached / async / sync) via a single check at handler entry |
+| `bin-post-tool-use.cjs` | Returns `{}`; no `hook-post.result` event written to SqliteEventLog |
+| `bin-stop.cjs` | Returns; no singleton lock claim, no detached self-spawn, no sync pipeline; covers all three internal paths (detached / async / sync) via one check at handler entry |
+| `bin-session-end.cjs` | Returns; no embedder `/shutdown` POST, no full-rescan pipeline (detached), no foreground self-spawn |
+| `bin-pre-compact.cjs` | Returns; no detached child re-entry, so no compact-time analyze pipeline runs |
+| `bin-digital-twin-tap.cjs` | Returns at top of `main()` before stdin read; no `tapSession()` forward to `@teamagent/digital-twin`. Reads `process.env` directly (no `ctx.env` because this bin bypasses runHook / runAdvancedHook) |
 
 **Activation contract**: opt-in by exact string match — only `TEAMAGENT_DISABLED=1` activates the kill switch. Any other value (including unset, `"0"`, `"true"`, `"yes"`) leaves all hooks fully enabled.
 
