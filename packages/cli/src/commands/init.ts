@@ -1166,16 +1166,43 @@ function doWriteRequiredArtifacts(
  * Atomic + idempotent file write. Returns true when the file was written
  * (i.e. content differed from what was on disk), false when the on-disk
  * content already matched byte-for-byte.
+ *
+ * Robustness:
+ * - Read step tolerates the file being deleted between the existsSync
+ *   probe and the read (TOCTOU window); ENOENT falls through to the
+ *   write path. Other errors propagate.
+ * - Tmp-file write step uses try/finally to unlink the tmp partial
+ *   artifact if `writeFileSync` or `renameSync` throws (disk full,
+ *   permission revoked) — avoids leaving `.tmp.<pid>.<ts>` orphans on
+ *   the user's filesystem.
  */
 function writeManagedFile(absPath: string, content: string): boolean {
   if (fs.existsSync(absPath)) {
-    const existing = fs.readFileSync(absPath, "utf8");
+    let existing: string | null = null;
+    try {
+      existing = fs.readFileSync(absPath, "utf8");
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw err;
+    }
     if (existing === content) return false;
   }
   fs.mkdirSync(path.dirname(absPath), { recursive: true });
   const tmp = `${absPath}.tmp.${process.pid}.${Date.now()}`;
-  fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, absPath);
+  let renamed = false;
+  try {
+    fs.writeFileSync(tmp, content);
+    fs.renameSync(tmp, absPath);
+    renamed = true;
+  } finally {
+    if (!renamed) {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        // tmp may not exist (writeFileSync threw before creating it); nothing to clean.
+      }
+    }
+  }
   return true;
 }
 
