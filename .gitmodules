@@ -1,0 +1,3 @@
+[submodule "landing/rocketteam"]
+	path = landing/rocketteam
+	url = https://github.com/hrdAI3/RocketTeam
