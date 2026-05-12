@@ -320,7 +320,7 @@ teamagent demo hook Bash command='...'  # 离线模拟 PreToolUse 看会拦谁
 |---|---|
 | 测试 | **3251 / 3299** 全绿（48 skipped；vitest，全 monorepo；283 test files） |
 | 历史 bug 候选 | 90 条投资性调查（fixed 76 / withdrawn 8 / wontfix-merged 1 / **open 0**） |
-| Chaos QA 覆盖 | 15 轮（Wave 1–15）自我对抗测试，含 283 文件白盒 + 全 35 CLI 命令攻击 |
+| Chaos QA 覆盖 | 15 轮（Wave 1–15）自我对抗测试，含 215 文件白盒 + 全 35 CLI 命令攻击（Wave 15 诊断报告：`docs/test-reports/2026-05-08-trio-deep-report.md`） |
 | TypeScript 严格度 | `tsc --noEmit` 干净，全 monorepo |
 | 增量扫描 | scan-cursor 只看新 turn，避免会话越长扫描越慢 |
 
