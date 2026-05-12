@@ -16,9 +16,14 @@
 
 | # | 文件 | 行 | 改法 |
 |---|---|---|---|
-| 1 | `packages/cli/src/bin-session-start.ts` | 114 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return undefined;` |
-| 2 | `packages/cli/src/bin-pre-tool-use.ts` | 93 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return { permissionDecision: "allow" };` |
-| 3 | `packages/cli/src/bin-stop.ts` | 949 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return;` — **一个 check 覆盖 detached / async / sync 三路径**（research 原提议 3 个 check，实现时按 DRY 简化为 1 个） |
+| 1 | `packages/cli/src/bin-session-start.ts` | 115 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return undefined;` |
+| 2 | `packages/cli/src/bin-user-prompt-submit.ts` | 105 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return undefined;` *(commit 2，self-/review caught gap)* |
+| 3 | `packages/cli/src/bin-pre-tool-use.ts` | 93 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return { permissionDecision: "allow" };` |
+| 4 | `packages/cli/src/bin-post-tool-use.ts` | 35 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return {};` *(commit 2)* |
+| 5 | `packages/cli/src/bin-stop.ts` | 949 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return;` — **一个 check 覆盖 detached / async / sync 三路径**（research 原提议 3 个 check，实现时按 DRY 简化为 1 个） |
+| 6 | `packages/cli/src/bin-session-end.ts` | 72 | handler 入口 `if (ctx.env.TEAMAGENT_DISABLED === "1") return;` *(commit 2)* |
+| 7 | `packages/cli/src/bin-pre-compact.ts` | 87 | handler 入口 `if (process.env.TEAMAGENT_DISABLED === "1") return undefined;` *(commit 2，pre-compact handler 类型 narrow 不暴露 ctx.env，读 process.env)* |
+| 8 | `packages/cli/src/bin-digital-twin-tap.ts` | 184 | `main()` 顶 `if (process.env.TEAMAGENT_DISABLED === "1") return;` *(commit 2，digital-twin-tap 不走 runHook/runAdvancedHook，无 ctx.env)* |
 
 ### 为什么
 

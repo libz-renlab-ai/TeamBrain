@@ -5,25 +5,38 @@
 
 ## What shipped
 
-`TEAMAGENT_DISABLED=1` env master kill switch — set in shell, every TeamAgent hook handler early-returns at handler entry with zero side effects.
+`TEAMAGENT_DISABLED=1` env master kill switch — set in shell, **all 8 TeamAgent hook handlers** early-return at handler entry with zero side effects.
+
+Shipped in 2 commits:
+- **commit 1**: 3 most-load-bearing hooks (SessionStart / PreToolUse / Stop) — covered the original research §3 plan
+- **commit 2**: self-`/review` caught a completeness gap; added 5 more guards (UserPromptSubmit / PostToolUse / SessionEnd / PreCompact / digital-twin-tap) — these are smaller hooks but were leaking TB work in the disabled-env state, polluting paired ablation
 
 ### Files changed
 
 | File | Change | LOC |
 |---|---|---|
-| `packages/cli/src/bin-session-start.ts` | +1 guard at handler entry (line 114→115) | +10 (6 comment + 3 guard + 1 blank) |
-| `packages/cli/src/bin-pre-tool-use.ts` | +1 guard at handler entry (line 93→94) | +8 |
-| `packages/cli/src/bin-stop.ts` | +1 guard at handler entry (line 949→950) | +9 |
-| `packages/cli/src/__tests__/disabled-env.test.ts` | NEW integration test, 3 cases | +148 |
-| `CHANGELOG.md` | `Unreleased > Added` entry | +14 |
-| `docs/features/hooks-status.md` | NEW "Master kill switch" section | +18 |
+| `packages/cli/src/bin-session-start.ts` | +1 guard at handler entry (line 115) | +10 |
+| `packages/cli/src/bin-user-prompt-submit.ts` | +1 guard at handler entry (line 105) | +10 |
+| `packages/cli/src/bin-pre-tool-use.ts` | +1 guard at handler entry (line 93) | +8 |
+| `packages/cli/src/bin-post-tool-use.ts` | +1 guard at handler entry (line 35) | +7 |
+| `packages/cli/src/bin-stop.ts` | +1 guard at handler entry (line 949) — one check covers detached/async/sync paths | +9 |
+| `packages/cli/src/bin-session-end.ts` | +1 guard at handler entry (line 72) | +9 |
+| `packages/cli/src/bin-pre-compact.ts` | +1 guard at handler entry (line 87) — uses `process.env` because handler type narrows ctx | +8 |
+| `packages/cli/src/bin-digital-twin-tap.ts` | +1 guard at top of `main()` (line 184) — bypasses runHook, uses `process.env` | +7 |
+| `packages/cli/src/__tests__/disabled-env.test.ts` | NEW integration test, **8 cases** (one per hook) | +280 |
+| `CHANGELOG.md` | `Unreleased > Added` entry | +15 |
+| `docs/features/hooks-status.md` | NEW "Master kill switch" section, **8-row table** | +25 |
 | `docs/plans/2026-05-12-issue-343/{research,plan,judge,report}.md` | NEW planning artifacts | +600 |
 
-**Code net add: ~30 LOC** (3 hook guards). **Test net add: ~150 LOC**. **Docs: ~600 LOC**. Total ~780 LOC, well under 1500 LOC TRIAGE-AND-SPLIT threshold for single-PR.
+**Code net add: ~70 LOC** (8 hook guards). **Test net add: ~280 LOC**. **Docs: ~640 LOC**. Total ~990 LOC, still under 1500 LOC TRIAGE-AND-SPLIT threshold for single-PR.
 
 ### Implementation deviation from research
 
-Research §3 proposed **3 separate early-returns in `bin-stop.ts`** (detached / async / sync paths at lines 955 / 984 / 1060). Implementation collapses these into **1 guard at handler entry** (line 950), which dominates all three branches. Justification: DRY-er, single source of truth, and per CLAUDE.md "Don't add error handling, fallbacks, or validation for scenarios that can't happen". `plan.md` was updated mid-implementation to reflect 1 guard.
+Two deviations from research §3:
+
+1. **bin-stop.ts single guard**: research proposed 3 separate early-returns at lines 955 / 984 / 1060 (detached / async / sync paths). Implementation collapses these into 1 guard at handler entry (line 949), which dominates all three branches. DRY-er, single source of truth.
+
+2. **5 hooks missed by research, added in commit 2**: research §3 only mapped SessionStart / PreToolUse / Stop. Self-`/review` (Step 4 critical pass + completeness gaps category) flagged that the master-kill semantics ("all hooks") were not honored for the other 5 entry points. The fix added guards in UserPromptSubmit / PostToolUse / SessionEnd / PreCompact / digital-twin-tap. Caught BEFORE squash-merge by the review loop, exactly as `docs/POSTPR.md` intended.
 
 ## §V judge harness results
 
@@ -38,16 +51,16 @@ pnpm vitest run \
   packages/cli/src/__tests__/bin-session-start-chaos.test.ts
 ```
 
-Result:
+Result (post-completeness-fix):
 
 | Test file | Cases | Result | Duration |
 |---|---|---|---|
-| `disabled-env.test.ts` (NEW) | 3 | ✅ 3/3 PASS | 721ms |
-| `bin-stop.test.ts` | 21 | ✅ 21/21 PASS | 10841ms |
-| `bin-session-start-chaos.test.ts` | 2 | ✅ 2/2 PASS | 474ms |
-| `bin-stop-singleton-lock.test.ts` | 9 | ✅ 9/9 PASS | 34ms |
-| `bin-stop-race-with-timeout.test.ts` | 5 | ✅ 5/5 PASS | 6ms |
-| **Total** | **40** | **✅ 40/40 PASS** | **13.22s** |
+| `disabled-env.test.ts` (NEW, 8-hook) | 8 | ✅ 8/8 PASS | 1.48s |
+| `bin-stop.test.ts` | 21 | ✅ 21/21 PASS | ~11s |
+| `bin-session-start-chaos.test.ts` | 2 | ✅ 2/2 PASS | ~0.5s |
+| `bin-stop-singleton-lock.test.ts` | 9 | ✅ 9/9 PASS | ~25ms |
+| `bin-stop-race-with-timeout.test.ts` | 5 | ✅ 5/5 PASS | ~10ms |
+| **Total** | **45** | **✅ 45/45 PASS** | **~14.4s** |
 
 No regression in existing hook tests. The new `disabled-env.test.ts` spawns each built `.cjs` bundle with `TEAMAGENT_DISABLED=1` + minimal stdin, asserts exit 0 + no TB-specific noise (matcher / M5 / analyze / embedder / attribution) in stderr.
 
