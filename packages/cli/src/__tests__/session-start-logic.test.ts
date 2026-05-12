@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   decideAction,
   maybeShowReinstallBanner,
+  maybeShowVersionCheckBanner,
   REINSTALL_BANNER_THROTTLE_MS,
 } from "../session-start-logic.js";
 
@@ -224,5 +225,82 @@ describe("maybeShowReinstallBanner (B-104)", () => {
 
   it("REINSTALL_BANNER_THROTTLE_MS 是 24 小时", () => {
     expect(REINSTALL_BANNER_THROTTLE_MS).toBe(24 * 60 * 60 * 1000);
+  });
+});
+
+describe("maybeShowVersionCheckBanner (issue #313 Tier 3)", () => {
+  let teamagentDir: string;
+  let originalEnv: string | undefined;
+
+  beforeEach(() => {
+    const root = mkdtempSync(join(tmpdir(), "vcb-"));
+    teamagentDir = join(root, ".teamagent");
+    mkdirSync(teamagentDir, { recursive: true });
+    originalEnv = process.env.TEAMAGENT_HOME;
+    process.env.TEAMAGENT_HOME = teamagentDir;
+  });
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.TEAMAGENT_HOME;
+    else process.env.TEAMAGENT_HOME = originalEnv;
+    rmSync(teamagentDir, { recursive: true, force: true });
+  });
+
+  function writeState(state: object): void {
+    writeFileSync(
+      join(teamagentDir, "update-state.json"),
+      JSON.stringify(state),
+      "utf-8",
+    );
+  }
+
+  it("无 update-state.json 时不输出", () => {
+    let captured = "";
+    maybeShowVersionCheckBanner((s) => { captured += s; });
+    expect(captured).toBe("");
+  });
+
+  it("last_install_error 为 null → 不输出", () => {
+    writeState({ last_install_error: null });
+    let captured = "";
+    maybeShowVersionCheckBanner((s) => { captured += s; });
+    expect(captured).toBe("");
+  });
+
+  it("last_install_error 不带 'version-check failed:' 前缀 → 不输出（避免与 reinstall banner 冲突）", () => {
+    writeState({ last_install_error: "Connection closed by 198.18.0.18 port 22" });
+    let captured = "";
+    maybeShowVersionCheckBanner((s) => { captured += s; });
+    expect(captured).toBe("");
+  });
+
+  it("last_install_error 带 'version-check failed:' 前缀 → 显示 Tier 3 banner + 3 条恢复路径", () => {
+    writeState({
+      last_install_error: "version-check failed: pages=pages_5xx (Pages server error 503); npm=npm_5xx (npm registry server error 503)",
+    });
+    let captured = "";
+    maybeShowVersionCheckBanner((s) => { captured += s; });
+    expect(captured).toContain("暂时查不到新版本");
+    expect(captured).toContain("version-check failed:");
+    // 三条恢复路径必须都出现
+    expect(captured).toContain("npm i -g teamagent@latest");
+    expect(captured).toContain("等下次启动");
+    expect(captured).toContain("TEAMAGENT_GITHUB_TOKEN");
+    // 不该有内部术语 "GitHub anonymous rate limit"
+    expect(captured).not.toContain("anonymous rate limit");
+  });
+
+  it("不消耗 reinstall_banner_shown_at（与 reinstall banner 独立）", () => {
+    writeState({
+      last_install_error: "version-check failed: pages=pages_network (ECONNREFUSED); npm=npm_network (ECONNREFUSED)",
+      reinstall_banner_shown_at: 0,
+    });
+    let captured = "";
+    maybeShowVersionCheckBanner((s) => { captured += s; });
+    expect(captured).not.toBe("");
+    // 不修改 reinstall_banner_shown_at (它属于另一个 banner 的 throttle 状态)
+    const after = JSON.parse(
+      readFileSync(join(teamagentDir, "update-state.json"), "utf-8"),
+    );
+    expect(after.reinstall_banner_shown_at).toBe(0);
   });
 });
