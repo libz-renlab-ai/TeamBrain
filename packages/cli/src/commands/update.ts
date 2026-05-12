@@ -11,7 +11,7 @@ import {
   makeUpdateNeverSetEvent,
   type UpdateState,
 } from "@teamagent/core";
-import type { FetchShaFailure } from "../github-api.js";
+import type { FetchLatestFailure } from "../update/fetch-latest.js";
 import { withUpdateStateLock } from "../lib/update-state-lock.js";
 import {
   emitUpgradeEvent,
@@ -267,54 +267,65 @@ function logsCmd(): UpdateRunResult {
   return { ok: true, output: tail + "\n" };
 }
 
-function formatCheckFailure(result: FetchShaFailure): string {
-  return result.message;
+/**
+ * Issue #313 Tier 3 — human-readable Pages+npm-both-failed message.
+ * Replaces the previous "GitHub anonymous rate limit exhausted" internal-jargon
+ * text. Surfaces in checkCmd output + SessionStart banner path.
+ */
+export function formatTier3Message(failure: FetchLatestFailure): string {
+  return [
+    "⚠️  TeamAgent: 暂时查不到新版本",
+    `    Pages: ${failure.pagesReason} — ${failure.pagesMessage}`,
+    `    npm: ${failure.npmReason} — ${failure.npmMessage}`,
+    "    建议:",
+    "      • 手动: npm i -g teamagent@latest",
+    "      • 或等下次启动 (我们会重试)",
+    "      • 高级用户: 设 TEAMAGENT_GITHUB_TOKEN 走认证通道",
+  ].join("\n");
 }
 
 async function checkCmd(): Promise<UpdateRunResult> {
-  const { fetchRemoteSha } = await import("../github-api.js");
+  // Issue #313: version-check 完全脱离 api.github.com 60 req/hr 通道。
+  // 走 Pages 主路 + npm registry 兜底 (fetch-latest.ts)。两路都不消耗 GitHub API quota。
+  const { fetchLatestVersion } = await import("../update/fetch-latest.js");
   const s = readState();
 
-  // Honor the same exponential backoff the auto-updater respects. Without this
-  // guard, looping `teamagent update --check` (the exact entry-point that
-  // surfaced #159) bypasses backoff and re-exhausts the 60 req/h anonymous
-  // quota on every invocation.
+  // Backwards-compat: 仍然 honor 老 state 文件里残留的 next_check_after_ts，
+  // 让用户从旧 backoff 窗口里自然过渡。新代码不再 ADD backoff（Pages 不限速，
+  // npm 不限速；两路都失败时走 Tier 3 提示而非 silent 退避）。
   if (s.next_check_after_ts > 0 && Date.now() < s.next_check_after_ts) {
     const until = new Date(s.next_check_after_ts).toISOString();
     return { ok: false, output: `auto-updater backoff active until ${until}; skip\n` };
   }
 
-  const result = await fetchRemoteSha({
-    owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH,
-    token: resolveGithubToken(),
-    ifNoneMatch: s.last_branch_etag || undefined,
-    cachedSha: s.last_branch_sha || undefined,
-  });
+  const result = await fetchLatestVersion();
   if (!result.ok) {
-    // On rate-limit, persist the same backoff fields runUpdater would. Foreground
-    // and background share one window; failures from either path advance both.
-    if (result.reason === "rate_limit_anonymous" || result.reason === "rate_limit_authed") {
-      const next = s.consecutive_rate_limits + 1;
-      const delayHours = Math.min(2 ** (next - 1), 24);
-      writeState({
-        ...s,
-        consecutive_rate_limits: next,
-        next_check_after_ts: Date.now() + delayHours * 3600 * 1000,
-      });
-    }
-    return { ok: false, output: formatCheckFailure(result) + "\n" };
+    // Tier 3: human-readable. Do NOT bump consecutive_rate_limits or set
+    // next_check_after_ts — the failure isn't rate-limit-shaped any more.
+    return { ok: false, output: formatTier3Message(result) + "\n" };
   }
-  // Persist etag/sha for next conditional GET; reset rate-limit counters on success (§ 2.4)
+
+  // Success: persist version and (when available) the release SHA for rollback
+  // bookkeeping. Reset the legacy backoff counters so old state files heal.
   writeState({
     ...s,
-    last_branch_etag: result.etag ?? "",
-    last_branch_sha: result.sha,
+    last_branch_etag: "",
+    last_branch_sha: result.sha ?? s.last_branch_sha,
     consecutive_rate_limits: 0,
     next_check_after_ts: 0,
   });
-  const local = s.last_installed_sha;
-  if (result.sha === local) return { ok: true, output: `up-to-date (${local.slice(0, 7)})\n` };
-  return { ok: true, output: `update available: ${(local || "(none)").slice(0, 7)} -> ${result.sha.slice(0, 7)}\n` };
+
+  const localVersion = s.last_installed_version;
+  if (result.version === localVersion) {
+    return {
+      ok: true,
+      output: `up-to-date (${localVersion}; source=${result.source})\n`,
+    };
+  }
+  return {
+    ok: true,
+    output: `update available: ${localVersion || "(none)"} -> ${result.version} (source=${result.source})\n`,
+  };
 }
 
 async function nowCmd(): Promise<UpdateRunResult> {
