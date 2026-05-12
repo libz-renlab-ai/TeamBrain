@@ -207,8 +207,12 @@ describe("DaemonFirstEmbedder.embed", () => {
     }
   });
 
-  it("falls back to in-process embedder when state file is missing", async () => {
-    const t = mkTmp("dfe-fallback-");
+  it("returns empty vectors (NOT in-process Xenova load) when state file is missing", async () => {
+    // Issue #315: previous fallback was `new XenovaRuleEmbedder()` in-process
+    // (~650MB RSS). That made multi-session usage a RAM bomb. The new contract
+    // is: daemon unreachable → one empty vector per text → SqliteSemanticRetriever
+    // vec0 stages error on 0-byte buffer → try/catch swallows → BM25-only result.
+    const t = mkTmp("dfe-empty-fallback-");
     try {
       const statePath = path.join(t.dir, "state.json");
       // No state file written → describeDaemonReadiness → reason=missing.
@@ -217,13 +221,29 @@ describe("DaemonFirstEmbedder.embed", () => {
         autoSpawn: false,
         timeoutMs: 50,
       });
-      const out = await e.embed(["alpha"]);
-      // Mocked fallback returns [0.1, 0.2, 0.3] per text — proves we
-      // crossed into the fallback branch and didn't accidentally hit a
-      // stray daemon on the box.
-      expect(out).toEqual([[0.1, 0.2, 0.3]]);
-      expect(xenovaConstructCount).toBe(1);
-      expect(xenovaEmbedCalls).toEqual([["alpha"]]);
+      const out = await e.embed(["alpha", "beta"]);
+      expect(out).toEqual([[], []]);
+      // Critical assertion: NO in-process XenovaRuleEmbedder construction.
+      expect(xenovaConstructCount).toBe(0);
+      expect(xenovaEmbedCalls).toEqual([]);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("daemon-unreachable matches input length (one empty vec per text)", async () => {
+    const t = mkTmp("dfe-empty-length-");
+    try {
+      const statePath = path.join(t.dir, "state.json");
+      const e = new DaemonFirstEmbedder({
+        statePath,
+        autoSpawn: false,
+        timeoutMs: 50,
+      });
+      const out = await e.embed(["x", "y", "z"]);
+      expect(out).toHaveLength(3);
+      expect(out.every((v) => Array.isArray(v) && v.length === 0)).toBe(true);
+      expect(xenovaConstructCount).toBe(0);
     } finally {
       t.cleanup();
     }
