@@ -53,6 +53,12 @@ The MAIN agent dispatches via subagent or `claudefast -p`. The harness
 itself is this markdown playbook — **no fixed bash script** lives at
 `scripts/*.sh` per project rule (user memory `feedback_judge_harness_md_playbook.md`).
 
+> **Quickstart (fresh contributor)** — one prerequisite, then the recipe is
+> self-contained: (1) `pnpm install` once at `$REPO_ROOT` so the repo-local
+> tsx binary exists at `node_modules/.bin/tsx`; (2) run §V1 Steps 0-4 below.
+> The Step 2 guard exits 127 with a remediation hint if the binary is
+> missing, so a forgotten `pnpm install` fails loud, not silently.
+
 - Step 0: Resolve repo root (handles git worktrees).
   ```
   GIT_COMMON_DIR="$(git rev-parse --git-common-dir 2>/dev/null || true)"
@@ -121,6 +127,8 @@ and emits `evidence/<run_id>/judge.json`. Canonical schema:
   "stdout_path": "init.stdout.log",
   "stderr_path": "init.stderr.log",
   "exit_code": 0,
+  "sandbox": "<absolute sandbox path; optional audit field>",
+  "home": "<absolute isolated-HOME path; optional audit field>",
   "metrics": {
     "sandbox_files_total": <int>,
     "teamagent_files_total": <int>,
@@ -139,9 +147,15 @@ and emits `evidence/<run_id>/judge.json`. Canonical schema:
     {"id": "no_unhandled_error", "pass": <bool>}
   ],
   "overall": "PASS|FAIL",
-  "feature_status": "active"
+  "feature_status": "active",
+  "harness_change": "<optional one-line note describing any non-default harness invocation; e.g. a tsx pinning change>"
 }
 ```
+
+Optional audit fields (`sandbox`, `home`, `harness_change`) are permitted but
+not required. The first two have been present in PASS runs since 2026-05-11;
+`harness_change` was added in the 2026-05-12 tsx-pin commit so future judge.json
+files can self-describe non-default invocations.
 
 There is no fallback mode. All five checks must be true for the playbook
 to PASS.
