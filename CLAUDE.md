@@ -177,6 +177,27 @@
 - 即使用户用英文提问，只要是在问本项目规则、工具、流程、状态、实现或 PR 相关事项，也必须用中文回答。
 - 只有在用户明确要求输出英文文案、英文原文、代码、命令、JSON、日志或第三方接口字段时，才保留必要英文。
 
+## Frontend = `landing/rocketteam` (RocketTeam)
+
+TeamBrain 的 active frontend 是 git submodule `landing/rocketteam`，对应 upstream [hrdAI3/RocketTeam](https://github.com/hrdAI3/RocketTeam)（Next.js 14 + Tailwind + React 18，pin 在 SHA `3922219`，由 `.gitmodules` 锁定）。任何"frontend / UI / 落地页"工作的入口都从这里出发，**不再**指向 `apps/landing/`。
+
+- `apps/landing/` 是 **legacy static-HTML 部署管道**，保留只为兼容现有 GitHub Pages workflow（`landing-deploy.yml`），新功能不要往里加；它会在后续 PR 里被 RocketTeam 直接接管。
+- `@teamagent/landing-adapter`（`packages/landing-adapter/`，PR #390 引入）保持 contract-only skeleton；当 RocketTeam 接管部署后，content-bridge 模式只用于反向把 TeamBrain feature 2/3 信号 **注入** RocketTeam 渲染层。
+
+**根脚本（在 TeamBrain 根目录执行）**：
+
+```bash
+pnpm frontend:install     # 安装 RocketTeam 依赖（首次 / 依赖变动）
+pnpm frontend:dev         # 本地起 Next.js dev server
+pnpm frontend:build       # next build
+pnpm frontend:start       # next start（生产）
+pnpm frontend:typecheck   # tsc --noEmit
+```
+
+底层是 `cd landing/rocketteam && npm run <script>`；RocketTeam 自带 `bun.lock` 但脚本走 `npm` 以避免要求开发机装 bun。RocketTeam 的 `bun run`-only 脚本（`bootstrap` / `pma` / `seed` / `llm-proxy` / `llm-queue`）仍需进 submodule 单独跑。
+
+**为什么不内嵌进 pnpm workspace**：RocketTeam 用 React 18 / vitest 2.0.5 / `@anthropic-ai/sdk@^0.27`，与 TeamBrain 现有 vitest 2.1.x + 各 packages 版本会冲突；root 脚本 + submodule local install 是最少破坏面。后续若要统一构建链，需开 grill-ready issue 走 FIXEDFLOW。
+
 ## 跑命令
 
 ```bash
@@ -184,6 +205,7 @@ pnpm install          # 首次 / 依赖变动后
 pnpm test             # 跑所有测试
 pnpm typecheck        # 跑所有包的 tsc --noEmit
 pnpm teamagent <cmd>  # 跑 CLI（35+ 子命令；`pnpm teamagent --help` 列全部）
+pnpm frontend:dev     # 跑 RocketTeam frontend dev server（见上节）
 ```
 
 **`pnpm teamagent compile` 行为速查**（源文件 `packages/cli/src/commands/compile.ts`，详见 `docs/features/compile.md`）：
