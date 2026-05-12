@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { RuleEmbedder } from "@teamagent/ports";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,6 +53,39 @@ export class XenovaRuleEmbedder implements RuleEmbedder {
       progressCallback?: (e: XenovaProgressEvent) => void;
     } = {},
   ) {
+    // Issue #315 — env-gated ctor tracker.
+    //
+    // When TEAMAGENT_XENOVA_TRACKER is set to a file path, append one line
+    // per construction. Used by judge harness to assert that hook-side code
+    // never instantiates this class in-process (the bug #315 fixes: only
+    // bin-embedder.cjs daemon should construct one XenovaRuleEmbedder per
+    // machine). In production the env is unset → cheap branch + zero IO.
+    //
+    // FAIL_FAST=1 lets the harness terminate the entire fan-out (10 parallel
+    // hook child processes) the moment ANY second loader appears, so the
+    // test machine itself is not OOM-spiked by the bug being verified.
+    const trackerPath = process.env["TEAMAGENT_XENOVA_TRACKER"];
+    if (trackerPath) {
+      try {
+        const line = `${Date.now()} pid=${process.pid} argv=${process.argv.slice(0, 2).join(" ")}\n`;
+        fs.appendFileSync(trackerPath, line);
+        if (process.env["TEAMAGENT_XENOVA_TRACKER_FAIL_FAST"] === "1") {
+          const lines = fs
+            .readFileSync(trackerPath, "utf-8")
+            .split("\n")
+            .filter((l) => l.length > 0).length;
+          if (lines > 1) {
+            // Hard exit — bypasses normal Node finalizers. Harness reads the
+            // tracker file post-mortem to count loaders; even one extra
+            // beyond the daemon is a regression.
+            process.exit(2);
+          }
+        }
+      } catch {
+        /* best-effort: never let tracker IO break the ctor */
+      }
+    }
+
     this.modelId = opts.modelId ?? DEFAULT_MODEL;
     this.dim = opts.dim ?? DEFAULT_DIM;
     this.progressCallback = opts.progressCallback;
