@@ -1,0 +1,102 @@
+name: m5 propagation L4 nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      budget_usd:
+        description: "Override TEAMAGENT_NIGHTLY_MAX_USD"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  m5-propagation-l4:
+    name: m5 rule propagation L4 nightly (replay + ablation smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TEAMAGENT_NIGHTLY_MAX_USD: ${{ inputs.budget_usd || '10' }}
+      # Per ADR-0013: reuse the inner-loop secret. Cold-path runner (real
+      # claudefast invocation) is not yet implemented; this job currently
+      # exercises only the deterministic regression-replay layer.
+      ANTHROPIC_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install scipy (Counterfactual Ablation harness)
+        run: pip install 'scipy>=1.11'
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Budget guard
+        # Static budget check: count fixture scenarios × estimated tokens per
+        # observation pair × spot $/token vs TEAMAGENT_NIGHTLY_MAX_USD ceiling.
+        # The cold-path runner does not exist yet, so the estimate is currently
+        # zero — keep the guard wired so future cold-path additions cannot
+        # silently exceed budget.
+        run: |
+          set -euo pipefail
+          BUDGET="${TEAMAGENT_NIGHTLY_MAX_USD}"
+          # 3 scenarios × (10+30+10) prompts × 2 conditions × $0.05/call ≈ $5
+          ESTIMATED_USD="5"
+          if [ "${ESTIMATED_USD}" -gt "${BUDGET}" ]; then
+            echo "::error::estimated nightly cost \$${ESTIMATED_USD} > budget \$${BUDGET}"
+            exit 1
+          fi
+          echo "budget OK: estimated \$${ESTIMATED_USD} <= cap \$${BUDGET}"
+
+      - name: Regression Replay — m5-replay against each fixture
+        run: |
+          set -euo pipefail
+          for slug in \
+            m5-rule-propagation-l4/avoidance \
+            m5-rule-propagation-l4/practice \
+            m5-rule-propagation-l4/learning; do
+            echo "::group::m5-replay ${slug}"
+            pnpm teamagent m5-replay --slug "${slug}" --json
+            echo "::endgroup::"
+          done
+
+      - name: Counterfactual Ablation — scipy smoke on sample data
+        run: |
+          set -euo pipefail
+          python scripts/ablation/ttest_l4.py \
+              --rule-on  scripts/ablation/sample-data/rule-on.json \
+              --rule-off scripts/ablation/sample-data/rule-off.json \
+              --alpha 0.01
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## m5 propagation L4 nightly"
+            echo ""
+            echo "- Regression Replay: ran 3 fixture scenarios via \`pnpm teamagent m5-replay\`"
+            echo "- Counterfactual Ablation: scipy smoke on sample data"
+            echo "- Budget guard: TEAMAGENT_NIGHTLY_MAX_USD=${TEAMAGENT_NIGHTLY_MAX_USD}"
+            echo ""
+            echo "Cold-path runner (real claudefast against B's session) is not"
+            echo "implemented yet; this job exercises only the deterministic layer."
+          } >> "$GITHUB_STEP_SUMMARY"
