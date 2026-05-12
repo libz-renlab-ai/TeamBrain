@@ -30,6 +30,17 @@ artifacts the user sees) do NOT need an entry.
   stability. Any value other than `"1"` (including unset, `"0"`, `"true"`)
   leaves all hooks fully enabled — opt-in by exact string match.
 
+- **Issue #343 closed: boss-facing TB token cost report + reproducibility recipe** (PR-3 of 3).
+  `docs/reports/2026-05-12-issue-343-tb-token-cost-summary.md` is a
+  single-page Chinese summary aimed at the boss/CEO: headline verdict
+  (mean Δ=+2,773 tokens, p=0.329 → no statistically significant token
+  diff between TB-ON and TB-OFF on n=17 curated tasks), 3 anticipated
+  Q&A, 3 takeaways, 5-command reproducibility recipe. Companion engineering
+  doc `docs/features/cost-measurement.md` documents the full re-run recipe,
+  JSON output shapes (`bench-report.json` + `ablation.json`), how to extend
+  the corpus, and why scipy paired t-test is the canonical harness per
+  `docs/verify/E2E-LEARNING.md`.
+
 ### Fixed
 
 - **Multi-session no longer multiplies the 650MB embedder model**. Issue #315.
