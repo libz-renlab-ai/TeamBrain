@@ -56,6 +56,7 @@ The FIXEDFLOW driver may **only** be dispatched on **docs-gated grilled-issues**
 - ❌ any watcher / cron / daemon / background poller / repo-wide scanner / auto-dispatch **on the fixed-flow track** (see scoping note below for the Symphony track carve-out)
 - ❌ epic-style issues without `epic` label + named coordinator (see §Epic carve-out)
 - ❌ **`track:symphony` label present** — this issue is routed to the Symphony driver, not fixed-flow. Driver §0 must refuse + post a 1-line comment citing `docs/TWO-DRIVER-COEXISTENCE.md` §2 + exit. Same refusal applies for `symphony-working` / `symphony-blocked` labels.
+- ❌ **Symphony PR exists for this issue** — `gh pr list --search "Closes #<N> in:body" --label "track:symphony"` returns non-empty. Driver §0 must refuse even if `track:symphony` got stripped from the issue itself; a mid-flight Symphony PR means the issue is owned by Symphony. Recovery procedure in `docs/TWO-DRIVER-COEXISTENCE.md` §5b stale recovery.
 
 **No automatic scanner / sweep / poller on the fixed-flow track.** Humans write issues, grill in the web (`/grill-via-web`), then run `/grill-with-docs` to update docs; only after both gates land do humans manually `/fixed-flow-driver` to continue.
 
