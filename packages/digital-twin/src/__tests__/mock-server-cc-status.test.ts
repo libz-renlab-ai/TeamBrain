@@ -145,6 +145,24 @@ describe('mock-server /v1/cc-status + /api/cc-status', () => {
     expect((await fetch(`${base}/api/cc-status/history?user=alice`)).status).toBe(400);
   });
 
+  it('does not crash on an out-of-range ?since (regression: parseSinceMs clamp)', async () => {
+    await post(snap({ session_id: 'sess-h', ts: '2026-05-12T08:00:00.000Z' }));
+    // 99999999999999999 ms would overflow `new Date(...)` → RangeError → uncaught
+    // → process crash without the clamp. Must return 200.
+    const res = await fetch(`${base}/api/cc-status/history?user=alice&session=sess-h&since=99999999999999999`);
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { since: string; history: unknown[] };
+    expect(typeof j.since).toBe('string'); // a valid ISO string, not a thrown RangeError
+    // server is still alive afterwards
+    expect((await fetch(`${base}/api/users`)).status).toBe(200);
+  });
+
+  it('clamps an over-long cwd in the stored snapshot (length-cap)', async () => {
+    await post(snap({ session_id: 'sess-big', cwd: 'D:/' + 'x'.repeat(50_000) }));
+    const row = (await (await fetch(`${base}/api/cc-status?user=alice&session=sess-big`)).json()) as Record<string, unknown>;
+    expect((row.cwd as string).length).toBe(4096);
+  });
+
   it('still routes the unrelated /api/users + 404s unknown paths', async () => {
     expect((await fetch(`${base}/api/users`)).status).toBe(200);
     expect((await fetch(`${base}/api/cc-status/bogus`)).status).toBe(404);

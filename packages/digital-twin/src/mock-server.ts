@@ -19,6 +19,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { join, resolve as resolvePath, sep } from 'node:path';
 import { DASHBOARD_HTML } from './dashboard-html.js';
+import { safeUserId, dateStamp } from './cc-status/path-safety.js';
 import {
   appendCcStatusSnapshot,
   readLatestPerSession,
@@ -26,6 +27,12 @@ import {
   readLatestAllUsers,
   readHistory,
 } from './cc-status/store.js';
+
+// Re-exported here for backwards compat — `safeUserId` / `dateStamp` were
+// originally defined in this module before `cc-status/path-safety.ts` split
+// them out (issue #350 /review iter 1) so both this and `store.ts` could
+// share them without a circular import.
+export { safeUserId, dateStamp };
 
 /** Cap raw POST body to bound memory + reject obvious DoS payloads. */
 export const MAX_BODY_BYTES = 32 * 1024 * 1024;
@@ -66,26 +73,6 @@ function send(res: ServerResponse, status: number, body?: unknown): void {
   } else {
     res.end();
   }
-}
-
-export function safeUserId(raw: unknown): string {
-  if (typeof raw !== 'string' || raw.length === 0) return 'unknown';
-  let cleaned = raw.replace(/[^a-zA-Z0-9._@+-]/g, '_').slice(0, 80);
-  cleaned = cleaned.replace(/\.{2,}/g, '_');
-  cleaned = cleaned.replace(/^[._-]+/, '').replace(/[._-]+$/, '');
-  return cleaned.length > 0 ? cleaned : 'unknown';
-}
-
-export function dateStamp(raw: unknown, now: Date): string {
-  let d = now;
-  if (typeof raw === 'string' && raw.length > 0) {
-    const parsed = new Date(raw);
-    if (!Number.isNaN(parsed.getTime())) d = parsed;
-  }
-  const yyyy = d.getUTCFullYear().toString().padStart(4, '0');
-  const mm = (d.getUTCMonth() + 1).toString().padStart(2, '0');
-  const dd = d.getUTCDate().toString().padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 /**
@@ -242,21 +229,36 @@ function parseQuery(url: string): URLSearchParams {
 }
 
 /**
+ * Below this value an all-digits `since` param is read as epoch *seconds*; at
+ * or above it, epoch *milliseconds*. 1e12 ms ≈ 2001-09; 1e12 s ≈ year 33658 —
+ * so the heuristic is unambiguous for any realistic timestamp.
+ */
+const EPOCH_MS_THRESHOLD = 1e12;
+/** Largest millisecond value `new Date(...)` accepts (±100,000,000 days). */
+const MAX_DATE_MS = 8.64e15;
+
+/**
  * Issue #350 — parse the `since` query param for `/api/cc-status/history`.
  * Accepts ISO-8601, epoch milliseconds, or epoch seconds; missing/garbage
  * falls back to "24h ago" so a bare `?user=&session=` still returns something
- * bounded rather than the whole history.
+ * bounded rather than the whole history. The result is always clamped to
+ * `[0, MAX_DATE_MS]` — without that, `?since=99999999999999999` would flow into
+ * `new Date(sinceMs).toISOString()` below, throw a `RangeError` inside the
+ * request handler, and crash the (unauthenticated) collector process.
  */
 function parseSinceMs(raw: string | null | undefined, nowMs: number): number {
+  let ms = nowMs - 24 * 60 * 60 * 1000;
   if (typeof raw === 'string' && raw.length > 0) {
     if (/^\d+$/.test(raw)) {
       const n = Number(raw);
-      if (Number.isFinite(n)) return n < 1e12 ? n * 1000 : n; // <1e12 → seconds
+      if (Number.isFinite(n)) ms = n < EPOCH_MS_THRESHOLD ? n * 1000 : n;
+    } else {
+      const parsed = Date.parse(raw);
+      if (Number.isFinite(parsed)) ms = parsed;
     }
-    const parsed = Date.parse(raw);
-    if (Number.isFinite(parsed)) return parsed;
   }
-  return nowMs - 24 * 60 * 60 * 1000;
+  if (!Number.isFinite(ms)) return 0;
+  return Math.min(Math.max(0, ms), MAX_DATE_MS);
 }
 
 function handleGet(

@@ -42,8 +42,25 @@ describe('sanitizeCcStatusSnapshot', () => {
     expect(sanitizeCcStatusSnapshot(snap({ session_id: '../etc' }))).toBeNull();
     expect(sanitizeCcStatusSnapshot(snap({ event: '' }))).toBeNull();
     expect(sanitizeCcStatusSnapshot(snap({ ts: 'not-a-date' }))).toBeNull();
+    expect(sanitizeCcStatusSnapshot(snap({ ts: '2026-01-01T00:00:00.000Z' + 'x'.repeat(200) }))).toBeNull();
     expect(sanitizeCcStatusSnapshot('nope')).toBeNull();
     expect(sanitizeCcStatusSnapshot(null)).toBeNull();
+  });
+
+  it('rejects session_id containing ".." or a Windows reserved device name', () => {
+    expect(sanitizeCcStatusSnapshot(snap({ session_id: '..' }))).toBeNull();
+    expect(sanitizeCcStatusSnapshot(snap({ session_id: 'a..b' }))).toBeNull();
+    expect(sanitizeCcStatusSnapshot(snap({ session_id: 'con' }))).toBeNull();
+    expect(sanitizeCcStatusSnapshot(snap({ session_id: 'NUL' }))).toBeNull();
+    expect(sanitizeCcStatusSnapshot(snap({ session_id: 'com1' }))).toBeNull();
+    // a normal session id (UUID-shaped) still passes
+    expect(sanitizeCcStatusSnapshot(snap({ session_id: 'abc-123_DEF.45' }))).not.toBeNull();
+  });
+
+  it('clamps over-long string fields', () => {
+    const s = sanitizeCcStatusSnapshot(snap({ cwd: 'D:/' + 'x'.repeat(50_000), model: 'm'.repeat(5000) }))!;
+    expect(s.cwd!.length).toBe(4096);
+    expect(s.model!.length).toBe(256);
   });
 
   it('coerces a missing/garbage user_id to a safe id', () => {
@@ -131,6 +148,39 @@ describe('cc-status store roundtrip', () => {
     expect(all.map((r) => r.context_tokens)).toEqual([1, 2, 3]);
     const since = readHistory(outputDir, 'alice', 'sess-1', Date.parse('2026-05-12T08:15:00.000Z'), NOW);
     expect(since.map((r) => r.context_tokens)).toEqual([2, 3]);
+  });
+
+  it('keeps the per-session file bounded (rotates to the tail when oversize)', () => {
+    // Pad each snapshot so the file crosses the 2 MB cap quickly (a 3000-char
+    // cwd gets clamped to 3000 by sanitize, so ~3 KB/line → ~700 lines = 2 MB).
+    const filler = 'D:/' + 'x'.repeat(3000);
+    let lastTokens = 0;
+    for (let i = 0; i < 1000; i++) {
+      lastTokens = i;
+      appendCcStatusSnapshot(
+        outputDir,
+        snap({ ts: new Date(Date.parse('2026-05-12T08:00:00.000Z') + i * 1000).toISOString(), context_tokens: i, cwd: filler }),
+        NOW,
+      );
+    }
+    const file = ccStatusJsonlPath(outputDir, 'alice', '2026-05-12', 'sess-1');
+    // never exceeds ~cap + one line after a rotation
+    expect(readFileSync(file, 'utf8').length).toBeLessThanOrEqual(2 * 1024 * 1024 + 4096);
+    // and it actually rotated (didn't keep all 1000 lines = ~3 MB)
+    expect(readFileSync(file, 'utf8').length).toBeLessThan(3000 * 1000);
+    // the freshest snapshot is still retrievable
+    const r = readLatestForSession(outputDir, 'alice', 'sess-1', NOW);
+    expect(r!.context_tokens).toBe(lastTokens);
+  });
+
+  it('readLatestPerSession picks the max-by-ts snapshot, not just the last line', () => {
+    // Out-of-order: an earlier-ts snapshot appended last (non-monotonic clock).
+    appendCcStatusSnapshot(outputDir, snap({ ts: '2026-05-12T08:00:00.000Z', context_tokens: 1 }), NOW);
+    appendCcStatusSnapshot(outputDir, snap({ ts: '2026-05-12T08:50:00.000Z', context_tokens: 50 }), NOW);
+    appendCcStatusSnapshot(outputDir, snap({ ts: '2026-05-12T08:10:00.000Z', context_tokens: 10 }), NOW); // older ts, appended last
+    const r = readLatestForSession(outputDir, 'alice', 'sess-1', NOW);
+    expect(r!.context_tokens).toBe(50);
+    expect(r!.ts).toBe('2026-05-12T08:50:00.000Z');
   });
 
   it('ignores junk lines in a status file', () => {

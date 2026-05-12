@@ -220,6 +220,8 @@ describe('statusline issue #350 — push CC status snapshot', () => {
         sessions: Array<Record<string, unknown>>;
       };
       expect(all.sessions.some((s) => s.user_id === 'alice' && s.session_id === 'sess350')).toBe(true);
+      // the detached push carries the body over stdin — no temp file leaked
+      expect(fs.readdirSync(os.tmpdir()).some((n) => n.startsWith('teamagent-ccstatus-'))).toBe(false);
     } finally {
       if (server) await server.close();
       fs.rmSync(home, { recursive: true, force: true });

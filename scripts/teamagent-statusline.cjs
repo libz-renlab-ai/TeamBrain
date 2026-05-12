@@ -480,18 +480,18 @@ const CC_STATUS_EDIT_TOOLS = new Set([
   "Write", "Edit", "MultiEdit", "NotebookEdit",
   "str_replace_editor", "str_replace_based_edit_tool",
 ]);
-// Inline JS executed by a detached `node -e` child: POST the body, then remove
-// the temp file. argv[1] is the temp-file path (`node -e <code> <arg>` →
-// process.argv = [node, <arg>]). 10s fetch timeout so the child can't linger.
-// No top-level `return` — `node -e` evaluates in a non-function scope.
+// Inline JS executed by a detached `node -e` child: read {endpoint,token,body}
+// as JSON from stdin (passing it via stdin rather than a temp-file argv avoids
+// leaking a file if the child is SIGKILL'd, and dodges Windows argv-quoting
+// fragility). 10s fetch timeout so the child can't linger. No top-level `return`
+// — `node -e` evaluates in a non-function scope.
 const CC_STATUS_PUSH_CHILD = [
-  "const fs=require('fs');const f=process.argv[1];",
-  "const done=()=>{try{fs.unlinkSync(f)}catch(e){}};",
-  "let p=null;try{p=JSON.parse(fs.readFileSync(f,'utf8'))}catch(e){p=null}",
-  "if(p){try{",
-  "var url=String(p.endpoint||'').replace(/[/]+$/,'')+'/v1/cc-status';",
-  "fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+String(p.token||'')},body:JSON.stringify(p.body),signal:AbortSignal.timeout(10000)}).then(done,done);",
-  "}catch(e){done()}}else{done()}",
+  "let b='';process.stdin.on('data',c=>{b+=c});",
+  "process.stdin.on('end',()=>{let p=null;try{p=JSON.parse(b)}catch(e){p=null}",
+  "if(!p){return}",
+  "try{var url=String(p.endpoint||'').replace(/[/]+$/,'')+'/v1/cc-status';",
+  "fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+String(p.token||'')},body:JSON.stringify(p.body),signal:AbortSignal.timeout(10000)}).catch(()=>{});",
+  "}catch(e){}});",
 ].join("");
 
 function ccNumOr(v) {
@@ -593,7 +593,8 @@ function aggregateCcExtras(transcriptPath) {
               toolTotal += 1;
               if (CC_STATUS_EDIT_TOOLS.has(String(b.name))) {
                 const inp = b.input;
-                const f = inp && (inp.file_path || inp.path || inp.notebook_path);
+                // keep this key list in sync with cc-status/compute.ts fileFromToolInput
+                const f = inp && (inp.file_path || inp.path || inp.notebook_path || inp.filePath);
                 if (typeof f === "string" && f) files.add(f);
               }
             }
@@ -684,8 +685,10 @@ function buildCcStatusBody(cc, cfg) {
 }
 
 // Returns true (and stamps the throttle file) when ≥ minIntervalMs has elapsed
-// since the last push. Stamping BEFORE the push claims the slot so two
-// near-simultaneous statusline renders don't both spawn a push.
+// since the last push. The stamp is written BEFORE the push to *reduce* the
+// chance two near-simultaneous statusline renders both spawn — it's a plain
+// stat→write, not an atomic claim, so a tight race can still double-push. That's
+// harmless: the server stores last-write-wins and a redundant snapshot is fine.
 function claimCcStatusPushSlot(lastPushPath, minIntervalMs) {
   try {
     let lastMs = null;
@@ -704,18 +707,21 @@ function claimCcStatusPushSlot(lastPushPath, minIntervalMs) {
 function pushCcStatusDetached(endpoint, token, body) {
   try {
     const { spawn } = require("node:child_process");
-    const tmpFile = path.join(
-      os.tmpdir(),
-      `teamagent-ccstatus-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
-    );
-    fs.writeFileSync(tmpFile, JSON.stringify({ endpoint, token, body }), "utf-8");
-    const child = spawn(process.execPath, ["-e", CC_STATUS_PUSH_CHILD, tmpFile], {
+    // stdin pipe carries the payload (no temp file → nothing to leak if the
+    // child is killed; also sidesteps Windows argv-quoting of JSON strings).
+    const child = spawn(process.execPath, ["-e", CC_STATUS_PUSH_CHILD], {
       detached: true,
-      stdio: "ignore",
+      stdio: ["pipe", "ignore", "ignore"],
       windowsHide: true,
       cwd: os.tmpdir(),
     });
-    child.on("error", () => { try { fs.unlinkSync(tmpFile); } catch { /* ignore */ } });
+    child.on("error", () => { /* server unreachable / node missing — best-effort */ });
+    try {
+      if (child.stdin) {
+        child.stdin.on("error", () => { /* EPIPE if the child died — ignore */ });
+        child.stdin.end(JSON.stringify({ endpoint, token, body }));
+      }
+    } catch { /* ignore */ }
     child.unref();
   } catch { /* never block the statusline */ }
 }
