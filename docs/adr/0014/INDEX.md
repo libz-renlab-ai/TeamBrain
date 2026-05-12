@@ -9,7 +9,8 @@
    |       |       |       |       |
    v       v       v       v       v
   155.md  158.md  164.md  218.md  225.md  229.md  233.md  243.md
-  250.md  256.md  258.md  261.md  273.md  280.md  283.md  299.md  313.md
+  250.md  256.md  258.md  261.md  273.md  280.md  283.md  issue-294.md
+  299.md  313.md
 ```
 
 # ADR-0014 grill log siblings — INDEX
@@ -46,6 +47,7 @@ comment lands, before `/fixed-flow-driver` dispatch.
 | [#273](https://github.com/libz-renlab-ai/TeamBrain/issues/273) | CLOSED | 2026-05-10 | #277 | [./273.md](./273.md) |
 | [#280](https://github.com/libz-renlab-ai/TeamBrain/issues/280) | CLOSED | 2026-05-11 | #307 | [./280.md](./280.md) |
 | [#283](https://github.com/libz-renlab-ai/TeamBrain/issues/283) | CLOSED | 2026-05-11 | #285 | [./283.md](./283.md) |
+| [#294](https://github.com/libz-renlab-ai/TeamBrain/issues/294) | CLOSED | 2026-05-12 | #339 | [./issue-294.md](./issue-294.md) |
 | [#299](https://github.com/libz-renlab-ai/TeamBrain/issues/299) | OPEN | — | — | [./299.md](./299.md) |
 | [#313](https://github.com/libz-renlab-ai/TeamBrain/issues/313) | OPEN | — | — | [./313.md](./313.md) |
 
