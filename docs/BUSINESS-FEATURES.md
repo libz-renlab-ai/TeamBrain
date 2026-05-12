@@ -40,7 +40,7 @@ features.
 | Feature | Today (PRESHIP / Vision) | What customers actually get with the current release |
 |---------|--------------------------|------------------------------------------------------|
 | **#1** new instances no longer repeat past mistakes | ✅ **PRESHIP** | auto-capture → matcher → Project Knowledge Index, 72+ active rules. End-to-end usable. |
-| **#2** leaders see teammates' Claude in second-level realtime | ⚠️ **Vision (NOT PRESHIP)** | Only `SessionStart` + `UserPromptSubmit` hooks wired (2 of 5); learnings sync at hour/day granularity (M5 viral sync); leader dashboard is a static prototype at `docs/kanban-user-boss/`. Second-level realtime dashboard is planned in `docs/plans/2026-05-11-feature-2-secondlevel-realtime/` but **not shipped**. |
+| **#2** leaders see teammates' Claude in second-level realtime | ⚠️ **Vision (NOT PRESHIP)** | `SessionStart` + `UserPromptSubmit` hooks wired **by design** (per the Out-of-scope section below — the original "needs 5 channels" argument has been retracted; per-tool-call mid-step visibility is **not** a product feature). Learnings sync at hour/day granularity (M5 viral sync); leader dashboard is a static prototype at `docs/kanban-user-boss/`. Second-level realtime dashboard UI is planned in `docs/plans/2026-05-11-feature-2-secondlevel-realtime/` but **not shipped**. |
 | **#3** video recording + centralized storage easy to use | ⚠️ **Vision (NOT PRESHIP)** | Transcript-level capture exists inside `auto-capture` / `team-share`; video stream + centralized-storage turnkey UX **not shipped**. |
 
 > **Honesty contract**: any external surface that quotes the anchor sentence
