@@ -91,6 +91,32 @@
 4. **每轮 fix 后增量贴新链接**——不要覆盖旧 URL，让 reviewer 看到 visual progression（fix #1 → fix #2 → final），与 `docs/POSTPR.md` 的 `/review` PASS 循环对齐。
 5. **PR description 顶部留一行 `## Visual proof` section** 指向最新一条 comment 链接，方便 reviewer 一眼找到当前 canonical proof，不必滚到 timeline 尾巴。
 
+## Third-party reviewer carve-out / 第三方 reviewer 替补 host
+
+**Concrete trigger**: a PR with visual side effects shipped (or is about to ship) without proposer-attached visual proof, and a reviewer wants to retroactively supply the proof so audit trail isn't lost. See PR #425 for the doctrinal addition; precedent = PR #420 + comment 4437189159.
+
+**What the reviewer MAY do** (one-time per PR, no advance permission required from proposer):
+
+1. Generate the HTML artifact (real captures, not mockups; same self-contained constraints as proposer-host).
+2. Host it on the **reviewer's own** public storage that satisfies the same self-contained / public / reviewer-fully-owned constraints (Gist+htmlpreview, reviewer's own GH Pages `<reviewer-username>.github.io/<artifact-repo>/...`, or any other reviewer-owned endpoint per `docs/VISUAL-PROOF-FORMAT.md § Hosting`).
+3. Append a PR comment with the URL(s).
+
+**What the reviewer MUST do** (mandatory disclosure — non-negotiable):
+
+- The HTML artifact **must** contain a visible disclaimer block at the top with the literal words `third-party visual proof` and **must** name both handles (`@<reviewer-handle>` and `@<proposer-handle>`) so a future grep / spot-check can identify the deviation in seconds.
+- The PR comment **must** contain a visible Disclosure paragraph repeating the same attribution and pointing back to this section (`docs/VISUAL-PROOF-PR.md § Third-party reviewer carve-out`).
+
+**What this carve-out does NOT permit**:
+
+- Reviewer cannot edit or override the proposer's existing visual proof if one was supplied — only fills genuine gaps.
+- Reviewer cannot omit the disclaimer; an undisclosed reviewer-host instance is treated identically to "no proof" and reverts to auditable raw evidence only.
+- Per-PR one-time: repeated reviewer-host without coordination signals a process gap — open an issue to discuss proposer onboarding to the canonical default rather than habitually relying on the carve-out.
+- Reviewer cannot host on a domain owned by anyone other than the reviewer.
+
+**Concrete precedent (canonical disclosure form)**: PR #420 shipped without proposer-attached visual proof; reviewer @LiuShiyuMath supplied [`https://liushiyumath.github.io/teambrain-pr-proof-images/pr-420-statusline-project-field/`](https://liushiyumath.github.io/teambrain-pr-proof-images/pr-420-statusline-project-field/) with full disclosure in both the HTML disclaimer block and the PR comment Disclosure paragraph. See [PR #420 issuecomment-4437189159](https://github.com/libz-renlab-ai/TeamBrain/pull/420#issuecomment-4437189159) for the canonical disclosure form to copy.
+
+**Relationship to the primary rule**: this carve-out **does not weaken** the proposer-host primary rule documented in this file's two-step bullet, the `## What counts as "PR proposer's own storage"` table, or the verbatim 7-anchor canonical answer in `CLAUDE.md`. Those remain the default and the canned-answer probe (`claudefast -p "how do we implement visual-proof guided PR workflow ?"`) is unchanged. The carve-out names a single additive exception path that requires explicit attribution to be valid; no exception is implied for any other constraint (file format, self-contained, public-fetchable, `curl -I 200`).
+
 ## Boundary / 不归本规则管
 
 - **纯后端 / 算法 / 配置类 PR**（没有可视化副作用、不改 UI、不改 dashboard、不出截图）：不需要 visual proof，普通 `docs/COMMIT-FLOW.md` 链路即可。
