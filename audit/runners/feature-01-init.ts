@@ -281,9 +281,13 @@ async function main(): Promise<void> {
     checks.push(
       check(
         "真实 init stdout 成功",
-        readText(path.join(ctx.outDir, "init-real-skip-import-skip-hook.stdout.txt")).includes(
-          "TeamAgent 安装成功",
-        ),
+        // Issue #326 RESCOPE item 6: success banner is now "✅ TeamAgent 已就绪"
+        // (previously "✅ TeamAgent 安装成功"). Accept either so audit runner
+        // survives mid-rollout / users running older builds.
+        (() => {
+          const txt = readText(path.join(ctx.outDir, "init-real-skip-import-skip-hook.stdout.txt"));
+          return txt.includes("TeamAgent 已就绪") || txt.includes("TeamAgent 安装成功");
+        })(),
       ),
       check("真实 init 创建项目 DB", existsSync(realProjectDb), realProjectDb),
       check("真实 init 创建 global DB", existsSync(realGlobalDb), realGlobalDb),
