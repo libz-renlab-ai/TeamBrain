@@ -194,4 +194,53 @@ describe("GhCliGitHubActivityAdapter", () => {
     const lastCall = calls[calls.length - 1];
     expect(lastCall?.args[1]).toContain("/repos/myorg/myrepo/commits");
   });
+
+  it("refuses author values containing shell metachars (allowlist)", async () => {
+    const { spawner, calls } = makeRouter();
+    const adapter = new GhCliGitHubActivityAdapter({
+      spawner,
+      defaultProject: "owner/repo",
+    });
+    const callsBefore = calls.length;
+    const r1 = await adapter.fetchCommitsByAuthor({
+      author: "alice; rm -rf /",
+      since: "2026-05-13T00:00:00Z",
+      until: "2026-05-13T23:59:59Z",
+    });
+    const r2 = await adapter.fetchPullRequestsByAuthor({
+      author: "alice & evil",
+      since: "2026-05-13T00:00:00Z",
+      until: "2026-05-13T23:59:59Z",
+    });
+    const r3 = await adapter.fetchIssuesByAuthor({
+      author: "alice`pwd`",
+      since: "2026-05-13T00:00:00Z",
+      until: "2026-05-13T23:59:59Z",
+    });
+    expect(r1).toEqual([]);
+    expect(r2).toEqual([]);
+    expect(r3).toEqual([]);
+    expect(calls.length).toBe(callsBefore); // no spawn ever happened
+  });
+
+  it("refuses project slugs that fail the owner/repo regex (allowlist)", async () => {
+    const { spawner, calls } = makeRouter();
+    const adapter = new GhCliGitHubActivityAdapter({ spawner });
+    const callsBefore = calls.length;
+    const r1 = await adapter.fetchCommitsByAuthor({
+      author: "alice",
+      project: "../etc/passwd",
+      since: "2026-05-13T00:00:00Z",
+      until: "2026-05-13T23:59:59Z",
+    });
+    const r2 = await adapter.fetchCommitsByAuthor({
+      author: "alice",
+      project: "owner/repo; rm -rf /",
+      since: "2026-05-13T00:00:00Z",
+      until: "2026-05-13T23:59:59Z",
+    });
+    expect(r1).toEqual([]);
+    expect(r2).toEqual([]);
+    expect(calls.length).toBe(callsBefore); // no spawn ever happened
+  });
 });

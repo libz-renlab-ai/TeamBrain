@@ -47,6 +47,24 @@ export interface GhCliGitHubActivityAdapterOptions {
   defaultProject?: string;
 }
 
+/**
+ * Strict allowlists for argv values that flow into `gh api` / `git log`.
+ *
+ * On Windows the default spawner uses `shell: true` (so cmd.exe honors
+ * PATHEXT for finding `gh.cmd` / `git.cmd`); without these guards an
+ * attacker-controlled member or project value containing shell metachars
+ * (`& | ; < > ( ) \` $ " % ^`) would be interpreted by cmd.exe and could
+ * pivot to RCE. The patterns intentionally reject ANY of those bytes.
+ *
+ * - author: GitHub login or git author name. GitHub logins are
+ *   ASCII alphanumeric + dash; git author names may include dots,
+ *   underscores, `@`, `+` and spaces. We allow that conservative subset.
+ * - project: GitHub repo slug `owner/repo`. Each segment must be
+ *   alphanumeric + dot/underscore/dash.
+ */
+const AUTHOR_PATTERN = /^[A-Za-z0-9._@+ -]+$/;
+const PROJECT_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
 export class GhCliGitHubActivityAdapter implements GitHubActivityPort {
   private readonly ghExecutable: string;
   private readonly gitExecutable: string;
@@ -62,14 +80,23 @@ export class GhCliGitHubActivityAdapter implements GitHubActivityPort {
     this.defaultProject = opts.defaultProject;
   }
 
+  private isSafeArgv(opts: { author: string; project?: string }): boolean {
+    if (!AUTHOR_PATTERN.test(opts.author)) return false;
+    if (opts.project !== undefined && !PROJECT_PATTERN.test(opts.project))
+      return false;
+    return true;
+  }
+
   async fetchCommitsByAuthor(opts: {
     author: string;
     project?: string;
     since: string;
     until: string;
   }): Promise<GitHubCommit[]> {
+    if (!this.isSafeArgv(opts)) return [];
     const repo = opts.project ?? this.defaultProject;
     if (!repo) return [];
+    if (!PROJECT_PATTERN.test(repo)) return [];
     const ghResult = await this.spawner(
       this.ghExecutable,
       [
@@ -98,8 +125,10 @@ export class GhCliGitHubActivityAdapter implements GitHubActivityPort {
     since: string;
     until: string;
   }): Promise<GitHubPullRequest[]> {
+    if (!this.isSafeArgv(opts)) return [];
     const repo = opts.project ?? this.defaultProject;
     if (!repo) return [];
+    if (!PROJECT_PATTERN.test(repo)) return [];
     const ghResult = await this.spawner(
       this.ghExecutable,
       [
@@ -124,8 +153,10 @@ export class GhCliGitHubActivityAdapter implements GitHubActivityPort {
     since: string;
     until: string;
   }): Promise<GitHubIssue[]> {
+    if (!this.isSafeArgv(opts)) return [];
     const repo = opts.project ?? this.defaultProject;
     if (!repo) return [];
+    if (!PROJECT_PATTERN.test(repo)) return [];
     const ghResult = await this.spawner(
       this.ghExecutable,
       [
@@ -151,6 +182,10 @@ export class GhCliGitHubActivityAdapter implements GitHubActivityPort {
     const sep = "<<<TEAMAGENT-LIVE-INSPECT-FIELD>>>";
     const recSep = "<<<TEAMAGENT-LIVE-INSPECT-REC>>>";
     const fmt = `%H${sep}%aI${sep}%an${sep}%s${recSep}`;
+    // Defense in depth: even though isSafeArgv already rejected malicious
+    // authors, also pin `--author=` syntax + drop everything after `--`
+    // sentinel so an attacker-supplied value beginning with `--upload-pack=`
+    // can never be reinterpreted as another git flag.
     const r = await this.spawner(
       this.gitExecutable,
       [
@@ -160,6 +195,7 @@ export class GhCliGitHubActivityAdapter implements GitHubActivityPort {
         `--until=${opts.until}`,
         `--pretty=format:${fmt}`,
         "--no-merges",
+        "--", // end-of-options sentinel: no more flags are parsed after this
       ],
       { timeoutMs: this.timeoutMs }
     );
