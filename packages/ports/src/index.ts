@@ -63,3 +63,4 @@ export type {
   GitHubIssue,
   FetchByAuthorOptions,
 } from "./github-activity-port.js";
+export { InMemoryGitHubActivityPort } from "./github-activity-port-inmemory.js";
