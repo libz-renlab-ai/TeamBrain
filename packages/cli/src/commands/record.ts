@@ -330,8 +330,14 @@ export function executeRecordDevices(
     }
     r.print(`# audio devices (ffmpeg ${result.argv.join(' ')})`);
     r.print(trimmed);
+    const example =
+      r.platform === 'win32'
+        ? '--device "audio=<exact-name>"'
+        : r.platform === 'darwin'
+          ? '--device ":<index>"'
+          : '--device "<source-name>"';
     r.print(
-      '\nPass an exact device name to `teamagent record start --device "<name>"`. ' +
+      `\nPass an exact device to \`teamagent record start ${example}\`. ` +
         'Issue #297 for context.',
     );
     return { exitCode: 0 };
