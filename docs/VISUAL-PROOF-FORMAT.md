@@ -76,6 +76,18 @@ gh gist create --public --desc "Visual proof for PR #<N>" /tmp/teamagent/<featur
 4. **Provenance** —— Gist URL 含 proposer 的 `<username>` 段（`https://gist.github.com/<username>/<gist-id>`），与 self-hosted GH Pages 同样担保 PR author 身份。
 5. **格式契约 100% 继承** —— gist 文件就是 `.html`，self-contained / 内联 CSS / 无 third-party CDN 这些 §file format 既有约束完全适用。
 
+### When to prefer self-hosted GH Pages over the Gist + htmlpreview default
+
+`htmlpreview.github.io` is a third-party fetch-and-inject proxy: it `fetch()`s the raw gist blob and renders the HTML inside its own sandboxed page. That works for plain HTML with minimal CSS, but introduces **render degradation** for several artifact shapes. Switch to the self-hosted GH Pages fallback below when **any** of the following applies (empirical list, grows as cases surface):
+
+1. **Heavy / multi-section CSS** with custom grid, layered backgrounds, CSS variables on `:root`, dramatic shadows, or `@media print` blocks — htmlpreview's sandboxed iframe occasionally drops style cascades that direct GH Pages serves intact (verified empirically on PR #416's first artifact 2026-05-13: identical bytes rendered crisp on `<username>.github.io` but with visible layout / font-rendering degradation through htmlpreview).
+2. **CJK / mixed-script typography** that relies on system-font CJK fallback (`PingFang SC`, `Songti SC`, `Microsoft YaHei` etc.) — the htmlpreview iframe's font resolution path can fall through to the platform default sans-serif and lose the intended serif/CJK pairing.
+3. **`<pre>` ASCII art with tight `line-height` tuning** — htmlpreview's CSS reset occasionally overrides authored `line-height: 1.32` style values, breaking ASCII-block alignment.
+4. **45 KB+ HTML pages** — htmlpreview's fetch + render cost grows linearly; pages above ~40 KB sometimes flash-of-unstyled-content for several seconds.
+5. **Reviewer on a corporate network** that blocks `*.github.io` cross-origin `fetch()` but allows direct GH Pages — Gist+htmlpreview fails closed, self-hosted GH Pages succeeds.
+
+`docs/VISUAL-PROOF-FORMAT.md § Hosting` keeps Gist+htmlpreview as the **canonical default** (zero bootstrap, zero infra) for the common case (single section, plain CSS, system fonts, <20 KB). The list above is the empirical opt-out — when in doubt, render via both and ship whichever renders correctly in your reviewer's browser. Both paths satisfy the `*.html` + proposer-owned + survives-branch-deletion contract equally.
+
 ### Fallback: self-hosted GitHub Pages (原 canonical URL 形态仍接受)
 
 If proposer prefers a self-hosted GH Pages site (e.g., they already have `<username>/teambrain-proof` set up, or they want richer multi-page artifacts with relative `<script src="./vendored.js">` includes), the original URL form is **100% still accepted**:

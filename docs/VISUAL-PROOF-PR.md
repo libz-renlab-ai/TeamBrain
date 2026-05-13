@@ -64,6 +64,8 @@
    ```
    Gist 永久存在（即使 PR branch 被 delete 也仍可访问），htmlpreview.github.io 是无依赖纯前端 render，无需账号 / 配置 / CDN。
 
+   ⚠️ **htmlpreview 渲染保真度有边界**：heavy CSS（layered backgrounds / 多 section grid / `@media print`）/ CJK 字体栈 / `<pre>` 紧 line-height / 45 KB+ 大页面 / 企业网代理可能命中渲染退化；遇到这些场景请直接走下方 self-hosted GH Pages fallback。完整列表见 `docs/VISUAL-PROOF-FORMAT.md § When to prefer self-hosted GH Pages over the Gist + htmlpreview default`（2026-05-13 PR #416 dogfood 实例）。
+
    **可选 fallback**——self-hosted GitHub Pages（原 canonical URL 形态仍 100% 接受）：
    ```bash
    # 提前一次性 bootstrap（per docs/VISUAL-PROOF-FORMAT.md）：在 GitHub 上创建一个独立的 artifact-repo（推荐 <username>/teambrain-proof），enable GH Pages，clone 到 ~/projects/teambrain-proof/。
