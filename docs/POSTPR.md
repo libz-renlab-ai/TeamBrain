@@ -117,6 +117,8 @@ Once CI is green, no conflict shows, and `/review` returns no actionable finding
 
 `gh pr merge <N> --squash --delete-branch` is canonical. Squash is the **only** allowed merge style on this repo — never `--merge` (commit), never `--rebase`. `--delete-branch` deletes both local and remote PR branch.
 
+**Exception — visual-proof PRs stop here.** If the PR carries user-visible / UI / dashboard / dogfood-able changes (i.e. a `## Visual proof of work` section is present in the PR body per [`docs/VISUAL-PROOF-HUMAN-MERGE.md#pr-body-template`](VISUAL-PROOF-HUMAN-MERGE.md#pr-body-template)), agent STOPS at Step 1 — do NOT run `gh pr merge`. Hand off to a real human to press `Squash and merge` in the GitHub UI after they confirm the visual proof is solid ([`docs/VISUAL-PROOF-HUMAN-MERGE.md#forbidden-merge-paths`](VISUAL-PROOF-HUMAN-MERGE.md#forbidden-merge-paths) forbids 5 automated merge paths including `gh pr merge` from agents). Agent resumes at Step 2 + Step 3 below after the human merge lands.
+
 If you're still inside the PR's worktree when you run `--delete-branch`, the local-delete step fails (`fatal: 'main' is already checked out at <parent>`); the remote merge still succeeds and `state` flips to `MERGED` regardless. Confirm with `gh pr view <N> --json state,mergeCommit`, then clean up locally in step 2.
 
 ### Step 2 — `ExitWorktree action="remove"` (Claude Code) or manual fallback
