@@ -194,4 +194,72 @@ describe("emitCcStatus", () => {
     expect(elapsed).toBeLessThan(50);
     resolveLater(new Response(null, { status: 204 }));
   });
+
+  // Issue #308 grill §3 — raw prompt threading + privacy default
+  describe("raw_prompt (issue #308 grill §3)", () => {
+    async function captureBody(emit: () => void): Promise<Record<string, unknown>> {
+      process.env.TEAMAGENT_REALTIME_URL = "http://127.0.0.1:9787";
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(null, { status: 204 }),
+      );
+      globalThis.fetch = fetchSpy as unknown as typeof fetch;
+      emit();
+      await new Promise((r) => setTimeout(r, 5));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0]!;
+      return JSON.parse((init as RequestInit).body as string);
+    }
+
+    it("omits raw_prompt when rawPrompt is undefined (privacy default)", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({ event: "user_prompt_submit", sessionId: "s-1" });
+      });
+      expect(body.raw_prompt).toBeUndefined();
+    });
+
+    it("omits raw_prompt when rawPrompt is empty string (filtered)", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "user_prompt_submit",
+          sessionId: "s-2",
+          rawPrompt: "",
+        });
+      });
+      expect(body.raw_prompt).toBeUndefined();
+    });
+
+    it("threads raw_prompt to snapshot when caller passes it", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "user_prompt_submit",
+          sessionId: "s-3",
+          rawPrompt: "hello presence",
+        });
+      });
+      expect(body.raw_prompt).toBe("hello presence");
+    });
+
+    it("stop event accepts no rawPrompt (caller never sets it)", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "stop",
+          sessionId: "s-4",
+          cwd: "/Users/me/repo",
+        });
+      });
+      expect(body.event).toBe("stop");
+      expect(body.raw_prompt).toBeUndefined();
+    });
+
+    it("session_end event posts with event=session_end", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "session_end",
+          sessionId: "s-5",
+          cwd: "/Users/me/repo",
+        });
+      });
+      expect(body.event).toBe("session_end");
+    });
+  });
 });
