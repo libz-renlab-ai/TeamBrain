@@ -305,8 +305,14 @@ async function main(): Promise<void> {
         sqliteSummary.global.presetTotal >= seedSummary.lines + sqliteSummary.global.metaPreset,
         `preset=${sqliteSummary.global.presetTotal}, seed=${seedSummary.lines}, meta=${sqliteSummary.global.metaPreset}`,
       ),
-      check("CLAUDE.md 包含 TEAMAGENT:START", claudeAfter.includes("TEAMAGENT:START")),
-      check("CLAUDE.md 包含 TEAMAGENT:END", claudeAfter.includes("TEAMAGENT:END")),
+      check(
+        "CLAUDE.md 不再写 TEAMAGENT:START（M4 起 Skills-default，见 docs/features/compile.md §Status）",
+        !claudeAfter.includes("TEAMAGENT:START"),
+      ),
+      check(
+        "CLAUDE.md 不再写 TEAMAGENT:END",
+        !claudeAfter.includes("TEAMAGENT:END"),
+      ),
       check("CLAUDE.md 保留用户原文", claudeAfter.includes("This paragraph must survive init.")),
     );
 
@@ -317,7 +323,7 @@ async function main(): Promise<void> {
       summary:
         failed.length === 0
           ? [
-              "已在隔离 HOME/cwd 中执行非自证 audit：源码 seed/rules.jsonl 可解析；dry-run 未写项目 DB、global DB、Claude settings 或 CLAUDE marker；真实 init 通过源码 CLI 写入项目 DB、global DB、install log 与 CLAUDE.md TEAMAGENT 区块。",
+              "已在隔离 HOME/cwd 中执行非自证 audit：源码 seed/rules.jsonl 可解析；dry-run 未写项目 DB、global DB、Claude settings 或 CLAUDE marker；真实 init 通过源码 CLI 写入项目 DB、global DB、install log，并验证 CLAUDE.md 不再被注入 TEAMAGENT 区块（M4 默认翻面后的 Skills-default 契约）。",
               `外部 node:sqlite 查询确认 global DB 中 seed preset=${sqliteSummary.global.seedPreset}，meta preset=${sqliteSummary.global.metaPreset}，preset total=${sqliteSummary.global.presetTotal}。`,
             ].join("\n\n")
           : `init audit 失败：${failed.map((item) => item.name).join("；")}。详见 audit/out 下的 stdout/stderr/command/decision 证据。`,
