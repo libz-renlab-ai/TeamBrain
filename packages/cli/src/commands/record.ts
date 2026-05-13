@@ -19,6 +19,8 @@ import {
   stop as ffmpegStop,
   importRecording as ffmpegImport,
   detectFfmpegDefault,
+  listAudioDevices as defaultListAudioDevices,
+  installHintForPlatform,
   type FfmpegProbe,
   type StartDeps,
   type StopDeps,
@@ -26,15 +28,23 @@ import {
   type StartResult,
   type StopResult,
   type ImportResult,
+  type ListAudioDevicesOptions,
+  type ListAudioDevicesResult,
 } from '@teamagent/digital-twin';
 
-export type RecordSubcommand = 'start' | 'stop' | 'import';
+export type RecordSubcommand = 'start' | 'stop' | 'import' | 'devices';
 
 export interface RecordParsedArgs {
   sub: RecordSubcommand;
   id?: string;
   filePath?: string;
   label?: string;
+  /**
+   * Override the platform-default audio device, e.g. `audio=Microphone` on
+   * Windows DirectShow or `:1` for the second avfoundation input on macOS.
+   * See `resolvePlatformInput` for the exact mapping. Issue #297.
+   */
+  device?: string;
 }
 
 export interface RecordDeps {
@@ -52,6 +62,10 @@ export interface RecordDeps {
   importDeps?: ImportDeps;
   /** Override directory listing for tests (used to find latest recording when no --id). */
   listRecordingTemp?: (dir: string) => string[];
+  /** Issue #297: override platform-input listAudioDevices for tests. */
+  listAudioDevices?: (opts: ListAudioDevicesOptions) => ListAudioDevicesResult;
+  /** Issue #297: override platform detection for tests. */
+  platform?: NodeJS.Platform;
 }
 
 export interface RecordResult {
@@ -69,7 +83,7 @@ export function parseRecordArgs(rest: string[]): RecordParsedArgs {
   const sub = rest[0];
   if (!sub) {
     throw new RecordArgError(
-      'Usage: teamagent record <start|stop|import> [args]',
+      'Usage: teamagent record <start|stop|import|devices> [args]',
     );
   }
   switch (sub) {
@@ -86,6 +100,10 @@ export function parseRecordArgs(rest: string[]): RecordParsedArgs {
           result.label = rest[++i];
         } else if (a.startsWith('--label=')) {
           result.label = a.slice('--label='.length);
+        } else if (a === '--device' && rest[i + 1]) {
+          result.device = rest[++i];
+        } else if (a.startsWith('--device=')) {
+          result.device = a.slice('--device='.length);
         }
       }
       return result;
@@ -106,9 +124,15 @@ export function parseRecordArgs(rest: string[]): RecordParsedArgs {
       }
       return result;
     }
+    case 'devices': {
+      // Issue #297: `teamagent record devices` prints platform-specific
+      // ffmpeg audio-input listing so users can discover the exact device
+      // name to pass via `--device`. No flags accepted.
+      return { sub: 'devices' };
+    }
     default:
       throw new RecordArgError(
-        `Unknown record subcommand: ${sub}. Use one of start|stop|import.`,
+        `Unknown record subcommand: ${sub}. Use one of start|stop|import|devices.`,
       );
   }
 }
@@ -152,6 +176,8 @@ function resolveDeps(deps: RecordDeps) {
     stopDeps: deps.stopDeps ?? {},
     importDeps: deps.importDeps ?? {},
     listRecordingTemp: deps.listRecordingTemp ?? defaultListRecordingTemp,
+    listAudioDevices: deps.listAudioDevices ?? defaultListAudioDevices,
+    platform: deps.platform ?? process.platform,
   };
 }
 
@@ -171,7 +197,7 @@ export function executeRecordStart(
   const output = join(paths.recordingTempDir, id);
   try {
     const result: StartResult = r.ffmpegStart(
-      { id, output },
+      { id, output, deviceArg: parsed.device },
       { detectFfmpeg: r.detectFfmpeg, ...r.startDeps },
     );
     r.print(
@@ -181,6 +207,11 @@ export function executeRecordStart(
   } catch (err) {
     r.printErr(
       `record start failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    // Issue #297: nudge users toward the discovery + escape-hatch surface.
+    r.printErr(
+      'hint: run `teamagent record devices` to list available audio devices, ' +
+        'then pass `--device "<name>"` to override the platform default.',
     );
     return { exitCode: 1 };
   }
@@ -262,6 +293,62 @@ export async function executeRecordImport(
   }
 }
 
+/**
+ * Issue #297: `teamagent record devices` lists platform-specific audio input
+ * devices via ffmpeg, so users discover the exact name to pass to `--device`.
+ *
+ * ffmpeg `-list_devices true` typically exits non-zero by design (it can't
+ * actually open the synthetic input), but writes the device table to stderr;
+ * we treat ANY captured output (stderr or stdout) as success. Only a full
+ * failure to spawn ffmpeg, or completely empty output, surfaces as exit 1.
+ */
+export function executeRecordDevices(
+  parsed: RecordParsedArgs,
+  deps: RecordDeps = {},
+): RecordResult {
+  const r = resolveDeps(deps);
+  if (parsed.sub !== 'devices') {
+    r.printErr(`record devices: unexpected subcommand: ${parsed.sub}`);
+    return { exitCode: 1 };
+  }
+  const probe = r.detectFfmpeg();
+  if (!probe.available) {
+    r.printErr(
+      `ffmpeg not found on PATH. ${installHintForPlatform(r.platform)}`,
+    );
+    return { exitCode: 1 };
+  }
+  try {
+    const result = r.listAudioDevices({ platform: r.platform });
+    const trimmed = result.raw.trimEnd();
+    if (!trimmed) {
+      r.printErr(
+        `record devices: ffmpeg produced no output (argv: ffmpeg ${result.argv.join(' ')}). ` +
+          `Try running the command manually to see what went wrong.`,
+      );
+      return { exitCode: 1 };
+    }
+    r.print(`# audio devices (ffmpeg ${result.argv.join(' ')})`);
+    r.print(trimmed);
+    const example =
+      r.platform === 'win32'
+        ? '--device "audio=<exact-name>"'
+        : r.platform === 'darwin'
+          ? '--device ":<index>"'
+          : '--device "<source-name>"';
+    r.print(
+      `\nPass an exact device to \`teamagent record start ${example}\`. ` +
+        'Issue #297 for context.',
+    );
+    return { exitCode: 0 };
+  } catch (err) {
+    r.printErr(
+      `record devices failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return { exitCode: 1 };
+  }
+}
+
 /** Top-level dispatcher used by bin.ts. */
 export async function executeRecord(
   parsed: RecordParsedArgs,
@@ -274,5 +361,7 @@ export async function executeRecord(
       return executeRecordStop(parsed, deps);
     case 'import':
       return executeRecordImport(parsed, deps);
+    case 'devices':
+      return executeRecordDevices(parsed, deps);
   }
 }
