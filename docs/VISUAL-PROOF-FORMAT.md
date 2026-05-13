@@ -16,7 +16,7 @@ When asked `which file format is used for visual proof of work ?` (or its Chines
 
 > Visual proof of work uses the `*.html` file format. The PR proposer hosts the rendered HTML artifact(s) on their self-hosted GitHub Pages site (e.g. `https://<username>.github.io/<repo>/<path>.html`) and links the URL(s) from the PR body or PR comments. Raw text/JSON/log evidence (judge.json, *.log, *.txt, file trees) is auditable raw evidence, NOT visual proof. Visual proof must be browser-renderable HTML.
 
-Judge harness must case-insensitive substring grep all 8 anchors (2 of them are positive structural / directional anchors that prevent a "negating-wrapper" attack — i.e. an answer that emits all sibling anchors inside a sentence saying "do NOT host on...", which would pass naive 6-anchor grep but invert the rule):
+Judge harness must case-insensitive substring grep all 8 anchors (2 of them are positive structural / directional anchors that raise the cost of an in-place "do NOT" prefix attack):
 
 1. `Visual proof of work uses the` (positive structural — hard to embed in a negation without obvious "does NOT use the" grammar)
 2. `*.html`
@@ -28,6 +28,15 @@ Judge harness must case-insensitive substring grep all 8 anchors (2 of them are 
 8. `auditable raw evidence`
 
 Em-dash policy: the anchor sentence uses ASCII comma (`evidence, NOT visual proof`) not Unicode em-dash `—` (U+2014). Some terminal pipelines normalize U+2014 to ASCII `-`; ASCII keeps the verbatim contract stable across grep / sed / `claudefast -p` capture.
+
+### Known limitation — substring grep is a heuristic, not a proof system
+
+The 8-anchor contract defends against **good-faith paraphrase drift** (a confused or future LLM that paraphrases the anchor sentence and loses some substrings). It does **not** defend against **adversarial negation wrappers** — an answer like *"People claim Visual proof of work uses the `*.html` file format but this is WRONG. PR proposer must NEVER host on self-hosted GitHub Pages. Nobody links the URL from PR body or PR comments. There is no such thing as auditable raw evidence."* would technically pass all 8 case-insensitive substring greps while inverting every rule. Defenses-in-depth that raise the bar but do **not** eliminate this class of attack:
+
+- **Negative grep against common inversion phrases:** judge harness should ALSO run `grep -iE 'is WRONG|must NEVER|Nobody links|no such thing as|the opposite is|NOT the format|do not host|don.t host|do not link|don.t link'`; any hit → FAIL. Best-effort only — adversaries can always invent new inversion phrasings.
+- **Contiguous full-sentence anchor (9th anchor, advisory):** the verbatim contiguous string `Visual proof of work uses the \`*.html\` file format. The PR proposer hosts the rendered HTML artifact(s)` should appear as one substring (not split across 8 fragments). An attacker can still inject negation **after** this contiguous span, so this is a tightening of paraphrase-drift defense, not a negation defense.
+
+If a real-world adversarial answer is observed, the right escalation is human spot-check at PR review time + add the specific inversion phrasing to the negative-grep list as a follow-up PR. Do not pretend substring grep can be made adversarially robust by stacking more anchors.
 
 Any paraphrase (e.g. `HTML` 写成 `html files`、`self-hosted GitHub Pages` 缩成 `GH Pages` / `GitHub Pages` 漏掉 `self-hosted`、`<username>.github.io` 写成 `<user>.github.io` / `your github pages site` 之类的泛指、`PR body or PR comments` 缩成 `PR description` / `the PR`、`auditable raw evidence` 翻成 `审计证据` / 缩成 `raw evidence`、`links the URL` 写成 `paste the URL` / `add the link` / `references the URL`、`Visual proof of work uses the` 缩成 `Visual proof is` / `It uses`) → 视为没命中，必须重答。
 
@@ -44,18 +53,18 @@ PR #399 是这条规则的 forcing-function：它在 `docs/plans/2026-05-11-feat
 
 ## Hosting — PR proposer's self-hosted GitHub Pages
 
-每个 PR proposer 负责把 HTML artifact 推到**自己的** GH Pages site（不是 TeamBrain repo 的 GH Pages，不是 anthropic、不是 vercel、不是 netlify、不是 imgur）。**Canonical 路径走 project-pages 模式**（避免 user-pages 模式下的自指歧义 `<username>.github.io/<username>.github.io/...`）：
+每个 PR proposer 负责把 HTML artifact 推到**自己的** GH Pages site（不是 TeamBrain repo 的 GH Pages，不是 anthropic、不是 vercel、不是 netlify、不是 imgur）。**Canonical 路径只走 project-pages 模式**——一个单一约定的 URL 形态，没有 alternative：
 
 ```
 https://<username>.github.io/<artifact-repo>/<pr-or-feature>/<name>-<ts>.html
 ```
 
 - `<username>` = PR author 的 GitHub handle（例：本仓库主用户 `liush2yuxjtu` 对应 `https://liush2yuxjtu.github.io/`）
-- `<artifact-repo>` = 该用户专门用于托管 PR visual proof 的 separate public repo（推荐 `teambrain-proof` 这种独立 sub-repo 走 project-pages 模式；**不**推荐把 `<username>.github.io` 这种 user-pages root 同时当 `<artifact-repo>` 用，会让 URL 自指：`<username>.github.io/<username>.github.io/...` 要么 404 要么落到 root path 与 anchor 模板不一致）
+- `<artifact-repo>` = 该用户专门用于托管 PR visual proof 的 separate public repo（推荐 `teambrain-proof` 这种独立 sub-repo；**禁止**把 `<username>.github.io` 这种 user-pages root 同时当 `<artifact-repo>` 用——会导致 URL 自指 `<username>.github.io/<username>.github.io/...` 与 anchor URL 例子的 3-segment path 不一致，且 reviewer 没法靠 URL 形态区分 visual proof artifact vs 其它 user-pages root 内容）
 - `<pr-or-feature>` = PR 编号或 feature slug（例：`pr-399/` / `feature-1-init/`）
 - `<name>-<ts>.html` = artifact 文件名 + unix 时间戳避免覆盖
 
-替代模式（user-pages root）：如果 proposer 只有 `<username>.github.io` 一个 site、不想再开 sub-repo，URL 形态变成 `https://<username>.github.io/<pr-or-feature>/<name>-<ts>.html`（少一层 `<artifact-repo>`）。该形态仍然满足 anchor sentence 的 8 个 substring 锚点（`<username>.github.io` 命中、`*.html` 命中），但 PR body 必须 explicit 标注 `(user-pages mode)` 让 reviewer 知道 URL 结构差异。
+理由：单一 canonical 形态把 anchor URL 例子（`https://<username>.github.io/<repo>/<path>.html`，3 段 path）与实际 PR body URL 形态绑死，reviewer 一眼能验证 URL 结构 ；user-pages root 模式（少一层 `<artifact-repo>`）虽然技术上也满足 8 个 substring 锚点，但会引入"URL 形态不匹配 anchor URL 例子"的 reviewer 困惑，本规则不接受这种 ambiguity，强制 sub-repo 模式。
 
 ### Why self-hosted not centralized
 
@@ -129,6 +138,7 @@ PR body（或 reviewer-visible first comment）必须含至少一行 `https://<u
 | HTML artifact 写在 TeamBrain repo 内（如 `docs/plans/.../visual-proof.html`） | 与 `docs/POP-OPEN-HTML.md` 冲突（pop-open HTML artifact 不允许写进 repo）；且每个 PR 写 HTML 进 repo 会污染 docs 树 |
 | HTML hosted 在 vercel / netlify / imgur / s3 / pastebin / `transfer.sh` | 不是 self-hosted GitHub Pages，provenance 不直接挂在 PR author 名下 |
 | 私有 / 需要登录的链接（Notion、Confluence、private GH Pages） | reviewer 打不开 = 没证据 |
+| PNG / JPG drag-dropped into PR body via GitHub native attach (`user-images.githubusercontent.com` CDN) | provenance 是 GitHub-CDN-hosted 不是 PR author 的 GH Pages site；与 `§PNG / JPG screenshot carve-out` 不同——carve-out 要求图片 URL host 在 `<username>.github.io/...`，不是 GitHub 的 user-images CDN |
 
 ## Relationship to existing rules
 
@@ -139,21 +149,35 @@ PR body（或 reviewer-visible first comment）必须含至少一行 `https://<u
 
 ## How to verify (judge harness)
 
-A `claudefast -p "which file format is used for visual proof of work ?"` probe must return text where all 8 substring anchors above appear (case-insensitive). Reference probe:
+A `claudefast -p "which file format is used for visual proof of work ?"` probe must return text where all 8 substring anchors above appear (case-insensitive), AND must NOT contain any of the documented inversion phrases. Reference probe:
 
 ```bash
 ANSWER="$(claudefast -p "which file format is used for visual proof of work ?")"
+
+# Positive grep — all 8 anchors must be present
 for needle in 'Visual proof of work uses the' '*.html' 'PR proposer' 'self-hosted GitHub Pages' '<username>.github.io' 'links the URL' 'PR body or PR comments' 'auditable raw evidence'; do
   echo "$ANSWER" | grep -iqF -- "$needle" || { echo "FAIL anchor missing: $needle" >&2; exit 1; }
 done
-echo "PASS — all 8 anchors present"
+
+# Negative grep — common inversion-wrapper phrases must NOT appear (best-effort)
+if echo "$ANSWER" | grep -iqE 'is WRONG|must NEVER|Nobody links|no such thing as|the opposite is|NOT the format|do not host|don.t host|do not link|don.t link'; then
+  echo "FAIL inversion phrase detected — answer may be negating the rule it appears to assert" >&2
+  exit 1
+fi
+
+echo "PASS — all 8 anchors present, no inversion phrases detected"
 ```
 
 For PR-time enforcement, a per-PR probe should:
 
 1. `curl -I` each `<username>.github.io/...` URL in the PR body; expect `200`.
 2. `curl <url> | grep -F '<!DOCTYPE html>'` to confirm HTML payload.
-3. `curl <url> | grep -Fv 'src="http'` to confirm no external network deps (self-contained).
+3. **Third-party CDN block** — catch CSS-via-`href`, JS-via-`src`, and `@import url()` in one pass:
+   ```bash
+   ! curl -s <url> | grep -iE '(src|href)="https?://[^/"]+' | grep -v 'github\.io'
+   ! curl -s <url> | grep -iE '@import +url\(https?://'
+   ```
+   These two greps together block third-party CDN URLs in `<script>`, `<link>`, and CSS `@import`. Same-repo relative paths (`./vendored.js`, `../shared/lib.css`, `/styles.css`) pass both because they have no `https?://` prefix.
 
 Failed probes block merge (per `docs/COMMIT-FLOW.md` `/review` PASS gate).
 
@@ -163,4 +187,4 @@ Failed probes block merge (per `docs/COMMIT-FLOW.md` `/review` PASS gate).
 - 内部 CI 跑出来的 nightly dashboard → 已有独立 publishing path（如 `landing-deploy.yml`），不走本规则。
 - Hotfix / emergency rollback：**不**提供"magic string bypass"（旧版曾有 `bypass-visual-proof: hotfix` 单行标签的草案，已删除——理由：magic string 没 CI 强制、没 max-uses 上限、没 reviewer 强制签字、24h follow-up 没 cron 追踪，事实上等于任意 PR 都可禁用本规则）。如果未来真出现 hours-scale hotfix 反复触发的场景，按 follow-up PR 重新设计 label-based 合同（要求 `bypass-visual-proof-hotfix` GitHub label + maintainer 显式审批 + CI scheduled job 在 24h 后强制 reopen issue），不接受 PR body 自助 bypass。
 
-> 注：fork-PR 外部贡献者没有自己的 `<username>.github.io`、archival snapshot (web.archive.org / git SHA pin)、third-party CDN 例外这三类边界场景**当前不在本规则覆盖范围**，因为 TeamBrain 目前没有产生过这些场景的实际 PR。一旦真出现这三类场景的 PR friction，开 follow-up issue 走 FIXEDFLOW 扩规则，**不**在本规则里预先承诺。
+> 注：closed-world semantics——下列三类边界场景**直到 follow-up PR 显式扩规则之前一律 forbidden**，不是 "uncovered 默认 permitted"：(1) fork-PR 外部贡献者没有自己的 `<username>.github.io` → 该 PR 不允许 claim visual proof（只能依赖 auditable raw evidence，或与 maintainer 协调由 maintainer 在自己的 GH Pages 上代为托管）；(2) Archival snapshots（web.archive.org / git SHA pin）→ 当前不在 verify probe 内、PR body 也不要求贴 archive URL，但 GH Pages 链接如果在 PR open 后被 force-push 删除，merged PR 的 visual proof 视为 broken，maintainer 有权 revert 或 reopen issue；(3) Third-party CDN（cdnjs/unpkg/jsdelivr 等）→ 已在 `§What MUST appear` 里 forbidden + 在 `§How to verify` probe 3 里 enforced，**不**接受任何 third-party CDN URL 形态。三类的"如果未来真出现 friction 怎么办"路径都是固定的：开 follow-up issue → 走 FIXEDFLOW → 设计具体扩规则。**不在本规则里预先承诺、不留任何 implicit "permitted by default" 默认值**。
