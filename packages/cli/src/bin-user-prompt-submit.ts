@@ -38,6 +38,11 @@ import {
   type SqliteEventLog,
 } from "@teamagent/adapters";
 import {
+  matchPrompt as matchDailyPrompt,
+  parseExtraTriggersEnv as parseDailyTriggersEnv,
+} from "@teamagent/core";
+import { executeDaily } from "./commands/daily.js";
+import {
   buildInjectionFromPending,
   persistLastInjected,
   scanUserInput,
@@ -219,6 +224,37 @@ async function main(): Promise<void> {
           }
         } catch {
           // M4-A injection is best-effort — never block user input.
+        }
+      }
+
+      // issue #371: daily-summary short-circuit. When the operator types one
+      // of the whitelist phrases (or `/daily`), bypass the slow rule retriever
+      // and recording memory paths and inject a per-project digest of today's
+      // Claude Code activity so the operator's own Claude window can write
+      // the one-line-per-project summary.
+      const dailyDisabled = env.TEAMAGENT_DAILY_DISABLED === "1";
+      const dailyMatch = matchDailyPrompt(prompt, {
+        disabled: dailyDisabled,
+        extraTriggers: parseDailyTriggersEnv(env.TEAMAGENT_DAILY_TRIGGERS),
+      });
+      if (dailyMatch.fire) {
+        try {
+          const dailyOut = executeDaily({
+            cwd,
+            homeDir: home,
+            projectsRoot: path.join(home, ".claude", "projects"),
+            archive: true,
+            format: "context",
+          });
+          const out: UserPromptOutput = {
+            hookSpecificOutput: {
+              hookEventName: "UserPromptSubmit",
+              additionalContext: [...blocks, dailyOut.contextMarkdown].join("\n\n"),
+            },
+          };
+          return out;
+        } catch {
+          // Best-effort: fall through to the normal path on any unexpected error.
         }
       }
 

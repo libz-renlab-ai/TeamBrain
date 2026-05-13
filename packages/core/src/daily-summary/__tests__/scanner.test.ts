@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { scanTodayActivity } from "../scanner.js";
 import type { Stats } from "node:fs";
 
+type FsEntry = { mtimeMs: number; content: string };
+type Tree = Record<string, Record<string, Record<string, FsEntry>>>;
+
 /**
  * Build a fake `fs` port from an in-memory tree.
  *
@@ -13,24 +16,32 @@ import type { Stats } from "node:fs";
  *     }
  *   }
  */
-function makeFs(tree: Record<string, Record<string, { mtimeMs: number; content: string }>>): NonNullable<
+function makeFs(tree: Tree): NonNullable<
   Parameters<typeof scanTodayActivity>[0]["fs"]
-> & { _expectedRoot: string } {
+> {
   const roots = Object.keys(tree);
   const expectedRoot = roots[0]!;
   return {
-    _expectedRoot: expectedRoot,
     existsSync(p: string) {
-      return roots.includes(p) || Object.keys(tree[expectedRoot] ?? {}).some(
+      if (roots.includes(p)) return true;
+      const rootTree = tree[expectedRoot];
+      if (!rootTree) return false;
+      return Object.keys(rootTree).some(
         (d) => p === `${expectedRoot}/${d}`,
       );
     },
-    readdirSync(p: string): string[] {
-      if (roots.includes(p)) return Object.keys(tree[p]!);
+    readdirSync(p: string) {
+      if (roots.includes(p)) {
+        const t = tree[p];
+        return t ? Object.keys(t) : [];
+      }
       for (const root of roots) {
-        for (const subdir of Object.keys(tree[root]!)) {
+        const rootTree = tree[root];
+        if (!rootTree) continue;
+        for (const subdir of Object.keys(rootTree)) {
           if (p === `${root}/${subdir}`) {
-            return Object.keys(tree[root]![subdir]!);
+            const sub = rootTree[subdir];
+            return sub ? Object.keys(sub) : [];
           }
         }
       }
@@ -38,13 +49,17 @@ function makeFs(tree: Record<string, Record<string, { mtimeMs: number; content: 
     },
     statSync(p: string) {
       for (const root of roots) {
-        for (const subdir of Object.keys(tree[root]!)) {
+        const rootTree = tree[root];
+        if (!rootTree) continue;
+        for (const subdir of Object.keys(rootTree)) {
           if (p === `${root}/${subdir}`) {
             return makeDirStat(0);
           }
-          for (const file of Object.keys(tree[root]![subdir]!)) {
+          const sub = rootTree[subdir];
+          if (!sub) continue;
+          for (const file of Object.keys(sub)) {
             if (p === `${root}/${subdir}/${file}`) {
-              const entry = tree[root]![subdir]![file]!;
+              const entry = sub[file]!;
               return makeFileStat(entry.mtimeMs);
             }
           }
@@ -54,10 +69,14 @@ function makeFs(tree: Record<string, Record<string, { mtimeMs: number; content: 
     },
     readFileSync(p: string) {
       for (const root of roots) {
-        for (const subdir of Object.keys(tree[root]!)) {
-          for (const file of Object.keys(tree[root]![subdir]!)) {
+        const rootTree = tree[root];
+        if (!rootTree) continue;
+        for (const subdir of Object.keys(rootTree)) {
+          const sub = rootTree[subdir];
+          if (!sub) continue;
+          for (const file of Object.keys(sub)) {
             if (p === `${root}/${subdir}/${file}`) {
-              return tree[root]![subdir]![file]!.content;
+              return sub[file]!.content;
             }
           }
         }
@@ -97,7 +116,7 @@ describe("scanTodayActivity", () => {
         readdirSync: () => [],
         statSync: () => makeDirStat(0),
         readFileSync: () => "",
-      },
+      } as never,
       path: fakePath,
     });
     expect(result.groups).toEqual([]);
