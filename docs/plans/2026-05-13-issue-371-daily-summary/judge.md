@@ -30,17 +30,28 @@ mkdir -p "$EVID"
 
 ## §V1 RUN
 
-### §V1.1 — typecheck (core + cli)
+### §V1.1 — typecheck (CI-equivalent root `pnpm typecheck`)
+
+The repo's CI runs `pnpm typecheck` (`tsc --noEmit -p tsconfig.base.json`),
+not per-package `pnpm -F @teamagent/{core,cli} typecheck` — the latter
+hits pre-existing `rootDir` errors on `packages/core/src/scenario/__tests__/runner.test.ts`
+that pre-date this PR (see `2ae70c8a` `feat(m7): add fixture replay`). We
+follow CI here:
 
 ```bash
-pnpm -F @teamagent/core typecheck 2>&1 | tee "$EVID/typecheck-core.stdout"
-echo "{\"exit_code\":${PIPESTATUS[0]}}" > "$EVID/typecheck-core.json"
+pnpm typecheck 2>&1 | tee "$EVID/typecheck-root.stdout"
+echo "{\"exit_code\":${PIPESTATUS[0]}}" > "$EVID/typecheck-root.json"
+```
 
+期望 `exit_code: 0`。失败 → §V3 FAIL on typecheck.
+
+For belt-and-suspenders, also run the CLI per-package typecheck because
+issue #371 lives mostly in `@teamagent/cli`:
+
+```bash
 pnpm -F @teamagent/cli typecheck 2>&1 | tee "$EVID/typecheck-cli.stdout"
 echo "{\"exit_code\":${PIPESTATUS[0]}}" > "$EVID/typecheck-cli.json"
 ```
-
-期望 `exit_code: 0` 两份。失败 → §V3 FAIL on typecheck。
 
 ### §V1.2 — vitest (core daily-summary suite)
 
@@ -79,7 +90,7 @@ echo "{\"exit_code\":${PIPESTATUS[0]}}" > "$EVID/cli-build.json"
 ### §V1.5 — `daily --help` canonical JSON
 
 ```bash
-pnpm teamagent daily --help > "$EVID/daily-help.json" 2> "$EVID/daily-help.stderr"
+pnpm --silent teamagent daily --help > "$EVID/daily-help.json" 2> "$EVID/daily-help.stderr"
 echo "{\"exit_code\":$?}" > "$EVID/daily-help-exit.json"
 ```
 
@@ -89,7 +100,7 @@ echo "{\"exit_code\":$?}" > "$EVID/daily-help-exit.json"
 
 ```bash
 TMP_HOME="$(mktemp -d)"
-TEAMAGENT_HOME="$TMP_HOME" pnpm teamagent daily \
+TEAMAGENT_HOME="$TMP_HOME" pnpm --silent teamagent daily \
   --projects-root="docs/plans/2026-05-13-issue-371-daily-summary/evidence/fixture-projects" \
   --archive \
   --cwd="/fake/project/TeamBrain" \
@@ -110,7 +121,7 @@ cp "$TMP_HOME/daily/$(date -u +%Y-%m-%d).md" "$EVID/archive-sample.md" || echo "
 
 | File | Source | 必含字段 |
 |------|--------|---------|
-| `typecheck-core.json` | §V1.1 | `exit_code` |
+| `typecheck-root.json` | §V1.1 | `exit_code` |
 | `typecheck-cli.json` | §V1.1 | `exit_code` |
 | `vitest-core.json` | §V1.2 | vitest JSON reporter（含 `numFailedTests`, `numPassedTests`） |
 | `vitest-cli-daily.json` | §V1.3 | 同上 |
@@ -130,7 +141,7 @@ main agent 跑完 §V1 / §V2 后读这些 JSON 字段，逐项 grep / `jq` 判�
 # 伪代码 - main agent 实际可用 jq + grep 等价实现
 PASS = True
 
-PASS &= read_json("typecheck-core.json")["exit_code"] == 0
+PASS &= read_json("typecheck-root.json")["exit_code"] == 0
 PASS &= read_json("typecheck-cli.json")["exit_code"] == 0
 
 vc = read_json("vitest-core.json")
