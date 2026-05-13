@@ -66,6 +66,32 @@ export interface PresenceCommandResult {
 
 const FETCH_TIMEOUT_MS = 2_000;
 
+// SSRF / exfil parity with realtime-emit.ts (PR #404 adversarial-review
+// hardening): the same TEAMAGENT_REALTIME_URL env var that gates the
+// fire-and-forget POST gates this readback GET. A hostile dotfile sync /
+// pnpm supply-chain script that points the URL at evil.example.com would
+// otherwise leak the local git user.email + Bearer token to that endpoint
+// on every `teamagent presence` invocation. Match the emit guard exactly:
+// loopback hosts pass, anything else needs explicit ALLOW_REMOTE=1.
+const LOOPBACK_HOSTS = new Set([
+  "127.0.0.1",
+  "localhost",
+  "::1",
+  "[::1]",
+  "0.0.0.0",
+]);
+
+function urlIsLoopback(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  return LOOPBACK_HOSTS.has(parsed.hostname);
+}
+
 /**
  * Render a human-readable "2m 14s ago" or "32s ago" or "1h 3m ago". Used in
  * the single-line stdout shape. `ageMs` is clamped at 0 (we never say "in
@@ -122,6 +148,22 @@ export async function executePresence(
     return {
       state: "unknown",
       stdout: "state=unknown (TEAMAGENT_REALTIME_URL not set)\n",
+      exitCode: 0,
+    };
+  }
+
+  // SSRF / exfil guard — same default as realtime-emit.ts PR #404. A
+  // non-loopback receiver URL combined with the bearer token + git
+  // user.email is enough for a hostile env-var injection to harvest both.
+  // Honor explicit opt-in (TEAMAGENT_REALTIME_ALLOW_REMOTE=1) for teammates
+  // who actually run a shared LAN receiver.
+  const allowRemote = process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE === "1";
+  if (!urlIsLoopback(baseUrl) && !allowRemote) {
+    return {
+      state: "unknown",
+      stdout:
+        `state=unknown (refusing non-loopback receiver ${baseUrl}; ` +
+        "set TEAMAGENT_REALTIME_ALLOW_REMOTE=1 to override)\n",
       exitCode: 0,
     };
   }

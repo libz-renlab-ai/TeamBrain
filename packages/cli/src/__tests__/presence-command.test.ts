@@ -7,6 +7,7 @@ const ANCHOR_MS = Date.parse("2026-05-13T12:00:00Z");
 const ENV_KEYS = [
   "TEAMAGENT_REALTIME_URL",
   "TEAMAGENT_REALTIME_TOKEN",
+  "TEAMAGENT_REALTIME_ALLOW_REMOTE",
 ] as const;
 
 function snapshotResponse(snap: unknown): typeof fetch {
@@ -181,6 +182,41 @@ describe("teamagent presence — CLI subcommand contract", () => {
     expect(capturedUrl).toContain(
       `user_id=${encodeURIComponent("alice+test@example.com")}`,
     );
+  });
+
+  it("refuses non-loopback receiver URL by default (SSRF / exfil guard)", async () => {
+    let fetched = false;
+    const fetchImpl = (async () => {
+      fetched = true;
+      return new Response("null", { status: 200 });
+    }) as unknown as typeof fetch;
+    const result = await executePresence({
+      receiverUrl: "http://evil.example.com:9787",
+      userId: "alice@example",
+      now: ANCHOR_MS,
+      fetchImpl,
+    });
+    expect(fetched).toBe(false);
+    expect(result.state).toBe("unknown");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("refusing non-loopback receiver");
+    expect(result.stdout).toContain("TEAMAGENT_REALTIME_ALLOW_REMOTE=1");
+  });
+
+  it("honors TEAMAGENT_REALTIME_ALLOW_REMOTE=1 for non-loopback URLs", async () => {
+    process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE = "1";
+    const fetchImpl = snapshotResponse({
+      event: "user_prompt_submit",
+      ts: new Date(ANCHOR_MS - 5_000).toISOString(),
+    });
+    const result = await executePresence({
+      receiverUrl: "http://lan.team.local:9787",
+      userId: "alice@example",
+      now: ANCHOR_MS,
+      fetchImpl,
+    });
+    expect(result.state).toBe("active");
+    expect(result.exitCode).toBe(0);
   });
 
   it("attaches bearer token when configured", async () => {
