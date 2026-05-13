@@ -4,6 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runSkeletonDemo } from "./commands/skeleton-demo.js";
 import {
+  executeVerifyAnchors,
+  parseVerifyAnchorsArgs,
+  renderVerifyAnchorsJson,
+  renderVerifyAnchorsTerminal,
+} from "./commands/verify-anchors.js";
+import {
   runM5Infect,
   parseM5InfectArgs,
   renderM5InfectResult,
@@ -735,6 +741,26 @@ async function main(): Promise<void> {
         process.stdout.write(`\n📄 详细报告: ${reportPath}\n`);
       }
       if (result.passed !== result.total) process.exit(1);
+      return;
+    }
+    case "verify-anchors": {
+      let opts;
+      try {
+        opts = parseVerifyAnchorsArgs(rest);
+      } catch (err) {
+        const { VerifyAnchorsArgError } = await import(
+          "./commands/verify-anchors.js"
+        );
+        if (err instanceof VerifyAnchorsArgError) {
+          process.stderr.write(err.message + "\n");
+          process.exit(2);
+        }
+        throw err;
+      }
+      const r = await executeVerifyAnchors(opts);
+      if (opts.json) process.stdout.write(renderVerifyAnchorsJson(r));
+      else process.stdout.write(renderVerifyAnchorsTerminal(r));
+      if (r.failCount > 0) process.exit(1);
       return;
     }
     case "e2e-evaluate": {
@@ -1505,6 +1531,12 @@ async function main(): Promise<void> {
           "  teamagent calibrate [--days=7] [--dry-run]",
           "                                   根据 events.jsonl 重算 confidence + 自动归档低分条目",
           "  teamagent verify [--report=path]",
+          "  teamagent verify-anchors [--claude-md=<path>] [--docs-root=<path>] [--json]",
+          "                                   静态校验 CLAUDE.md canned-answer anchor 卡的结构完整性",
+          "                                   (a) 声明的 grep substring 是否真出现在 anchor sentence；",
+          "                                   (b) 全部 N 个锚点 的 N 是否对得上；",
+          "                                   (c) 引用的 docs/*.md 路径是否存在；",
+          "                                   (d) anchor sentence 是否唯一不重复。",
           "                                   跑 5 个验证场景（踩坑→学习→避坑），输出 PRR/KP 指标",
           "  teamagent e2e-evaluate [--json] [--keep-temp]",
           "                                   真实 SQLite + analyze + compile + PreToolUse 测评学习、触发、误触发和新成员可见性",
