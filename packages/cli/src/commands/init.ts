@@ -279,14 +279,23 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
     // hooks as a soft warning so future drift is visible during init. Never
     // blocks — orphans may be intentional user customizations.
     steps.push(doAuditOrphanShellHooks(paths.cwd, dryRun));
-  } else if (targetIncludesCodex(target) && !targetIncludesClaude(target)) {
-    steps.push({
-      step: "install-hook",
-      status: "skipped",
-      detail: "target=codex；Codex 通过 .codex/skills 读取 TeamAgent Skills，不注册 Claude Code hook",
-    });
-  } else {
+  } else if (!targetIncludesClaude(target) && !targetIncludesCodex(target)) {
     steps.push({ step: "install-hook", status: "skipped", detail: "skipHook=true" });
+  } else if (!targetIncludesClaude(target)) {
+    steps.push({ step: "install-hook", status: "skipped", detail: "target=codex；Claude PreToolUse hook 不注册" });
+  } else if (opts.skipHook) {
+    steps.push({ step: "install-hook", status: "skipped", detail: "skipHook=true" });
+  }
+
+  // Issue #291: Codex hooks installer. Independent of Claude installer above —
+  // `target=both` runs BOTH branches; `target=codex` only runs this branch.
+  // Honors --skipHook symmetrically. Idempotent via `_teamagentTag` per entry;
+  // never clobbers user-edited untagged hooks (structured merge in
+  // applyCodexHooksMerge below). Grill §14 partial-success semantics: if this
+  // step fails, Claude install above already succeeded → init still finalizes
+  // success unless --strict is set.
+  if (targetIncludesCodex(target) && !opts.skipHook) {
+    steps.push(doInstallCodexHooks(paths, dryRun));
   }
 
   // Issue #284 slice 1: write `.teamagent/required.json` and
@@ -1506,6 +1515,247 @@ function doLinkCodexFiles(
   } catch (err) {
     return failStep("link-codex-files", String(err).slice(0, 200));
   }
+}
+
+/**
+ * Issue #291: install project-level Codex hooks to the user's `~/.codex/`.
+ *
+ * Source of truth: `<project>/.codex/hooks.json` + `<project>/.codex/hooks/*.sh`
+ * (committed to repo, contains TeamAgent-owned event registrations).
+ *
+ * What this function does:
+ *   1. Read every hook block from the project `.codex/hooks.json`.
+ *   2. Stage each referenced `.codex/hooks/<name>.sh` script into
+ *      `~/.teamagent/hooks/codex/<name>.sh` (parallel to Claude's
+ *      `~/.teamagent/hooks/bin-*.cjs` staging).
+ *   3. Rewrite each command in the loaded hook config to point at the
+ *      staged absolute path (so the user-level hooks.json works regardless
+ *      of `CODEX_PROJECT_DIR`).
+ *   4. Tag each event block with `_teamagentTag: "teamagent:codex-<event>:v1"`
+ *      so re-runs can dedup our entries without touching user-authored ones.
+ *   5. Merge into `~/.codex/hooks.json`:
+ *      - File absent → write transformed config verbatim.
+ *      - File present → for each event, strip blocks whose
+ *        `_teamagentTag` starts with `teamagent:codex-`, then append fresh
+ *        blocks; preserves all untagged user entries.
+ *
+ * Grill §15 verdict: idempotent + no clobber, structured merge.
+ * Grill §14: failure here is a non-fatal step in the default mode; --strict
+ * upgrades it to a hard fail. The default-mode part is wired here (return
+ * failStep, don't throw); the --strict gating lives in `finalize()`.
+ *
+ * Out of scope (deferred to follow-up issues, see PR notes):
+ *   - `.teamagent/init-state.json` with `installer_version` + `hook_config_hash`
+ *     (grill §15 enhancement — current per-entry tag + content-based diff is
+ *     sufficient for #291 acceptance).
+ *   - `--strict` exit-code wiring beyond returning step status (CLI bin entry
+ *     wires that based on summary).
+ *   - `--json` output formatter (CLI bin entry concern, not executeInit).
+ *   - `teamagent doctor --target=codex` probe (sibling diagnostic, separate
+ *     installer signal).
+ */
+function doInstallCodexHooks(
+  paths: ReturnType<typeof resolvePaths>,
+  dryRun: boolean,
+): InitStepResult {
+  const projectHooksPath = path.join(paths.cwd, ".codex", "hooks.json");
+  if (!fs.existsSync(projectHooksPath)) {
+    return okStep(
+      "install-codex-hook",
+      "项目无 .codex/hooks.json — Codex hook 跳过（用户可手动添加后再 init）",
+    );
+  }
+
+  const userCodexDir = path.join(paths.home, ".codex");
+  const userCodexHooksPath = path.join(userCodexDir, "hooks.json");
+  const stagedHooksDir = path.join(paths.home, ".teamagent", "hooks", "codex");
+
+  let projectConfig: CodexHooksConfig;
+  try {
+    projectConfig = JSON.parse(
+      fs.readFileSync(projectHooksPath, "utf-8"),
+    ) as CodexHooksConfig;
+  } catch (err) {
+    return failStep(
+      "install-codex-hook",
+      `解析 .codex/hooks.json 失败: ${String(err).slice(0, 200)}`,
+    );
+  }
+  if (!projectConfig.hooks || typeof projectConfig.hooks !== "object") {
+    return failStep(
+      "install-codex-hook",
+      ".codex/hooks.json 缺少 .hooks 字段或类型错",
+    );
+  }
+
+  if (dryRun) {
+    const eventCount = Object.keys(projectConfig.hooks).length;
+    return okStep(
+      "install-codex-hook",
+      `(dry-run) 会暂存 .codex/hooks/*.sh 到 ${stagedHooksDir} 并 merge ${eventCount} 个 event 到 ${userCodexHooksPath}`,
+    );
+  }
+
+  // Stage *.sh from project's .codex/hooks/ into user-level. Walk the project
+  // dir rather than the JSON references so a future hook script that's not
+  // yet wired into hooks.json still gets staged (defensive).
+  const stagedScripts: string[] = [];
+  try {
+    fs.mkdirSync(stagedHooksDir, { recursive: true });
+    const projectScriptsDir = path.join(paths.cwd, ".codex", "hooks");
+    if (fs.existsSync(projectScriptsDir)) {
+      for (const name of fs.readdirSync(projectScriptsDir)) {
+        if (!name.endsWith(".sh")) continue;
+        const src = path.join(projectScriptsDir, name);
+        const dst = path.join(stagedHooksDir, name);
+        fs.copyFileSync(src, dst);
+        // Best-effort chmod +x on POSIX. Windows ignores chmod silently —
+        // the user-level hooks.json invokes the script via `bash <path>`
+        // (matching the project's existing pattern), so executable bit is
+        // not load-bearing on Windows.
+        try {
+          fs.chmodSync(dst, 0o755);
+        } catch {
+          /* Windows / non-POSIX — bash <path> still works */
+        }
+        stagedScripts.push(name);
+      }
+    }
+  } catch (err) {
+    return failStep(
+      "install-codex-hook",
+      `暂存 .codex/hooks/*.sh 到 ${stagedHooksDir} 失败: ${String(err).slice(0, 200)}`,
+    );
+  }
+
+  // Transform: rewrite each command's bash-script path to the staged absolute
+  // path, add _teamagentTag per event block. Project script names referenced
+  // via `bash "$root/.codex/hooks/<name>.sh"` get rewritten to
+  // `bash "<staged>/<name>.sh"`.
+  const transformed: CodexHooksConfig["hooks"] = {};
+  for (const [event, blocks] of Object.entries(projectConfig.hooks)) {
+    if (!Array.isArray(blocks)) continue;
+    transformed[event] = blocks.map((b) => ({
+      ...(b.matcher !== undefined ? { matcher: b.matcher } : {}),
+      hooks: (b.hooks ?? []).map((h) => ({
+        ...h,
+        command: rewriteCodexHookCommand(h.command ?? "", stagedHooksDir),
+      })),
+      _teamagentTag: `teamagent:codex-${event}:v1`,
+    }));
+  }
+
+  // Merge with existing user config. Strip our previously-tagged blocks per
+  // event, append fresh transformed ones, preserve everything else.
+  let userConfig: CodexHooksConfig = { hooks: {} };
+  if (fs.existsSync(userCodexHooksPath)) {
+    try {
+      const parsed = JSON.parse(
+        fs.readFileSync(userCodexHooksPath, "utf-8"),
+      ) as CodexHooksConfig;
+      if (parsed.hooks && typeof parsed.hooks === "object") {
+        userConfig = parsed;
+      }
+    } catch (err) {
+      // User file is unparseable — back it up rather than clobber. Grill §15.
+      const backup = `${userCodexHooksPath}.bak-teamagent-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+      try {
+        fs.renameSync(userCodexHooksPath, backup);
+      } catch {
+        return failStep(
+          "install-codex-hook",
+          `用户 hooks.json 解析失败且无法 backup: ${String(err).slice(0, 200)}`,
+        );
+      }
+    }
+  }
+  userConfig.hooks ??= {};
+
+  const allEvents = new Set([
+    ...Object.keys(userConfig.hooks ?? {}),
+    ...Object.keys(transformed),
+  ]);
+  const mergedHooks: CodexHooksConfig["hooks"] = {};
+  let removedCount = 0;
+  let addedCount = 0;
+  for (const event of allEvents) {
+    const existing = (userConfig.hooks?.[event] ?? []).filter((b) => {
+      if (typeof b._teamagentTag === "string" && b._teamagentTag.startsWith("teamagent:codex-")) {
+        removedCount += 1;
+        return false;
+      }
+      return true;
+    });
+    const fresh = transformed[event] ?? [];
+    addedCount += fresh.length;
+    const combined = [...existing, ...fresh];
+    if (combined.length > 0) {
+      mergedHooks[event] = combined;
+    }
+  }
+  const merged: CodexHooksConfig = { ...userConfig, hooks: mergedHooks };
+
+  try {
+    fs.mkdirSync(userCodexDir, { recursive: true });
+    fs.writeFileSync(
+      userCodexHooksPath,
+      JSON.stringify(merged, null, 2) + "\n",
+      "utf-8",
+    );
+  } catch (err) {
+    return failStep(
+      "install-codex-hook",
+      `写 ${userCodexHooksPath} 失败: ${String(err).slice(0, 200)}`,
+    );
+  }
+
+  const preservedUntagged =
+    Object.values(mergedHooks).reduce((acc, blocks) => acc + blocks.length, 0) -
+    addedCount;
+  return okStep(
+    "install-codex-hook",
+    `Codex hook 已写到 ${userCodexHooksPath} (events=${Object.keys(transformed).length}, scripts=${stagedScripts.length}, replaced-old-teamagent=${removedCount}, added=${addedCount}, preserved-user=${preservedUntagged})`,
+  );
+}
+
+interface CodexHookEntryRaw {
+  type?: string;
+  command?: string;
+  timeout?: number;
+}
+interface CodexHookBlock {
+  matcher?: string;
+  hooks?: CodexHookEntryRaw[];
+  _teamagentTag?: string;
+}
+interface CodexHooksConfig {
+  hooks?: Record<string, CodexHookBlock[]>;
+  [other: string]: unknown;
+}
+
+/**
+ * Rewrite a project-level Codex hook `command` string so its `bash "$root/.codex/hooks/<name>.sh"`
+ * fragment points to the user-level staged copy under `<stagedHooksDir>/<name>.sh`.
+ *
+ * Project pattern (verbatim from `.codex/hooks.json` committed by #290):
+ *   `repo="${CODEX_PROJECT_DIR:-$PWD}"; root=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$repo"); bash "$root/.codex/hooks/<name>.sh"`
+ *
+ * Rewritten user pattern:
+ *   `bash "<stagedHooksDir>/<name>.sh"`
+ *
+ * The user-level form drops the dynamic repo-root resolution because the
+ * staged script lives at a fixed home-relative path that every project
+ * shares. If the command does not match the project pattern (e.g., user
+ * customized it), the original string is returned unchanged.
+ */
+function rewriteCodexHookCommand(cmd: string, stagedHooksDir: string): string {
+  const match = cmd.match(/bash\s+"\$root\/\.codex\/hooks\/([\w.-]+\.sh)"/);
+  if (!match) return cmd;
+  const scriptName = match[1];
+  // Use forward slashes for cross-platform bash compatibility (Git Bash
+  // tolerates both, but `\\` triggers bash escape interpretation on Windows).
+  const stagedPath = path.join(stagedHooksDir, scriptName).replace(/\\/g, "/");
+  return `bash "${stagedPath}"`;
 }
 
 function ensureSymlink(
