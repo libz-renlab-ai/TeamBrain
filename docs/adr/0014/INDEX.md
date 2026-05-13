@@ -12,6 +12,8 @@
   250.md  256.md  258.md  261.md  273.md  280.md  283.md  290.md
   291.md  issue-294.md  296.md  297.md  299.md  306.md  308.md  309.md
   310.md  313.md  320.md  326.md  371.md  372.md
+  batch-2026-05-13-overview.md  batch-2026-05-13-architecture.md
+  batch-2026-05-13-feature-specs.md
 ```
 
 # ADR-0014 grill log siblings — INDEX
@@ -40,14 +42,25 @@ grill-comment landing and `/fixed-flow-driver` dispatch. After save, each issue'
 label is flipped `grilling` → `grill-ready` + `docs-grill-ready` (P4 state per
 docs/ISSUE-LIFECYCLE.md).
 
-Cross-cutting sections of the unified grill live in two sibling files:
+Cross-cutting sections of the unified grill live in three sibling files:
 
 - [./batch-2026-05-13-overview.md](./batch-2026-05-13-overview.md) — §0 overall
-  verdict, §24 phase-1 cutline, §30 grilled roadmap, §31 final verdict table,
-  §32 one-sentence version.
+  verdict, §1 foundational product question, §24 phase-1 cutline, §30 grilled
+  roadmap, §31 final verdict table, §32 one-sentence version.
+- [./batch-2026-05-13-architecture.md](./batch-2026-05-13-architecture.md) — §3
+  prompt storage, §5 raw-event deletion strategy, §9 work-item anchor, §16
+  plugin architecture, §17 project-config source-of-truth.
 - [./batch-2026-05-13-feature-specs.md](./batch-2026-05-13-feature-specs.md) —
   §25 leader homepage, §26 live inspection, §27 daily summary, §28 incident
   workflow, §29 plugin permissions.
+
+**Line-count exemption note**: ADR-0014 sibling files (per-issue + `batch-*.md`)
+intentionally hold verbatim grill content and routinely exceed CLAUDE.md's
+<200-line guideline for `docs/`. Established baseline shows
+`273.md` (355 lines), `233.md` (445 lines), `218.md` (231 lines) etc. — the
+sibling pattern itself is the exemption, in the same spirit as `docs/CONTEXT.md`
+being exempt for being a glossary. Splitting verbatim grill content further
+would damage navigability for marginal compliance benefit.
 
 ## Backfilled siblings + 2026-05-13 batch (sorted by issue number)
 

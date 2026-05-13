@@ -1,5 +1,5 @@
 ---
-Title: TeamBrain 12-issue unified batch grill — team-lead feature specs
+Title: 'TeamBrain 12-issue unified batch grill — team-lead feature specs'
 Issues: "#290, #291, #296, #297, #306, #308, #309, #310, #320, #326, #371, #372"
 Saved-at: 2026-05-13
 Saved-by: /grill-with-docs save-mode (batch grill from ChatGPT share)
@@ -8,9 +8,11 @@ Grill-URL: https://chatgpt.com/s/t_6a03861d49b081918ed2c900f3870c46
 
 # TeamBrain 12-issue unified batch grill — team-lead feature specs
 
-> Cross-cutting team-lead product feature specs §25–§29 of the unified batch grill.
-> Verdict + roadmap live in `./batch-2026-05-13-overview.md`; per-issue grills in
-> `./<issue>.md` siblings. Source: [chatgpt.com share](https://chatgpt.com/s/t_6a03861d49b081918ed2c900f3870c46).
+> Save-mode capture per **ADR-0014 §"Operational shape" step 3** — **not a re-grill**.
+> Cross-cutting team-lead product feature specs §25–§29 (homepage, live inspection, daily
+> summary, incident workflow, plugin permissions). Verdict + roadmap live in
+> `./batch-2026-05-13-overview.md`; architecture in `./batch-2026-05-13-architecture.md`;
+> per-issue grills in `./<issue>.md` siblings. Source: [chatgpt.com share](https://chatgpt.com/s/t_6a03861d49b081918ed2c900f3870c46).
 
 ## Sections inlined below
 
