@@ -34,8 +34,10 @@
 | 对象存储 | proposer 个人 / 公司 AWS S3 公有 bucket、Cloudflare R2、阿里云 OSS、腾讯云 COS、Backblaze B2 | 仓库 CI 共享 S3、临时 presigned URL（过期后失效） |
 | 静态站点托管 | proposer 个人 Vercel / Netlify / Cloudflare Pages / Render | TeamBrain 团队共享 Vercel 项目（视为 repo 内置不算个人 storage） |
 | 个人域名 | proposer 自有域名 + 静态服务 | `localhost:*` / `127.0.0.1:*` / `192.168.*` / `10.*` LAN-only |
-| Gist | GitHub Gist HTML（`gist.githubusercontent.com/.../raw/...html` raw 链接，并打开方式是 `https://htmlpreview.github.io/?<gist-raw-url>` 或 proposer 自托管的 viewer） | 普通 gist 文本预览（不渲染 HTML） |
-| 即时分享 | imgur / cloudinary 公网链接（截图证据可代替 HTML 时） | `transfer.sh` / `0x0.st` / `catbox.moe` 等短期 expiry 服务（PR 还没 merge 链接已死） |
+| Gist (proposer-served viewer) | GitHub Gist HTML 通过 **proposer 自托管的 viewer**（如 proposer 个人 GH Pages 上的 fetch + render） | 普通 gist 文本预览（不渲染 HTML） |
+| Gist (third-party viewer) | ⚠️ `https://htmlpreview.github.io/?<gist-raw-url>` —— **`htmlpreview.github.io` 是第三方免费服务（cwong/htmlpreview），不在 proposer 控制下**，无 SLA、常被 rate-limit、拒绝 >2MB 的 gist；仅在没有更好选择时降级使用，并在 PR comment 里显式写「third-party viewer，可能失效」 | 把 `htmlpreview.github.io` 当作 proposer 自己的 storage 报给 reviewer |
+| IMG-only escape hatch | ⚠️ imgur / cloudinary 截图链接 —— **仅当 evidence 本质是单张静态图且 HTML 反而冗余时**；**注意**：imgur 对匿名上传 6 个月低互动后会删，cloudinary free tier 30 天无访问转 cold storage，**默认违反 90 天 floor**，必须用 paid plan 或个人账号 + 显式 retention 设置；canonical anchor 仍 mandate HTML，本行只是退化场景 | 把 imgur / cloudinary 当作长期 HTML 托管（不是它们的设计场景） |
+| 短期分享服务 | （无）| `transfer.sh`（14 天默认）/ `0x0.st`（变量 retention）/ `catbox.moe`（可永久但需登录、去匿名化）—— PR 还没 merge 链接可能已死 |
 
 **底线**：reviewer 在任何一台机器上点开 PR comment 里的链接都能看到完整产物；PR branch 被 delete、worktree 被回收、构建机被销毁后，链接仍然能打开**至少 90 天**（建议永久，让 release notes / changelog 反查时还能用）。
 
@@ -82,6 +84,7 @@
 
 - **纯后端 / 算法 / 配置类 PR**（没有可视化副作用、不改 UI、不改 dashboard、不出截图）：不需要 visual proof，普通 `docs/COMMIT-FLOW.md` 链路即可。
 - **docs-only PR**：如果只改 markdown / ADR / canonical answer，不需要 visual proof；但若 docs PR 内嵌可渲染图表（mermaid / ASCII 之外的实际渲染产物），仍要按本规则贴外链 HTML。
+- **canonical-answer rule PRs (recursive case)**：本 PR 这种「**新增 canonical-answer 规则**」类型——`CLAUDE.md` 加 anchor sentence + `docs/<RULE>.md` 写 playbook + 7-anchor judge harness——的 visual proof analog 是 `claudefast -p "<canonical question>"` 探针输出，需把探针的完整 stdout 复制到 PR comment（transcript suffices），**不需要**额外外链 HTML 托管；canonical-answer 类规则的"视觉产物"就是 probe 文本本身。例：本 PR 的 visual proof comment 应贴 `/tmp/vp-probe-3.out` 的内容 + 7-anchor PASS/FAIL 表。
 - **`/review` 内部 finding screenshot**：reviewer 派 specialist subagent 产生的内部截图（如 a11y subagent 截 contrast issue）由 reviewer 处理，不在 proposer 视觉证据义务范围。
 - **CI canary / monitor automation 截屏**：那些是 system-level evidence，按 `docs/canary-verify/**` 规则走，不混入本规则。
 
