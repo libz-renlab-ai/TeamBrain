@@ -1,10 +1,10 @@
 {
   "version": "0.11.0",
-  "sha": "dfaab94c99521f9624d47a65b457bc4ff45c5291",
-  "releasedAt": "2026-05-13T07:33:51Z",
+  "sha": "8d9cffc1a4a4f2fe4088206aa028301f763574b6",
+  "releasedAt": "2026-05-13T07:41:59Z",
   "tarball": "https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz",
-  "generatedBy": "release-branch.yml@25785113804",
-  "pr_number": 439,
-  "pr_creator_login": "LiuShiyuMath",
-  "merged_at": "2026-05-13T07:33:13Z"
+  "generatedBy": "release-branch.yml@25785464179",
+  "pr_number": 437,
+  "pr_creator_login": "libz-renlab-ai",
+  "merged_at": "2026-05-13T07:41:16Z"
 }
