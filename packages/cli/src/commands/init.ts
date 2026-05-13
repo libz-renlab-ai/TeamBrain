@@ -1750,8 +1750,11 @@ interface CodexHooksConfig {
  */
 function rewriteCodexHookCommand(cmd: string, stagedHooksDir: string): string {
   const match = cmd.match(/bash\s+"\$root\/\.codex\/hooks\/([\w.-]+\.sh)"/);
-  if (!match) return cmd;
-  const scriptName = match[1];
+  // match[1] is the capture group — TS sees `string | undefined` for tuple
+  // index access; the regex shape guarantees it's defined whenever match is
+  // truthy, but the explicit guard satisfies strict-mode tsc.
+  const scriptName = match?.[1];
+  if (!scriptName) return cmd;
   // Use forward slashes for cross-platform bash compatibility (Git Bash
   // tolerates both, but `\\` triggers bash escape interpretation on Windows).
   const stagedPath = path.join(stagedHooksDir, scriptName).replace(/\\/g, "/");
