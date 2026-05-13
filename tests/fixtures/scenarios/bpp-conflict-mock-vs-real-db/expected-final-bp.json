@@ -1,0 +1,50 @@
+[
+  {
+    "schema_version": 1,
+    "id": "bp-2026-05-13-tests-must-mock-db",
+    "type": "rule",
+    "title": "Tests MUST mock the database",
+    "body": "Every *.test.ts that exercises a repo / DAO must call vi.mock on the db module to isolate IO; never let a unit test touch a real database client.",
+    "example": "src/userRepo.test.ts → import { vi } from 'vitest'; vi.mock('./db').",
+    "pushed_by": "eve@team.com",
+    "pushed_by_display": "Eve",
+    "topic": "testing",
+    "confidence_score": 0.8064,
+    "confidence_tier": "canonical",
+    "conflict_with": ["bp-2026-05-13-tests-must-not-mock-db"],
+    "mining_evidence": {
+      "sessions_observed": 8,
+      "pattern_count": 16,
+      "reject_count": 0,
+      "extraction_method": "behavior-mining-v0-fixture"
+    },
+    "revoked_at": null,
+    "revoked_by": null,
+    "revoke_reason": null,
+    "created_at": "2026-05-13T14:00:05Z"
+  },
+  {
+    "schema_version": 1,
+    "id": "bp-2026-05-13-tests-must-not-mock-db",
+    "type": "rule",
+    "title": "Tests MUST NOT mock the database",
+    "body": "Every *.test.ts that exercises a repo / DAO must use a real in-memory sqlite (or equivalent) so the test verifies the actual SQL contract; never call vi.mock on the db module.",
+    "example": "src/orderRepo.test.ts → import Database from 'better-sqlite3'; const db = new Database(':memory:').",
+    "pushed_by": "frank@team.com",
+    "pushed_by_display": "Frank",
+    "topic": "testing",
+    "confidence_score": 0.7961,
+    "confidence_tier": "canonical",
+    "conflict_with": ["bp-2026-05-13-tests-must-mock-db"],
+    "mining_evidence": {
+      "sessions_observed": 6,
+      "pattern_count": 15,
+      "reject_count": 0,
+      "extraction_method": "behavior-mining-v0-fixture"
+    },
+    "revoked_at": null,
+    "revoked_by": null,
+    "revoke_reason": null,
+    "created_at": "2026-05-13T14:00:05Z"
+  }
+]
