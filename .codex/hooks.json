@@ -12,6 +12,18 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "repo=\"${CODEX_PROJECT_DIR:-$PWD}\"; root=$(git -C \"$repo\" rev-parse --show-toplevel 2>/dev/null || printf '%s' \"$repo\"); bash \"$root/.codex/hooks/pre-tool-use-adapter.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

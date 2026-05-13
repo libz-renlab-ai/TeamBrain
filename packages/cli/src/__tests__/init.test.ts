@@ -891,7 +891,10 @@ describe("executeInit — Feature ① init in fresh empty cwd", () => {
     });
     const out = renderInitResult(r);
     expect(out).toContain("✅");
-    expect(out).toContain("TeamAgent 安装成功");
+    // Issue #326 RESCOPE item 6: success block collapsed to minimal
+    // "TeamAgent 已就绪 + Next: cd / claude". Old "安装成功" wording is gone.
+    expect(out).toContain("TeamAgent 已就绪");
+    expect(out).toContain("cd your-project");
   });
 });
 
@@ -973,10 +976,15 @@ describe("renderInitResult", () => {
         totalActiveEntries: 6,
       },
     });
-    expect(out).toContain("✅ TeamAgent 安装成功");
+    // Issue #326 RESCOPE item 6: success block is now the minimal
+    // "TeamAgent 已就绪 + Next: cd / claude". The verbose "重新打开 Claude
+    // Code" guidance moved behind TEAMAGENT_VERBOSE_INIT=1 (kept in source
+    // for `teamagent doctor` / future flag).
+    expect(out).toContain("✅ TeamAgent 已就绪");
     expect(out).toContain("前置检查");
     expect(out).toContain("lang=typescript");
-    expect(out).toContain("重新打开 Claude Code");
+    expect(out).toContain("下一步：");
+    expect(out).toContain("cd your-project");
   });
 
   it("failure → shows warning footer", () => {
@@ -1016,11 +1024,16 @@ describe("renderInitResult", () => {
     expect(out).toContain("--force-nested-init");
   });
 
-  it("success without --install-plugins shows hint about team plugins", () => {
-    const out = renderInitResult({
+  // Issue #326 RESCOPE item 6: the "💡 团队标配插件" hint is no longer in
+  // the default success path — it would violate the minimal 5-line
+  // "TeamAgent 已就绪 + Next: cd / claude" success block. The hint stays
+  // gated behind TEAMAGENT_VERBOSE_INIT=1 so power users / `teamagent
+  // doctor` flows can still surface it.
+  it("success without --install-plugins: hint hidden by default, shown with TEAMAGENT_VERBOSE_INIT=1", () => {
+    const renderArg = {
       ok: true,
       dryRun: false,
-      steps: [{ step: "pre-check", status: "ok", detail: "ok" }],
+      steps: [{ step: "pre-check", status: "ok" as const, detail: "ok" }],
       summary: {
         stack: "lang=typescript",
         presetAdded: 4,
@@ -1028,17 +1041,29 @@ describe("renderInitResult", () => {
         importedRules: 0,
         totalActiveEntries: 4,
       },
-    });
-    expect(out).toMatch(/install-plugins/);
+    };
+    // default path: hint hidden
+    const defaultOut = renderInitResult(renderArg);
+    expect(defaultOut).not.toMatch(/install-plugins/);
+    // verbose path: hint resurfaces
+    const prev = process.env["TEAMAGENT_VERBOSE_INIT"];
+    process.env["TEAMAGENT_VERBOSE_INIT"] = "1";
+    try {
+      const verboseOut = renderInitResult(renderArg);
+      expect(verboseOut).toMatch(/install-plugins/);
+    } finally {
+      if (prev === undefined) delete process.env["TEAMAGENT_VERBOSE_INIT"];
+      else process.env["TEAMAGENT_VERBOSE_INIT"] = prev;
+    }
   });
 
   it("success with install-plugins step present does NOT show the hint", () => {
-    const out = renderInitResult({
+    const renderArg = {
       ok: true,
       dryRun: false,
       steps: [
-        { step: "pre-check", status: "ok", detail: "ok" },
-        { step: "install-plugins", status: "ok", detail: "all ok" },
+        { step: "pre-check", status: "ok" as const, detail: "ok" },
+        { step: "install-plugins", status: "ok" as const, detail: "all ok" },
       ],
       summary: {
         stack: "lang=typescript",
@@ -1047,8 +1072,20 @@ describe("renderInitResult", () => {
         importedRules: 0,
         totalActiveEntries: 4,
       },
-    });
-    expect(out).not.toMatch(/teamagent install-plugins.*\n.*运行/);
+    };
+    // default path: no hint regardless
+    const defaultOut = renderInitResult(renderArg);
+    expect(defaultOut).not.toMatch(/teamagent install-plugins.*\n.*运行/);
+    // verbose path: still no hint because install-plugins already ran
+    const prev = process.env["TEAMAGENT_VERBOSE_INIT"];
+    process.env["TEAMAGENT_VERBOSE_INIT"] = "1";
+    try {
+      const verboseOut = renderInitResult(renderArg);
+      expect(verboseOut).not.toMatch(/teamagent install-plugins.*\n.*运行/);
+    } finally {
+      if (prev === undefined) delete process.env["TEAMAGENT_VERBOSE_INIT"];
+      else process.env["TEAMAGENT_VERBOSE_INIT"] = prev;
+    }
   });
 });
 
@@ -1069,9 +1106,13 @@ describe("renderInitResult — new UX", () => {
       summary: { stack: "typescript", presetAdded: 12, seedAdded: 0, importedRules: 5, totalActiveEntries: 17 },
     };
     const out = renderInitResult(result);
-    expect(out).toContain("✅ TeamAgent 安装成功");
-    expect(out).toContain("重新打开 Claude Code");
-    expect(out).toContain("teamagent doctor");
+    // Issue #326 RESCOPE item 6: minimal success block.
+    // "重新打开 Claude Code" + "teamagent doctor" moved behind
+    // TEAMAGENT_VERBOSE_INIT=1 (kept in source for power-user / doctor flows).
+    expect(out).toContain("✅ TeamAgent 已就绪");
+    expect(out).toContain("下一步：");
+    expect(out).toContain("cd your-project");
+    expect(out).toContain("claude");
   });
 
   it("shows failure banner when a step fails", () => {

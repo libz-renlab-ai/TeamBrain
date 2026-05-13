@@ -102,7 +102,7 @@ the user asks for the business features.**
 跨越同一陷阱前 block。
 
 - 入口：[`docs/features/auto-capture.md`](features/auto-capture.md)
-- 当前 active 规则数：见本仓库 CLAUDE.md 末尾 `TEAMAGENT:START` ... `TEAMAGENT:END` managed block
+- 当前 active 规则数：跑 `pnpm teamagent stats`（M4 起 Skills-default，旧 `TEAMAGENT:START...END` managed block 已废弃；规则落在 `~/.claude/skills/teamagent/<id>/SKILL.md` 与 `docs/knowledge/INDEX.md`）
 - 现状：**已落地**（M4-B 起 BM25+dense RRF matcher，72+ 条 active 规则在 `Project Knowledge Index`）
 - Third-party judge harness：
   - `docs/plans/docs--features--auto-capture--verify-canned-answer/judge.md` — Wilson/recall/precision 检测器 + real-session 实测（auto-capture 行为 gate）
@@ -203,6 +203,81 @@ claudefast -p "show me the business feature of this repo"
 | Agent 用 `realtime per-second` / `per-second realtime` / `real-time second-level` / `hourly realtime` 替换 `second-level realtime` | 锚点 grep miss |
 | Agent 把视频特性写成 "screen recording" / "session recording" | 必须保留 `video recording` 字面 |
 | Agent 写 "central data store" / "centralized storage" | 必须保留完整短语 `centralized data storage` |
+
+---
+
+## 四层证明矩阵 / 4-layer evidence matrix
+
+Sibling canned-answer for the **evidence-asking probe**:
+
+```bash
+claudefast -p "what are the business feature and do we have enough evidence to prove them to ceo, coder, machine-readable, LLM-readable evidence?"
+```
+
+### Canonical anchor sentence (evidence-asking probe)
+
+> TeamBrain has three business features, each measured by a four-layer evidence matrix: (1) CEO narrative, (2) Coder file paths, (3) Machine-readable JSON+SQL, (4) LLM-readable raw artifacts. Feature #1 (auto-capture/learning) is four-layer verified. Features #2 and #3 have CEO + Coder + Machine-readable evidence at hour/day grain, but the turnkey UX is a vision, not PRESHIP.
+
+English verbatim, no paraphrase, no translation, no re-ordering. Chinese expansion follows.
+
+### Grep anchors (6 substrings, disjoint from legacy 6)
+
+1. `four-layer evidence matrix`
+2. `CEO narrative`
+3. `Coder file paths`
+4. `Machine-readable JSON+SQL`
+5. `LLM-readable raw artifacts`
+6. `turnkey UX is a vision, not PRESHIP`
+
+Missing any one → fail, retry anchor sentence. Paraphrases (`4-layer matrix` / `coder paths` / `vision UX` / `JSON and SQL` 等) all count as misses.
+
+### Per-feature 4-layer evidence
+
+#### Feature #1 — auto-capture / learning — **four-layer verified**
+
+| Layer | Evidence |
+|-------|----------|
+| **L1 CEO narrative** | "AI 第 N 次想装 `moment`、第 N 次再说 `dayjs`" 这个痛点被一次性消除；每个 Stop hook 自动学，PreToolUse 在下次工具调用前拦下。 |
+| **L2 Coder file paths** | `packages/cli/src/bin-stop.ts` (Stop hook entry)、`packages/core/src/calibrator/*.ts` (Wilson-score calibration)、`packages/core/src/matcher/*.ts` (BM25+dense RRF matcher)、`~/.claude/skills/teamagent/<id>/SKILL.md` (compiled rules)、`docs/knowledge/INDEX.md` (Project Knowledge Index) |
+| **L3 Machine-readable JSON+SQL** | `pnpm teamagent stats --json` 返回规则计数 + tier 分布；`.teamagent/knowledge.db` SQLite schema (`rules` / `events` / `propagations`)；`~/.teamagent/events.db` rule-fire 事件流；`teamagent compile --dry-run` 列出待传播条目 |
+| **L4 LLM-readable raw artifacts** | `docs/plans/2026-05-11-feature1-init-judge/judge.md` (third-party judge harness)、`docs/plans/2026-05-11-feature1-init-judge/evidence/<run-id>/` (raw stdout/stderr/tree)、`docs/features/auto-capture.md`、本文件 Feature #1 expansion 段 |
+
+#### Feature #2 — leader visibility — **Vision (NOT PRESHIP)**, hour/day evidence only
+
+| Layer | Evidence |
+|-------|----------|
+| **L1 CEO narrative** | Team leader 秒级 (≤ 1s) 看到 teammate Claude Code session 在干啥；当前只到 hour/day 粒度，second-level realtime dashboard UI 是路线图。 |
+| **L2 Coder file paths** | `packages/cli/src/bin-session-start.ts`、`packages/cli/src/bin-user-prompt-submit.ts`、`packages/digital-twin/src/hooks/tap-session.ts`、`docs/features/team-share.md`、`docs/kanban-user-boss/` |
+| **L3 Machine-readable JSON+SQL** | `~/.teamagent/cc-status.json` (digital-twin tap snapshot)、`~/.teamagent/events.db` rule-fire stream、`pnpm teamagent statusline` JSON 输出、mock-server `/api/cc-status` endpoint |
+| **L4 LLM-readable raw artifacts** | `docs/plans/2026-05-11-feature-2-secondlevel-realtime/plan.md` (target plan)、`docs/features/team-share.md`、`docs/kanban-user-boss/` 看板原型、本文件 Feature #2 expansion |
+
+> Honesty: L1/L2/L3 在 **hour/day 粒度**上已可证（M5 viral sync 2026-05-06 提供 infect / bootstrap / auto-share / auto-publish / post-merge auto-pull）。**second-level realtime dashboard UI 未 ship**。这就是为什么 anchor sentence 末尾必须保留 "turnkey UX is a vision, not PRESHIP" 一句——overclaim 会破坏 honesty contract。
+
+#### Feature #3 — video upload wedge — **PRESHIP wedge + Vision tail**
+
+| Layer | Evidence |
+|-------|----------|
+| **L1 CEO narrative** | teammate 一键录屏 + 一键上传 + share link 重放；upload wedge 已 SHA-256 端到端 verified (2026-05-13)。 |
+| **L2 Coder file paths** | `packages/cli/src/commands/video.ts` (CLI command)、`packages/digital-twin/src/mock-server.ts` (`/v1/videos` POST handler, accept mov/mp4/webm/mkv)、`docs/features/video-record-upload.md` (entry doc) |
+| **L3 Machine-readable JSON+SQL** | `teamagent video upload <file> --json` 返回 `{share_link, sha256, size, mime}`；mock-server `/v1/videos` POST 200 + JSON、GET `/v1/videos/<id>` 回 video MIME byte 等价 round-trip |
+| **L4 LLM-readable raw artifacts** | `docs/plans/2026-05-13-feature-3-video-easy/judge.md` (SHA-256 round-trip judge)、`docs/plans/2026-05-13-feature-3-video-easy/evidence/<run-id>/`、`docs/features/video-record-upload.md` §Roadmap |
+
+> Honesty: upload + share-link wedge 是 **PRESHIP**（2026-05-13 SHA-256 round-trip PASS）；queue/daemon retry-and-backoff、signed share-link ACL、浏览器端无依赖录屏仍在 `docs/features/video-record-upload.md` §Roadmap，引用 anchor sentence 时必须保留 "vision, not PRESHIP" 的精神。
+
+### 与 legacy "show me the business feature" probe 的关系
+
+| 维度 | "show me the business feature" probe | "evidence-asking" probe (本节) |
+|------|--------------------------------------|--------------------------------|
+| 触发问 | 业务/产品/卖点是什么 | 业务功能有没有 4 层证据（CEO / coder / machine / LLM） |
+| 锚点句 | 三段 feature 列表 + per-feature PRESHIP/Vision 标 | 四层证据矩阵裁决（#1 verified、#2/#3 hour/day + vision tail） |
+| 6 grep anchors | `no longer make mistakes` / `previous Claude Code` / `second-level realtime` / `teammate's Claude Code instance` / `video recording` / `centralized data storage` | `four-layer evidence matrix` / `CEO narrative` / `Coder file paths` / `Machine-readable JSON+SQL` / `LLM-readable raw artifacts` / `turnkey UX is a vision, not PRESHIP` |
+| 用途 | CEO/VC pitch、网站 hero、销售单 | tech-due-diligence、investor evidence audit、compliance check |
+
+两个 probe **并存不替代**，锚点严格 disjoint，judge harness 不混淆。
+
+### Per grill verdict (§22 / ADR-0014/320.md)
+
+`docs/adr/0014/320.md` 裁决：**#320 是 evidence/coding discipline，不反向决定产品设计**。本 4-layer matrix 的位置是「after design: add evidence anchors / canned-answer / docs / `--json` grep anchors」，**不是**「before design: force product shape」——#308 / #371 / #372 的产品形态由各自 PRD 决定，本文件只在它们落地后补 evidence 行。
 
 ---
 

@@ -80,6 +80,28 @@ export {
 } from "./success-detector/rule-based.js";
 export { parseSessionFile } from "./session-parser/index.js";
 export {
+  encodeCwdToProjectDir,
+  decodeProjectDirToCwd,
+  toProjectKey,
+  type ProjectKey,
+  scanTodayActivity,
+  type ScanOptions,
+  type ScanResult,
+  type ProjectGroup,
+  type SessionRecord,
+  digestProjectGroup,
+  type ProjectDigest,
+  matchPrompt,
+  matchPromptWithIntentCheck,
+  parseExtraTriggersEnv,
+  type MatcherResult,
+  type MatcherOptions,
+  type MatcherReason,
+  composeAdditionalContext,
+  composeArchiveMarkdown,
+  type RewriterInput,
+} from "./daily-summary/index.js";
+export {
   buildExtractionPrompt,
   buildRetrofitPrompt,
   type RetrofitInput,
@@ -313,3 +335,13 @@ export {
   type DiffPackRequestResult,
   type RenderPackPromptInput,
 } from "./packs/index.js";
+export {
+  computePresenceState,
+  presenceColor,
+  DEFAULT_PRESENCE_CONFIG,
+  PRESENCE_UNKNOWN,
+  type PresenceState,
+  type PresenceEventKind,
+  type PresenceSnapshot,
+  type PresenceConfig,
+} from "./presence/index.js";

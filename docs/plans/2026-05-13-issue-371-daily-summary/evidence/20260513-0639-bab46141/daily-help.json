@@ -1,0 +1,30 @@
+{
+  "command": "teamagent daily",
+  "summary": "Aggregate today's Claude Code activity across all projects on this machine into a per-project digest. LLM-free.",
+  "usage": "teamagent daily [--projects-root=PATH] [--cwd=PATH] [--archive] [--format=json|context] [--help]",
+  "flags": {
+    "--help": "Print this JSON help schema and exit.",
+    "--projects-root": "Override `~/.claude/projects` (used by tests/fixture scans).",
+    "--cwd": "Override the operator's cwd reference. Informational only; does not affect which sessions are scanned.",
+    "--archive": "Also write ${TEAMAGENT_HOME}/daily/<YYYY-MM-DD>.md (overwrite-on-rerun).",
+    "--format": "Output mode. \"json\" (default) emits machine-readable JSON; \"context\" emits the markdown additionalContext the UserPromptSubmit hook would inject."
+  },
+  "notes": [
+    "Source: `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. No network.",
+    "Worktrees under `.codex/worktrees/<task>` and `.claude/worktrees/<task>` are merged back to the host repo.",
+    "TeamAgent itself never calls an LLM here — the additionalContext form is meant to be consumed by the operator's own Claude Code window.",
+    "See `docs/plans/2026-05-13-issue-371-daily-summary/` for the verification playbook."
+  ],
+  "schema": {
+    "output": {
+      "date": "YYYY-MM-DD (local time)",
+      "windowStartMs": "epoch ms of today's local midnight",
+      "windowEndMs": "epoch ms when the scan ran",
+      "projects": "array of ProjectDigest objects (see @teamagent/core)",
+      "worktreeMergedCount": "how many groups contained at least one worktree session",
+      "skippedSessionCount": "how many jsonl files failed to parse",
+      "archivedPath": "path to the written archive markdown when --archive is set",
+      "triggeredBy": "\"cli\""
+    }
+  }
+}
