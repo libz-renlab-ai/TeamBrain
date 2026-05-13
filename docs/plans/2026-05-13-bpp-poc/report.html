@@ -224,10 +224,40 @@ ul.taskcheck li.future::before { content: '•'; color: var(--text-dim); text-al
   Phase 2-6 在 <a href="../../superpowers/plans/2026-05-13-bpp.md">plan 文档</a>中以 one-line backlog 形式列出，每个 phase 在 Phase 1 ship 后开独立的 follow-up 计划。
 </p>
 
-<h2>2. 数据流动画（SVG 替代 GIF）</h2>
+<h2>2. 真 GIF + 数据流 SVG 动画 (CEO 鸭要求的"截图 + gif"已全部落地)</h2>
+<p>
+  鸭鸭装了 <code>playwright-core</code> 调用本机已存在的 <code>chromium-1208</code>
+  渲染 <strong>9 张真 PNG 截图</strong>（每 800px 一屏，覆盖整个 7196px 长报告），
+  再用 <code>ffmpeg</code> concat demuxer 拼成 <strong>1.5 MB 动态 GIF</strong>（0.8 fps）。
+  完整脚本在 <a href="evidence/render-screenshots.ts"><code>evidence/render-screenshots.ts</code></a>，
+  可在任何 PR 上跑：<code>npx tsx docs/plans/&lt;slug&gt;/evidence/render-screenshots.ts</code>。
+</p>
+<figure class="flow-anim">
+  <img src="evidence/walkthrough.gif" alt="BPP report walkthrough animated GIF — 9 frames at 0.8 fps"
+       style="display:block;margin:0 auto;max-width:100%;border:1px solid var(--border);border-radius:6px;">
+  <figcaption>walkthrough.gif — 9 张 PNG 拼成的滚动动画（每 ~1.25 秒一屏，慢节奏方便逐段看）</figcaption>
+</figure>
+
+<h3>9 张全屏截图（缩略图，点开看大图）</h3>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0;">
+  <a href="evidence/screenshots/00-y0.png"><img src="evidence/screenshots/00-y0.png" alt="Header + badges + Executive Summary" style="width:100%;border:1px solid var(--border);border-radius:4px;"></a>
+  <a href="evidence/screenshots/01-y800.png"><img src="evidence/screenshots/01-y800.png" alt="数据流 SVG + Phase 2-6 demo intro" style="width:100%;border:1px solid var(--border);border-radius:4px;"></a>
+  <a href="evidence/screenshots/02-y1600.png"><img src="evidence/screenshots/02-y1600.png" alt="Phase 2-6 e2e demo terminal" style="width:100%;border:1px solid var(--border);border-radius:4px;"></a>
+  <a href="evidence/screenshots/03-y2400.png"><img src="evidence/screenshots/03-y2400.png" alt="Test breakdown + Phase 1 任务清单" style="width:100%;border:1px solid var(--border);border-radius:4px;"></a>
+  <a href="evidence/screenshots/04-y3200.png"><img src="evidence/screenshots/04-y3200.png" alt="Phase 1 测试 + Live demo evidence" style="width:100%;border:1px solid var(--border);border-radius:4px;"></a>
+  <a href="evidence/screenshots/05-y4000.png"><img src="evidence/screenshots/05-y4000.png" alt="demo stdout JSON 块" style="width:100%;border:1px solid var(--border);border-radius:4px;"></a>
+  <a href="evidence/screenshots/06-y4800.png"><img src="evidence/screenshots/06-y4800.png" alt="Phase 1 文件清单表" style="width:100%;border:1px solid var(--border);border-radius:4px;"></a>
+  <a href="evidence/screenshots/07-y5600.png"><img src="evidence/screenshots/07-y5600.png" alt="决策映射 + scope statement" style="width:100%;border:1px solid var(--border);border-radius:4px;"></a>
+  <a href="evidence/screenshots/08-y6400.png"><img src="evidence/screenshots/08-y6400.png" alt="Backlog + 链接收藏 + footer" style="width:100%;border:1px solid var(--border);border-radius:4px;"></a>
+</div>
 <p class="meta">
-  原本计划用 Chrome <code>gif_creator</code> 录 dashboard 操作，但本机 Chrome 扩展无法访问 localhost（实测 <code>Frame with ID 0 is showing error page</code>），
-  改为嵌入式 SVG 动画 — 自带 <code>&lt;animate&gt;</code> 在所有现代浏览器里循环播放，零依赖、可截图。
+  原始 PNG 也都在 <a href="evidence/screenshots/">evidence/screenshots/</a>；<a href="evidence/screenshots/full-page.png">full-page.png</a> 是一张 7196px 高的完整长图。
+</p>
+
+<h3>数据流概念图 (SVG &lt;animate&gt;)</h3>
+<p>
+  下面这张 SVG 跟 GIF 互补——<strong>GIF 展示报告内容</strong>（CEO 鸭一眼扫完整个报告），
+  <strong>SVG 展示数据流</strong>（laptop → server → laptop 的概念路径）：
 </p>
 <div class="flow-anim">
 <svg viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,Consolas,monospace" font-size="13">
