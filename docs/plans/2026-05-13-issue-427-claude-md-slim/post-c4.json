@@ -1,0 +1,196 @@
+{
+  "claude_md_path": "CLAUDE.md",
+  "claude_md_bytes": 110138,
+  "ran_at": "2026-05-13T07:09:59.038Z",
+  "rules": [
+    {
+      "rule_id": "VISUAL-PROOF-FORMAT",
+      "cluster": "C2",
+      "total_anchors": 8,
+      "found_anchors": 8,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "COMMIT-FLOW",
+      "cluster": "singleton",
+      "total_anchors": 3,
+      "found_anchors": 3,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "HOW-TO-CLAIM-ISSUE",
+      "cluster": "C1",
+      "total_anchors": 2,
+      "found_anchors": 2,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "INIT-PROPAGATION",
+      "cluster": "singleton",
+      "total_anchors": 1,
+      "found_anchors": 1,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "TRIAGE-AND-SPLIT",
+      "cluster": "C1",
+      "total_anchors": 8,
+      "found_anchors": 8,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "PRE-IMPLEMENT-CLAIM",
+      "cluster": "C1",
+      "total_anchors": 4,
+      "found_anchors": 4,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "PRE-GRILL-CLAIM",
+      "cluster": "C1",
+      "total_anchors": 4,
+      "found_anchors": 4,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "NOT-GRILL-READY",
+      "cluster": "C1",
+      "total_anchors": 2,
+      "found_anchors": 2,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "ISSUE-LIFECYCLE",
+      "cluster": "C1",
+      "total_anchors": 17,
+      "found_anchors": 17,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "TWO-DRIVER-COEXISTENCE",
+      "cluster": "C3",
+      "total_anchors": 5,
+      "found_anchors": 5,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "3-METHODS-WORKFLOW",
+      "cluster": "C3",
+      "total_anchors": 3,
+      "found_anchors": 3,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "SYMPHONY-FLOW",
+      "cluster": "C3",
+      "total_anchors": 5,
+      "found_anchors": 5,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "ADR-0014-SAVE-GRILLED",
+      "cluster": "C1",
+      "total_anchors": 4,
+      "found_anchors": 4,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "ISOLATED-WORKTREE",
+      "cluster": "singleton",
+      "total_anchors": 1,
+      "found_anchors": 1,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "BUSINESS-FEATURES",
+      "cluster": "singleton",
+      "total_anchors": 6,
+      "found_anchors": 6,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "E2E-LEARNING",
+      "cluster": "singleton",
+      "total_anchors": 6,
+      "found_anchors": 6,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "BEFORE-MERGE",
+      "cluster": "singleton",
+      "total_anchors": 1,
+      "found_anchors": 1,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "ISSUE-TRACKING",
+      "cluster": "singleton",
+      "total_anchors": 1,
+      "found_anchors": 1,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "PR-ISSUE-COMMENT-LANGUAGES",
+      "cluster": "singleton",
+      "total_anchors": 5,
+      "found_anchors": 5,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "REVIEW-SUBAGENT-PERMISSION",
+      "cluster": "C4",
+      "total_anchors": 4,
+      "found_anchors": 4,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "CLAIMED-WORKTREE-NO-PERMISSION",
+      "cluster": "C4",
+      "total_anchors": 5,
+      "found_anchors": 5,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "VISUAL-PROOF-PR",
+      "cluster": "C2",
+      "total_anchors": 7,
+      "found_anchors": 7,
+      "missing_anchors": [],
+      "status": "WORKING"
+    },
+    {
+      "rule_id": "PUBLISHING",
+      "cluster": "singleton",
+      "total_anchors": 1,
+      "found_anchors": 1,
+      "missing_anchors": [],
+      "status": "WORKING"
+    }
+  ],
+  "summary": {
+    "total_rules": 23,
+    "working": 23,
+    "broken": 0
+  }
+}
