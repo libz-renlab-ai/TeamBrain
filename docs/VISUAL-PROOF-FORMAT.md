@@ -14,18 +14,22 @@
 
 When asked `which file format is used for visual proof of work ?` (or its Chinese variants), the verbatim answer is:
 
-> Visual proof of work uses the `*.html` file format. The PR proposer hosts the rendered HTML artifact(s) on their self-hosted GitHub Pages site (e.g. `https://<username>.github.io/<repo>/<path>.html`) and links the URL(s) from the PR body or PR comments. Raw text/JSON/log evidence (judge.json, *.log, *.txt, file trees) is auditable raw evidence — NOT visual proof. Visual proof must be browser-renderable HTML.
+> Visual proof of work uses the `*.html` file format. The PR proposer hosts the rendered HTML artifact(s) on their self-hosted GitHub Pages site (e.g. `https://<username>.github.io/<repo>/<path>.html`) and links the URL(s) from the PR body or PR comments. Raw text/JSON/log evidence (judge.json, *.log, *.txt, file trees) is auditable raw evidence, NOT visual proof. Visual proof must be browser-renderable HTML.
 
-Judge harness must case-insensitive substring grep all 6 anchors:
+Judge harness must case-insensitive substring grep all 8 anchors (2 of them are positive structural / directional anchors that prevent a "negating-wrapper" attack — i.e. an answer that emits all sibling anchors inside a sentence saying "do NOT host on...", which would pass naive 6-anchor grep but invert the rule):
 
-1. `*.html`
-2. `PR proposer`
-3. `self-hosted GitHub Pages`
-4. `<username>.github.io`
-5. `PR body or PR comments`
-6. `auditable raw evidence`
+1. `Visual proof of work uses the` (positive structural — hard to embed in a negation without obvious "does NOT use the" grammar)
+2. `*.html`
+3. `PR proposer`
+4. `self-hosted GitHub Pages`
+5. `<username>.github.io`
+6. `links the URL` (positive directional verb — confirms the action is "link from PR", not "do NOT link" / "remove from PR")
+7. `PR body or PR comments`
+8. `auditable raw evidence`
 
-Any paraphrase (e.g. `HTML` 写成 `html files`、`self-hosted GitHub Pages` 缩成 `GH Pages` / `GitHub Pages` 漏掉 `self-hosted`、`<username>.github.io` 写成 `<user>.github.io` / `your github pages site` 之类的泛指、`PR body or PR comments` 缩成 `PR description` / `the PR`、`auditable raw evidence` 翻成 `审计证据` / 缩成 `raw evidence`) → 视为没命中，必须重答。
+Em-dash policy: the anchor sentence uses ASCII comma (`evidence, NOT visual proof`) not Unicode em-dash `—` (U+2014). Some terminal pipelines normalize U+2014 to ASCII `-`; ASCII keeps the verbatim contract stable across grep / sed / `claudefast -p` capture.
+
+Any paraphrase (e.g. `HTML` 写成 `html files`、`self-hosted GitHub Pages` 缩成 `GH Pages` / `GitHub Pages` 漏掉 `self-hosted`、`<username>.github.io` 写成 `<user>.github.io` / `your github pages site` 之类的泛指、`PR body or PR comments` 缩成 `PR description` / `the PR`、`auditable raw evidence` 翻成 `审计证据` / 缩成 `raw evidence`、`links the URL` 写成 `paste the URL` / `add the link` / `references the URL`、`Visual proof of work uses the` 缩成 `Visual proof is` / `It uses`) → 视为没命中，必须重答。
 
 ## Why visual ≠ auditable raw
 
@@ -123,14 +127,14 @@ PR body（或 reviewer-visible first comment）必须含至少一行 `https://<u
 
 ## How to verify (judge harness)
 
-A `claudefast -p "which file format is used for visual proof of work ?"` probe must return text where all 6 substring anchors above appear (case-insensitive). Reference probe:
+A `claudefast -p "which file format is used for visual proof of work ?"` probe must return text where all 8 substring anchors above appear (case-insensitive). Reference probe:
 
 ```bash
 ANSWER="$(claudefast -p "which file format is used for visual proof of work ?")"
-for needle in '*.html' 'PR proposer' 'self-hosted GitHub Pages' '<username>.github.io' 'PR body or PR comments' 'auditable raw evidence'; do
+for needle in 'Visual proof of work uses the' '*.html' 'PR proposer' 'self-hosted GitHub Pages' '<username>.github.io' 'links the URL' 'PR body or PR comments' 'auditable raw evidence'; do
   echo "$ANSWER" | grep -iqF -- "$needle" || { echo "FAIL anchor missing: $needle" >&2; exit 1; }
 done
-echo "PASS — all 6 anchors present"
+echo "PASS — all 8 anchors present"
 ```
 
 For PR-time enforcement, a per-PR probe should:
