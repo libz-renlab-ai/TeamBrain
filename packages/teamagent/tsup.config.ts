@@ -22,6 +22,15 @@ export const ENTRIES = {
   // here + to the cjs block below + noExternal-ing @teamagent/digital-twin
   // makes the bundle land alongside the other bin-*.cjs files.
   "bin-digital-twin-tap":   "../cli/src/bin-digital-twin-tap.ts",
+  // Issue #368 (v0.11.1) — the uploader daemon spawned by bin-digital-twin-tap
+  // must ship inside the published tarball. Previously the release workflow
+  // only built `teamagent`, so packages/digital-twin/dist/bin-uploader.cjs
+  // never made it into the tarball; `stageDaemonBinaryToUser` then no-op'd
+  // (source missing) and `resolveDaemonBin`'s monorepo fallback path didn't
+  // exist on a real install. Result: zero uploads on every curl-installed
+  // machine, no error. Bundling here + noExternal-ing 'ulid' below ships a
+  // self-contained `dist/bin-uploader.cjs` alongside the other staged bins.
+  "bin-uploader":           "../digital-twin/src/bin-uploader.ts",
 };
 
 const NATIVE_EXTERNAL = [
@@ -113,6 +122,8 @@ export default defineConfig([
       // Issue #299: bundle the user-level digital-twin Stop tap into the cjs
       // block so install-hook.ts's ALL_CHANNELS entry can actually register.
       "bin-digital-twin-tap":   ENTRIES["bin-digital-twin-tap"],
+      // Issue #368 (v0.11.1) — see ENTRIES comment above.
+      "bin-uploader":           ENTRIES["bin-uploader"],
     },
     format: ["cjs"],
     platform: "node",
@@ -134,6 +145,18 @@ export default defineConfig([
       "@teamagent/digital-twin",
       "zod",
       "@xenova/transformers",
+      // Issue #368 (v0.11.1) — uploader CJS bundle must inline `ulid`.
+      // `ulid` is in `teamagent/package.json` dependencies, so tsup's
+      // default auto-externalizes it. The staged `bin-uploader.cjs` runs
+      // from `~/.teamagent/digital-twin/` which has no node_modules, so a
+      // bare `require("ulid")` MODULE_NOT_FOUND-crashes the daemon →
+      // silent zero uploads. Force-bundling here mirrors the digital-twin
+      // package's own `tsup.config.ts` (commit 559fce0 / #381). Note: ESM
+      // bundles still need `ulid` external — its CJS `require("crypto")`
+      // breaks tsup's ESM `__require` shim — but CJS bundles use Node's
+      // native require, so noExternal is safe here. The ESM bin.js entry
+      // above keeps `ulid` in NATIVE_EXTERNAL unchanged.
+      "ulid",
     ],
     external: NATIVE_EXTERNAL,
     shims: true,
