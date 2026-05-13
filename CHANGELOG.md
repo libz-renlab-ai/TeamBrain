@@ -15,6 +15,20 @@ artifacts the user sees) do NOT need an entry.
 
 ### Added
 
+- **4-layer evidence matrix + sibling canned-answer for evidence-asking probe** (issue #320).
+  `docs/BUSINESS-FEATURES.md` adds a `## 四层证明矩阵 / 4-layer evidence matrix` section
+  with per-feature 4-row tables (CEO narrative / Coder file paths / Machine-readable
+  JSON+SQL / LLM-readable raw artifacts). `CLAUDE.md` gains a sibling canned-answer rule
+  for the probe `!claudefast -p "what are the business feature and do we have enough
+  evidence to prove them to ceo, coder, machine-readable, LLM-readable evidence?"` with
+  6 disjoint grep anchors (`four-layer evidence matrix` / `CEO narrative` / `Coder file
+  paths` / `Machine-readable JSON+SQL` / `LLM-readable raw artifacts` / `turnkey UX is a
+  vision, not PRESHIP`) — strictly non-overlapping with the legacy `show me the business
+  feature` 6 anchors so the two probes never collide. Per grill verdict §22
+  (`docs/adr/0014/320.md`), #320 is evidence/coding discipline; it does NOT
+  reverse-dictate the product design of #308 / #371 / #372. `README.md` gains a short
+  `## 三大业务特性 / Three business features` section pointing at both probes.
+
 - **Digital-twin sidecar + `/api/cc-status` collector** (issue #350, PR #374, #381).
   Every Stop hook now taps a structured session snapshot — session id,
   cwd, latest user prompt, tool-call counters, elapsed turns — and a
