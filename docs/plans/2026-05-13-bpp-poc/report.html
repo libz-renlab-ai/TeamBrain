@@ -190,21 +190,34 @@ ul.taskcheck li.future::before { content: '•'; color: var(--text-dim); text-al
     <span class="badge ok">✓ Spec written</span>
     <span class="badge ok">✓ Plan committed</span>
     <span class="badge ok">✓ Phase 1 implemented</span>
-    <span class="badge ok">✓ 24/24 tests passing</span>
-    <span class="badge ok">✓ Live demo verified</span>
-    <span class="badge partial">⚠ Phase 2-6 待后续 PR</span>
-    <span class="badge partial">⚠ Chrome 截图被 localhost 阻断 (改用嵌入式 terminal)</span>
+    <span class="badge ok">✓ Phase 2 (AI mining)</span>
+    <span class="badge ok">✓ Phase 3 (inbox UX)</span>
+    <span class="badge ok">✓ Phase 4 (lead+revoke+force-push)</span>
+    <span class="badge ok">✓ Phase 5 (privacy)</span>
+    <span class="badge ok">✓ Phase 6 (verify harness)</span>
+    <span class="badge ok">✓ 118+ tests passing</span>
+    <span class="badge ok">✓ Live e2e demo verified (revoke / force-push / audit chain / auth-gate)</span>
+    <span class="badge partial">⚠ 缺：真 LLM mining 调用 + SSE realtime push (production gap, doc'd in §11)</span>
   </div>
 </header>
+
+<div style="background: rgba(63,185,80,0.08); border: 1px solid var(--green); border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">
+  <strong style="color: var(--green);">UPDATE 2026-05-13 14:50 — Phase 2-6 thin-vertical 已落地</strong><br>
+  CEO 鸭说「现在就要」，鸭鸭拉了 5 个并行 agent (TEAMWORK 模式) 把 Phase 2-6 在同 session 内 ship 完。
+  共 <strong>38 个新文件 + 90+ 个新测试全 PASS</strong>，端到端 e2e demo
+  (<a href="evidence/demo-p2-p6-stdout.txt">demo-p2-p6-stdout.txt</a>) 也跑通了：lead force-push 200 /
+  非 lead 403 / lead revoke 级联 3 个 inbox / audit hash chain verify_ok=true / auth-gate 通过。
+  下方 §4.5 是 Phase 2-6 的新证据。
+</div>
 
 <h2>1. Executive Summary（一图秒懂）</h2>
 <div class="phase-bar">
   <div class="ph done"><span class="num">P1</span>Server Foundation<br/><strong>DONE ✓</strong></div>
-  <div class="ph todo"><span class="num">P2</span>AI Mining<br/>backlog</div>
-  <div class="ph todo"><span class="num">P3</span>Receiver UX<br/>backlog</div>
-  <div class="ph todo"><span class="num">P4</span>Lead Console<br/>backlog</div>
-  <div class="ph todo"><span class="num">P5</span>Privacy<br/>backlog</div>
-  <div class="ph todo"><span class="num">P6</span>Verify Harness<br/>backlog</div>
+  <div class="ph done"><span class="num">P2</span>AI Mining<br/><strong>DONE ✓</strong></div>
+  <div class="ph done"><span class="num">P3</span>Receiver UX<br/><strong>DONE ✓</strong></div>
+  <div class="ph done"><span class="num">P4</span>Lead Console<br/><strong>DONE ✓</strong></div>
+  <div class="ph done"><span class="num">P5</span>Privacy<br/><strong>DONE ✓</strong></div>
+  <div class="ph done"><span class="num">P6</span>Verify Harness<br/><strong>DONE ✓</strong></div>
 </div>
 <p>
   本 PR 交付 <strong>Phase 1 (Server Foundation)</strong> 的完整可运行 MVP：4 个 HTTP 路由 + 4 个 JSONL 存储表 + 24 个单元/集成测试。
@@ -374,6 +387,79 @@ outputDir = C:\Users\tianhaoxuan\AppData\Local\Temp\bpp-demo-N2Ryvd
 <span class="ok">━━━ DEMO COMPLETE ━━━</span></div>
 </div>
 
+<h2>4.5 Phase 2-6 Live E2E Demo (新增)</h2>
+<p>
+  鸭鸭拉了 5 个并行 agent 把 Phase 2-6 写完，鸭鸭统一接线进 mock-server (`/v1/revoke` +
+  `/v1/bp-push/force` 两条新路由) + index.ts 暴露 Phase 2-6 公开 API。然后跑了一个端到端 demo
+  (<code>npx tsx docs/plans/2026-05-13-bpp-poc/evidence/run-demo-p2-p6.ts</code>)，覆盖：
+  Wilson tier gate → push → bob inbox → lead force-push 200 → 非 lead force-push 403 →
+  lead revoke 200 (级联 3 个 inbox) → 非 lead revoke 403 → audit hash chain 3 个 event 全 verify OK →
+  auth-gate token 通过/拒绝 → 加载 Phase 6 fixture。
+</p>
+<div class="term">
+  <div class="term-header">npx tsx docs/plans/2026-05-13-bpp-poc/evidence/run-demo-p2-p6.ts</div>
+  <div class="term-body"><span class="step">━━━ Step 2 · Phase 2 Wilson + tier gate ━━━</span>
+{
+  <span class="json-key">"successes"</span>: <span class="json-number">9</span>, <span class="json-key">"failures"</span>: <span class="json-number">1</span>,
+  <span class="json-key">"confidence"</span>: <span class="json-string">"0.5958"</span>,
+  <span class="json-key">"tier"</span>: <span class="json-string">"canonical"</span>,   <span class="dim">// passes push queue gate</span>
+}
+
+<span class="step">━━━ Step 5 · Phase 4 lead force-push (HTTP 200) ━━━</span>
+{
+  <span class="json-key">"ok"</span>: <span class="json-bool">true</span>, <span class="json-key">"inbox_id"</span>: <span class="json-string">"inbox-dave_team_com-1577657a"</span>,
+  <span class="json-key">"receiver_id"</span>: <span class="json-string">"dave@team.com"</span>
+}
+
+<span class="step">━━━ Step 6 · 非 lead force-push → <span class="ok">HTTP 403 (correctly refused)</span> ━━━</span>
+{ <span class="json-key">"ok"</span>: <span class="json-bool">false</span>, <span class="json-key">"error"</span>: <span class="json-string">"not authorized: lead role required"</span> }
+
+<span class="step">━━━ Step 7 · Phase 4 lead revoke (HTTP 200) ━━━</span>
+{
+  <span class="json-key">"ok"</span>: <span class="json-bool">true</span>, <span class="json-key">"bp_id"</span>: <span class="json-string">"bp-p2p6-mock-db"</span>,
+  <span class="json-key">"revoked_inbox_count"</span>: <span class="json-number">3</span>   <span class="dim">// bob + charlie (push) + dave (forced) all cascaded</span>
+}
+
+<span class="step">━━━ Step 8 · 非 lead revoke → <span class="ok">HTTP 403 (correctly refused)</span> ━━━</span>
+{ <span class="json-key">"ok"</span>: <span class="json-bool">false</span>, <span class="json-key">"error"</span>: <span class="json-string">"not authorized: lead role required"</span> }
+
+<span class="step">━━━ Step 9 · Phase 5 audit hash chain (3 events) ━━━</span>
+{
+  <span class="json-key">"chain_ok"</span>: <span class="json-bool">true</span>,
+  <span class="json-key">"ev1_this_hash"</span>: <span class="json-string">"3a4a4566...e9ae1"</span>,
+  <span class="json-key">"ev2_prev_hash"</span>: <span class="json-string">"3a4a4566...e9ae1"</span>   <span class="dim">// linked!</span>
+  <span class="json-key">"ev2_this_hash"</span>: <span class="json-string">"0e1a6fed...213c76"</span>,
+  <span class="json-key">"ev3_prev_hash"</span>: <span class="json-string">"0e1a6fed...213c76"</span>   <span class="dim">// linked!</span>
+}
+
+<span class="step">━━━ Step 10 · Phase 5 auth-gate ━━━</span>
+{
+  <span class="json-key">"ok_token"</span>: { <span class="json-key">"ok"</span>: <span class="json-bool">true</span> },
+  <span class="json-key">"bad_token"</span>: { <span class="json-key">"ok"</span>: <span class="json-bool">false</span>, <span class="json-key">"error"</span>: <span class="json-string">"unauthorized"</span> }
+}
+
+<span class="step">━━━ Step 11 · Phase 6 tier (a) byte-diff fixture ━━━</span>
+{
+  <span class="json-key">"fixture"</span>: <span class="json-string">"tests/fixtures/scenarios/bpp-brainstorm-habit/"</span>,
+  <span class="json-key">"candidate_pattern_count"</span>: <span class="json-number">2</span>,
+  <span class="json-key">"final_tier"</span>: <span class="json-string">"canonical"</span>   <span class="dim">// fixture-replay.test.ts toEqual ✓</span>
+}
+
+<span class="ok">━━━ ALL PHASE 2-6 DEMOS COMPLETE ━━━</span></div>
+</div>
+
+<h3>Phase 2-6 测试结果</h3>
+<table>
+<tr><th>Phase</th><th>新增测试</th><th>核心模块</th></tr>
+<tr><td><strong>P2</strong> AI Mining</td><td class="green">31 pass</td><td>correction-adapter / behavior-miner / context-pattern-miner / wilson-tier-gate</td></tr>
+<tr><td><strong>P3</strong> Receiver UX</td><td class="green">18 pass</td><td>inbox UI + 3 视图切换 + statusline-bpp shim</td></tr>
+<tr><td><strong>P4</strong> Lead Console</td><td class="green">20 pass</td><td>lead-gate / revoke (级联) / force-push / lead console UI</td></tr>
+<tr><td><strong>P5</strong> Privacy</td><td class="green">17 pass</td><td>team-init CLI / auth-gate / transcript-purge / audit-hash-chain</td></tr>
+<tr><td><strong>P6</strong> Verify Harness</td><td class="green">3 pass</td><td>fixture (toEqual) + ablation skeleton + BPP-VERIFY.md</td></tr>
+<tr><td><strong>P1</strong>（已有）</td><td class="green">24 pass</td><td>types / store / handlers / e2e / mock-server</td></tr>
+<tr><td><strong>合计</strong></td><td class="green"><strong>113 BPP tests + 5 CLI team-init = 118 / 118 PASS</strong></td><td>+ <code>tsc --noEmit</code> clean on digital-twin & cli</td></tr>
+</table>
+
 <h2>5. Phase 1 文件清单</h2>
 <table>
 <tr><th>类型</th><th>路径</th><th>行数</th><th>说明</th></tr>
@@ -395,39 +481,44 @@ outputDir = C:\Users\tianhaoxuan\AppData\Local\Temp\bpp-demo-N2Ryvd
 
 <h2>6. CEO 鸭 10 个核心决策的落地映射</h2>
 <table>
-<tr><th>#</th><th>决策</th><th>Phase 1 已落地</th></tr>
-<tr><td>1</td><td>实践类型（4 类）</td><td class="green">✓ <code>BpType = 'rule' | 'skill' | 'habit' | 'context-mgmt'</code></td></tr>
-<tr><td>2</td><td>推送方完全隐形</td><td class="green">✓ server 留底 <code>pushed_by</code>；inbox API <strong>不</strong>暴露查询「我推过什么」</td></tr>
-<tr><td>3</td><td>接收方多通道同步</td><td class="yellow">⚠ 数据模型支持（<code>delivery_channels[]</code>），UI 通道落 Phase 3</td></tr>
-<tr><td>4</td><td>创建团队的人 = lead</td><td class="yellow">⚠ <code>TeamMember.role</code> 支持，CLI <code>teamagent team init</code> 落 Phase 1.6 follow-up</td></tr>
-<tr><td>5</td><td>接收方自选 3 视图</td><td class="yellow">⚠ 数据按 <code>pushed_by</code> / <code>topic</code> / <code>delivered_at</code> 排序，UI 视图落 Phase 3.1</td></tr>
-<tr><td>6</td><td>实时推送</td><td class="yellow">⚠ Push API 同步返回 200，<code>realtime-stream.ts</code> SSE 复用落 Phase 3.2</td></tr>
-<tr><td>7</td><td>只 lead 可撤回</td><td class="yellow">⚠ <code>BestPractice.revoked_*</code> 字段就位，POST <code>/v1/revoke</code> endpoint 落 Phase 4.2</td></tr>
-<tr><td>8</td><td>矛盾对并列</td><td class="yellow">⚠ <code>conflict_with[]</code> 字段就位，detector 落 Phase 2.7</td></tr>
-<tr><td>9</td><td>方案 B 中心 server</td><td class="green">✓ 化用 <code>digital-twin/mock-server</code></td></tr>
-<tr><td>10</td><td>化用现有零件</td><td class="green">✓ Phase 1 复用 <code>cc-status</code> 路径模式 + JSONL 风格 + 现有 mock-server harness</td></tr>
+<tr><th>#</th><th>决策</th><th>落地状态（Phase 2-6 完工后）</th></tr>
+<tr><td>1</td><td>实践类型（4 类）</td><td class="green">✓ enum + 4 miner: correction-adapter / behavior-miner / context-pattern-miner / (future skill-diff-miner)</td></tr>
+<tr><td>2</td><td>推送方完全隐形</td><td class="green">✓ server 留底 <code>pushed_by</code>；inbox API 不暴露查询「我推过什么」；team-init 协议明示</td></tr>
+<tr><td>3</td><td>接收方多通道同步</td><td class="green">✓ Next.js <code>/inbox</code> UI + <code>scripts/teamagent-statusline-bpp.cjs</code>；Slack/email webhook 是 §11 production gap</td></tr>
+<tr><td>4</td><td>创建团队的人 = lead</td><td class="green">✓ <code>packages/cli/src/commands/team-init.ts</code>：I-AGREE + writeMember role='lead'</td></tr>
+<tr><td>5</td><td>接收方自选 3 视图</td><td class="green">✓ <code>Client.tsx</code> 3-tab 切换：[按人 / 按主题 / 逐条]</td></tr>
+<tr><td>6</td><td>实时推送</td><td class="yellow">⚠ Push 同步 200；SSE 实时通道留待 §11 production gap（spec §4.1 SSE 模板可直接复用）</td></tr>
+<tr><td>7</td><td>只 lead 可撤回</td><td class="green">✓ <code>POST /v1/revoke</code> + lead-gate + 级联 InboxItem.status=revoked + audit。e2e 验证非 lead → 403</td></tr>
+<tr><td>8</td><td>矛盾对并列</td><td class="green">✓ <code>conflict_with[]</code> + inbox-data SEED 含 rebase↔merge 矛盾对 + UI 并列展示</td></tr>
+<tr><td>9</td><td>方案 B 中心 server</td><td class="green">✓ mock-server 现共 4 条 BPP 路由：<code>/v1/bp-push</code>, <code>/v1/inbox</code>, <code>/v1/revoke</code>, <code>/v1/bp-push/force</code></td></tr>
+<tr><td>10</td><td>化用现有零件</td><td class="green">✓ Phase 1-6 全复用 mock-server + cc-status path-safety + JSONL store + landing/overlay scaffold + calibrator-v2 Wilson 公式</td></tr>
 </table>
 
-<h2>7. <em>honest scope statement</em> — 这个 PR <strong>没</strong>做什么</h2>
+<h2>7. <em>honest scope statement</em> — 真实落地清单</h2>
 <div class="scope-card done">
-<h3>✓ 本 PR 做的事</h3>
+<h3>✓ 本 PR 做的事（Phase 1-6 thin-vertical 全落地）</h3>
 <ul>
   <li>Spec + Plan 两份完整文档（commit <code>2bf8bfb</code> + <code>f92947f</code>）</li>
-  <li>Phase 1 全部 6 个任务（commits <code>89123f3</code> / <code>70d409d</code> / <code>47ad686</code> / <code>c751508</code> / <code>1f5ea76</code>）</li>
-  <li>24 个单元 + 集成 + e2e 测试全部 PASS</li>
-  <li>Live demo 实测 7 步全绿（HTTP 200 / 400 路径都覆盖）</li>
-  <li>HTML 报告（本文件）+ SVG 数据流动画</li>
+  <li><strong>Phase 1</strong> Server Foundation：6 个 TDD 任务，24 tests</li>
+  <li><strong>Phase 2</strong> AI Mining：correction-adapter / behavior-miner / context-pattern-miner / wilson-tier-gate，31 tests（client-side simulator，真 LLM 调用是 production gap）</li>
+  <li><strong>Phase 3</strong> Receiver UX：Next.js /inbox 3 视图 + statusline-bpp shim，18 tests（accept/reject 是 console.log mock，真 POST /v1/inbox/act 是 production gap）</li>
+  <li><strong>Phase 4</strong> Lead Console：lead-gate + revoke (级联 inbox status) + force-push (forced_by_lead) + /lead/console UI，20 tests + <code>/v1/revoke</code>/<code>/v1/bp-push/force</code> 两条新路由已 wire 进 mock-server</li>
+  <li><strong>Phase 5</strong> Privacy：team-init CLI (I-AGREE) + bearer auth-gate + 30 天 transcript purge + audit hash chain (sha256 链)，17 tests</li>
+  <li><strong>Phase 6</strong> Verify Harness：tier (a) byte-diff fixture 1 个 (brainstorm-habit) + ablation skeleton + BPP-VERIFY.md 文档，3 tests</li>
+  <li><strong>合计 118 tests 全部 PASS + <code>tsc --noEmit</code> clean on digital-twin & cli</strong></li>
+  <li>Live e2e demo（<code>run-demo-p2-p6.ts</code>）端到端验证 11 步：Wilson gate / push / inbox / force-push 200 + 非 lead 403 / revoke 200 + 非 lead 403 / audit chain verify_ok=true / auth-gate / fixture 加载</li>
 </ul>
 </div>
 <div class="scope-card">
-<h3>⚠ 本 PR <strong>没有</strong>做的事（CEO 鸭请注意）</h3>
+<h3>⚠ Production Gaps（CEO 鸭请注意 — 这些是 thin-vertical 的妥协）</h3>
 <ul>
-  <li><strong>AI mining pipeline (Phase 2)</strong> —— 这是整个 BPP 唯一真正"新建"的核心。本 PR 只准备好了数据模型和管道入口；行为模式 mining LLM、context-pattern miner、git-skill-diff miner 等都还没写。当前 "BP 来自哪" 的字段全靠手工 POST 上去。</li>
-  <li><strong>接收方 UI (Phase 3)</strong> —— Inbox 3 视图（按人/主题/逐条）、statusline 📬 指示、Slack/email webhook 都还没做。本 PR 只能用 <code>curl</code> 或 <code>fetch</code> 调 API。</li>
-  <li><strong>Lead Console + 撤回 + 强制推送 (Phase 4)</strong> —— <code>POST /v1/revoke</code> endpoint 没接、强制推送的 <code>forced_by_lead</code> 字段也只是数据模型占位。</li>
-  <li><strong>隐私合规 (Phase 5)</strong> —— "I AGREE" 弹窗、HTTPS 强制、30 天 transcript 自动清理、audit log hash chain 全部 TBD。<strong>当前 <code>/v1/inbox</code> endpoint 任何 LAN 上的人都能查</strong>（继承 cc-status 已知风险）。</li>
-  <li><strong>Verify harness (Phase 6)</strong> —— tier (a) byte-diff fixture、tier (b) scipy Counterfactual Ablation、tier (c) LLM judge 都没建。当前唯一验证是 vitest 单元 + e2e。</li>
-  <li><strong>原本要做的 Chrome 截图 + gif</strong> —— Chrome 扩展无法访问 localhost <code>127.0.0.1:9787</code>，实测 <code>Frame is showing error page</code>。改用嵌入式 terminal 块 + SVG <code>&lt;animate&gt;</code> 替代。原始 stdout 完整保存在 <a href="evidence/demo-stdout.clean.txt">evidence/demo-stdout.clean.txt</a>。</li>
+  <li><strong>P2 真 LLM 调用未接</strong>：mining 用 pure-function 入参假装"已经 LLM-extracted 的 candidates"，真 LLM 客户端 (claudefast 路径 / MiniMax API key 注入 / 预算 $5/team/day) 在 spec §3.4 描述，但**本 PR 没接**。当前是 client-side simulator 验证 pipeline 形状对，不是 production miner。</li>
+  <li><strong>P3 SSE 实时推送 + accept→compile 链路未接</strong>：UI 上的 ✓ accept 当前是 console.log mock；真要 ship 需要 <code>POST /v1/inbox/act</code> + 把接受的 BP 编译到 <code>~/.claude/skills/teamagent/&lt;bp_id&gt;/SKILL.md</code> 的链路（spec §4.6）。Slack/email webhook 也未实现。</li>
+  <li><strong>P4 副 lead + lead 转让未实现</strong>：当前 lead-gate 只看 role==='lead'；spec §5.5 的"副 lead 不可转让/不可移除主 lead/不可删除审计"分层尚未做。UI 上的 Revoke/Force-push modal 是 mock fetch（console.log），未接真后端 fetch。</li>
+  <li><strong>P5 HTTPS 强制 + transcript purge cron 未排程</strong>：purge 函数已写，但需要 OS-level cron / systemd timer 排定时执行；spec §6.3 的 HTTPS-only 强制 + VPC 部署也是 ops 任务，不在代码里。</li>
+  <li><strong>P6 fixture 只有 1/5</strong>：tier (a) byte-diff 缺另外 4 个 BP type 的 fixture (skill / habit-typescript / context-mgmt / conflict-pair)；tier (b) scipy Counterfactual Ablation 在 17-task corpus 上跑的真版本未集成（当前是单任务 placeholder p_value=0.01）；tier (c) LLM-judge 完全没做。详见 BPP-VERIFY.md Roadmap 表。</li>
+  <li><strong>全量 pnpm test 8 个失败 not from BPP</strong>：根仓库全量测试有 8 个 failure，集中在 <code>symphony.test.ts</code>（pre-existing，与 BPP 无关——symphony 是 worktree orchestration feature）。BPP 自有的 113 tests 全 PASS。</li>
+  <li><strong>截图 / gif 仍走嵌入路径</strong>：Chrome MCP 截图依然无法 export 到 repo 目录；本报告里的 SVG 动画 + terminal block 仍是替代品。htmlpreview.github.io 路径用于浏览器查看本报告。</li>
 </ul>
 </div>
 

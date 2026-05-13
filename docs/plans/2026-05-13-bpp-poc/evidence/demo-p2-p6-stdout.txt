@@ -1,0 +1,106 @@
+
+[36m━━━ Step 0 · server up ━━━[0m
+{
+  "url": "http://127.0.0.1:58535",
+  "outputDir": "C:\\Users\\tianhaoxuan\\AppData\\Local\\Temp\\bpp-p2-p6-demo-vcTvl0"
+}
+
+[36m━━━ Step 1 · team init (Phase 5 team-init CLI semantics) ━━━[0m
+_team/members.json: alice (lead) + bob (member)
+
+[36m━━━ Step 2 · Phase 2 Wilson + tier gate ━━━[0m
+{
+  "successes": 9,
+  "failures": 1,
+  "confidence": "0.5958",
+  "tier": "canonical",
+  "note": "tier ∈ {canonical, enforced, gold} → would enter push queue"
+}
+
+[36m━━━ Step 3 · POST /v1/bp-push (HTTP 200) ━━━[0m
+{
+  "ok": true,
+  "bp_id": "bp-p2p6-mock-db",
+  "delivered_to": [
+    "bob@team.com",
+    "charlie@team.com"
+  ]
+}
+
+[36m━━━ Step 4 · Bob inbox before revoke (HTTP 200) ━━━[0m
+{
+  "ok": true,
+  "items": [
+    {
+      "schema_version": 1,
+      "id": "inbox-bob_team_com-23f21d5b",
+      "receiver_id": "bob@team.com",
+      "bp_id": "bp-p2p6-mock-db",
+      "status": "pending",
+      "delivered_at": "2026-05-13T06:59:15.415Z",
+      "acted_at": null,
+      "forced_by_lead": false,
+      "delivery_channels": [
+        "statusline",
+        "dashboard"
+      ]
+    }
+  ]
+}
+
+[36m━━━ Step 5 · Phase 4 lead force-push (HTTP 200) ━━━[0m
+{
+  "ok": true,
+  "inbox_id": "inbox-dave_team_com-1577657a",
+  "receiver_id": "dave@team.com"
+}
+
+[36m━━━ Step 6 · Phase 4 non-lead force-push → [32mHTTP 403 (correctly refused)[0m ━━━[0m
+{
+  "ok": false,
+  "error": "not authorized: lead role required"
+}
+
+[36m━━━ Step 7 · Phase 4 lead revoke (HTTP 200) ━━━[0m
+{
+  "ok": true,
+  "bp_id": "bp-p2p6-mock-db",
+  "revoked_inbox_count": 3
+}
+
+[36m━━━ Step 8 · Phase 4 non-lead revoke → [32mHTTP 403 (correctly refused)[0m ━━━[0m
+{
+  "ok": false,
+  "error": "not authorized: lead role required"
+}
+
+[36m━━━ Step 9 · Phase 5 audit hash chain (3 events) ━━━[0m
+{
+  "chain_ok": true,
+  "ev1_this_hash": "3a4a4566b806bf88bba91fd72f2ed08f72de6c5744f5ddd769a2f0d738e69ae1",
+  "ev2_prev_hash": "3a4a4566b806bf88bba91fd72f2ed08f72de6c5744f5ddd769a2f0d738e69ae1",
+  "ev2_this_hash": "0e1a6fed98087da95514fb0c4fec88bd083a7a88121d33926f2a979c92213c76",
+  "ev3_prev_hash": "0e1a6fed98087da95514fb0c4fec88bd083a7a88121d33926f2a979c92213c76"
+}
+
+[36m━━━ Step 10 · Phase 5 auth-gate ━━━[0m
+{
+  "ok_token": {
+    "ok": true
+  },
+  "bad_token": {
+    "ok": false,
+    "error": "unauthorized"
+  }
+}
+
+[36m━━━ Step 11 · Phase 6 tier (a) byte-diff fixture ━━━[0m
+{
+  "fixture": "tests/fixtures/scenarios/bpp-brainstorm-habit/",
+  "candidate_pattern_count": 2,
+  "final_tier": "canonical",
+  "note": "fixture-replay.test.ts asserts toEqual on both; ablation script in scripts/bpp-ablation.ts"
+}
+
+[32m━━━ ALL PHASE 2-6 DEMOS COMPLETE ━━━[0m
+[2mServer: http://127.0.0.1:58535[0m
