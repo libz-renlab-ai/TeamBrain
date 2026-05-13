@@ -154,8 +154,14 @@ export function computePresenceState(
 
   if (snapshot.event === "session_start") {
     if (clampedAge <= merged.activeTtlMs) return "active";
-    if (clampedAge > merged.idleAfterMs) return "idle";
-    return "active";
+    // Once past activeTtl, the session is no longer "actively prompting" —
+    // the leader sees idle until either a UserPromptSubmit refreshes it or
+    // age crosses offlineAfter. Under default 10/10 TTLs this branch is
+    // unreachable; under custom configs where `activeTtlMs < idleAfterMs`
+    // (a leader who wants a long idle window after a brief active flash)
+    // the previous fall-through to "active" contradicted the decision
+    // order comment. Always idle past active_ttl.
+    return "idle";
   }
 
   // Unknown / future event kinds: treat any heartbeat within activeTtl as

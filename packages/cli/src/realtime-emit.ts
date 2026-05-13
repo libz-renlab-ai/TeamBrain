@@ -172,7 +172,17 @@ function buildSnapshot(input: EmitInput): CcStatusSnapshot {
     snap.context_tokens = tokens;
     snap.context_pct = Math.round((tokens / 200_000) * 100) / 100;
   }
-  if (typeof input.rawPrompt === "string" && input.rawPrompt.length > 0) {
+  // Issue #308 grill §3: opt-in raw prompt evidence. Defense-in-depth — the
+  // hook layer (bin-user-prompt-submit.ts) is the policy boundary, but a
+  // future direct caller of emitCcStatus would otherwise bypass the env
+  // gate. Re-check here so the transport refuses to send prompt content
+  // unless TEAMAGENT_REALTIME_RAW_PROMPT=1 is explicitly set, regardless of
+  // what the caller passed. /review pre-landing adversarial review #9.
+  if (
+    typeof input.rawPrompt === "string" &&
+    input.rawPrompt.length > 0 &&
+    readEnv("TEAMAGENT_REALTIME_RAW_PROMPT") === "1"
+  ) {
     snap.raw_prompt = input.rawPrompt;
   }
   return snap;

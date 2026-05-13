@@ -145,6 +145,23 @@ describe("computePresenceState — edge cases", () => {
     expect(state).toBe("idle");
   });
 
+  it("session_start past active_ttl returns idle even when idle_after > active_ttl", () => {
+    // Regression for /review adversarial finding #4: prior fall-through
+    // returned "active" when activeTtlMs < idleAfterMs and age was between
+    // them, contradicting the decision-order spec. Under a 5min/15min
+    // config, a 10-min-old session_start must be idle, not active.
+    const state = computePresenceState(
+      snap("session_start", 10 * 60_000),
+      ANCHOR_MS,
+      {
+        activeTtlMs: 5 * 60_000,
+        idleAfterMs: 15 * 60_000,
+        offlineAfterMs: 60 * 60_000,
+      },
+    );
+    expect(state).toBe("idle");
+  });
+
   it("unknown event kind within active_ttl renders active", () => {
     const state = computePresenceState(
       { event: "status", ts: new Date(ANCHOR_MS - 30_000).toISOString() },

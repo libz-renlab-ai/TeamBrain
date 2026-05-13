@@ -228,15 +228,34 @@ describe("emitCcStatus", () => {
       expect(body.raw_prompt).toBeUndefined();
     });
 
-    it("threads raw_prompt to snapshot when caller passes it", async () => {
-      const body = await captureBody(() => {
+    it("threads raw_prompt only when TEAMAGENT_REALTIME_RAW_PROMPT=1 (defense in depth)", async () => {
+      // Without the env opt-in, the transport drops raw_prompt regardless
+      // of what the caller passed. Even a direct caller bypassing the hook
+      // policy gate (bin-user-prompt-submit.ts) cannot exfiltrate prompt
+      // text. /review adversarial finding #9.
+      const bodyWithoutOptIn = await captureBody(() => {
         emitCcStatus({
           event: "user_prompt_submit",
-          sessionId: "s-3",
+          sessionId: "s-3a",
           rawPrompt: "hello presence",
         });
       });
-      expect(body.raw_prompt).toBe("hello presence");
+      expect(bodyWithoutOptIn.raw_prompt).toBeUndefined();
+
+      // With the env opt-in, raw_prompt is threaded through.
+      process.env.TEAMAGENT_REALTIME_RAW_PROMPT = "1";
+      try {
+        const bodyWithOptIn = await captureBody(() => {
+          emitCcStatus({
+            event: "user_prompt_submit",
+            sessionId: "s-3b",
+            rawPrompt: "hello presence",
+          });
+        });
+        expect(bodyWithOptIn.raw_prompt).toBe("hello presence");
+      } finally {
+        delete process.env.TEAMAGENT_REALTIME_RAW_PROMPT;
+      }
     });
 
     it("stop event accepts no rawPrompt (caller never sets it)", async () => {
