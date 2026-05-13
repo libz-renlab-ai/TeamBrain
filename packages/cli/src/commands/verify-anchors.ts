@@ -61,7 +61,7 @@ export class VerifyAnchorsArgError extends Error {
   }
 }
 
-const KNOWN_FLAGS = new Set(["--json", "--claude-md", "--docs-root", "--help"]);
+const KNOWN_FLAGS = new Set(["--json", "--claude-md", "--docs-root"]);
 
 export function parseVerifyAnchorsArgs(argv: string[]): VerifyAnchorsOptions {
   const opts: VerifyAnchorsOptions = {};
@@ -79,8 +79,6 @@ export function parseVerifyAnchorsArgs(argv: string[]): VerifyAnchorsOptions {
       i++;
     } else if (a.startsWith("--docs-root=")) {
       opts.docsRoot = a.slice("--docs-root=".length);
-    } else if (a === "--help") {
-      // handled by caller
     } else if (a.startsWith("--")) {
       const base = a.split("=")[0]!;
       if (!KNOWN_FLAGS.has(base)) {
@@ -186,10 +184,15 @@ export function parseAnchors(content: string): AnchorBlock[] {
       substrings = extractTopLevelBackticks(listSection);
     }
 
-    // Case sensitivity hint
+    // Case sensitivity hint. Look ONLY at the assertion stanza (before the
+    // first `：` substring-list separator), not at trailing prose like the
+    // Gate 2 mention in CLAUDE.md L173 which references a different case
+    // mode for a secondary assertion. Defaults to "i" if neither tag appears.
     let caseMode: "i" | "s" = "i";
-    if (/case-sensitive/i.test(line)) caseMode = "s";
-    else if (/case-insensitive/i.test(line)) caseMode = "i";
+    const caseStanzaEnd = line.indexOf("：");
+    const caseStanza = caseStanzaEnd > 0 ? line.slice(0, caseStanzaEnd) : line;
+    if (/case-sensitive/i.test(caseStanza)) caseMode = "s";
+    else if (/case-insensitive/i.test(caseStanza)) caseMode = "i";
 
     // Walk backward to find nearest blockquote (anchor sentence)
     let anchorLine = -1;

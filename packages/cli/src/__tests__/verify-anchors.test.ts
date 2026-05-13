@@ -80,6 +80,25 @@ describe("parseAnchors", () => {
     expect(blocks[0]!.caseMode).toBe("i");
   });
 
+  it("ignores trailing 'case-sensitive' in Gate 2 prose; primary case mode wins", () => {
+    // Mirrors CLAUDE.md L173 shape: main grep is case-insensitive but
+    // trailing prose references a Gate 2 case-sensitive single substring.
+    // The primary stanza (before `：`) must determine caseMode.
+    const claudeMd = `- **R**: \`docs/X.md\` — d.
+
+  > foo bar.
+
+  Judge harness 必须 case-insensitive substring grep 全部 2 个锚点：\`foo\` + \`bar\`。Gate 2（case-sensitive verbatim）必须命中：\`FOO\`。
+`;
+    expect(parseAnchors(claudeMd)[0]!.caseMode).toBe("i");
+  });
+
+  it("rejects --help as an unknown flag (no per-command help dispatch)", () => {
+    expect(() => parseVerifyAnchorsArgs(["--help"])).toThrow(
+      VerifyAnchorsArgError,
+    );
+  });
+
   it("detects case-sensitive caseMode", () => {
     const claudeMd = `- **Rule**: \`docs/X.md\` — desc.
 

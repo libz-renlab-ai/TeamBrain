@@ -21,8 +21,10 @@ RUN_ID="$(date +%Y%m%dT%H%M%S)"
 EVID=".judge/verify-anchors-${RUN_ID}"
 mkdir -p "${EVID}"
 
-# Probe 1: live harness against project CLAUDE.md
-pnpm teamagent verify-anchors --json \
+# Probe 1: live harness against project CLAUDE.md.
+# IMPORTANT: invoke tsx directly, NOT through pnpm — pnpm prepends a 2-line
+# "> teamagent@0.1.0 ..." header to stdout that makes the file unparseable as JSON.
+npx tsx packages/cli/src/bin.ts verify-anchors --json \
   > "${EVID}/output.json" 2> "${EVID}/stderr.log"
 echo $? > "${EVID}/exit_code.txt"
 
