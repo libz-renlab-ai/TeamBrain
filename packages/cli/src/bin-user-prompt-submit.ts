@@ -124,11 +124,23 @@ async function main(): Promise<void> {
       // this is the second channel. We fire BEFORE the (slow) rule retrieval
       // path so the kanban reflects "what prompt just landed" as early as
       // possible, even when the rest of the hook is still running.
+      //
+      // Issue #308 grill §3: when the leader has explicitly opted into raw
+      // prompt evidence via TEAMAGENT_REALTIME_RAW_PROMPT=1, thread the
+      // user's prompt text to the snapshot so the receiver can persist it to
+      // raw_events for evidence / replay. Default OFF — the hook is the
+      // policy boundary; realtime-emit is the transport. emitCcStatus also
+      // enforces loopback-only-by-default + TEAMAGENT_REALTIME_ALLOW_REMOTE,
+      // so even with the env opt-in a misconfigured remote URL still fails
+      // closed.
       try {
+        const includeRawPrompt =
+          ctx.env.TEAMAGENT_REALTIME_RAW_PROMPT === "1" && prompt.length > 0;
         emitCcStatus({
           event: "user_prompt_submit",
           ...(sessionId ? { sessionId } : {}),
           cwd,
+          ...(includeRawPrompt ? { rawPrompt: prompt } : {}),
         });
       } catch { /* never propagate */ }
       const sessionsDir = path.join(home, ".teamagent", "sessions");

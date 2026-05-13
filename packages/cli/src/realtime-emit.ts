@@ -76,6 +76,16 @@ export interface EmitInput {
   readonly model?: string;
   /** Optional context token count from the hook payload. */
   readonly contextTokens?: number;
+  /**
+   * Optional raw user prompt text. Issue #308 grill §3 mandates "完整存 raw
+   * prompt" for leader-side evidence / replay. The caller (UserPromptSubmit
+   * hook) is responsible for gating this behind the
+   * `TEAMAGENT_REALTIME_RAW_PROMPT=1` env opt-in — emit threads whatever it
+   * receives directly to `CcStatusSnapshot.raw_prompt`. Empty string is
+   * treated as "unset" (so an opt-in caller can still skip individual
+   * empty prompts).
+   */
+  readonly rawPrompt?: string;
 }
 
 const TIMEOUT_MS = 50;
@@ -161,6 +171,19 @@ function buildSnapshot(input: EmitInput): CcStatusSnapshot {
     const tokens = Math.floor(input.contextTokens);
     snap.context_tokens = tokens;
     snap.context_pct = Math.round((tokens / 200_000) * 100) / 100;
+  }
+  // Issue #308 grill §3: opt-in raw prompt evidence. Defense-in-depth — the
+  // hook layer (bin-user-prompt-submit.ts) is the policy boundary, but a
+  // future direct caller of emitCcStatus would otherwise bypass the env
+  // gate. Re-check here so the transport refuses to send prompt content
+  // unless TEAMAGENT_REALTIME_RAW_PROMPT=1 is explicitly set, regardless of
+  // what the caller passed. /review pre-landing adversarial review #9.
+  if (
+    typeof input.rawPrompt === "string" &&
+    input.rawPrompt.length > 0 &&
+    readEnv("TEAMAGENT_REALTIME_RAW_PROMPT") === "1"
+  ) {
+    snap.raw_prompt = input.rawPrompt;
   }
   return snap;
 }

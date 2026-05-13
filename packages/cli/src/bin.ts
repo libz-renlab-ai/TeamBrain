@@ -180,6 +180,7 @@ import {
   renderPackList,
   renderPackRemove,
 } from "./commands/pack.js";
+import { executePresence } from "./commands/presence.js";
 import {
   executeDigitalTwin,
   parseDigitalTwinArgs,
@@ -821,6 +822,35 @@ async function main(): Promise<void> {
           process.exit(2);
         }
         throw err;
+      }
+      return;
+    }
+    case "presence": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage: teamagent presence\n" +
+          "\n" +
+          "Probes ${TEAMAGENT_REALTIME_URL}/api/cc-status/latest for the\n" +
+          "current teammate's latest snapshot and prints the derived green\n" +
+          "light state (active | idle | offline | error). One-line output.\n" +
+          "\n" +
+          "Env:\n" +
+          "  TEAMAGENT_REALTIME_URL    receiver base URL (required for live state)\n" +
+          "  TEAMAGENT_REALTIME_TOKEN  optional bearer\n" +
+          "\n" +
+          "Issue #308 grill verdict §11: presence = green/yellow/gray/red.\n",
+        );
+        return;
+      }
+      try {
+        const result = await executePresence({});
+        process.stdout.write(result.stdout);
+        if (result.exitCode !== 0) process.exit(result.exitCode);
+      } catch (err) {
+        process.stderr.write(
+          `${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(2);
       }
       return;
     }
