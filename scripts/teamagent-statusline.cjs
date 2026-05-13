@@ -82,6 +82,30 @@ function resolveProjectDbPath(cwd) {
   return direct;
 }
 
+// issue #306 — surface the project name as a presence field. Worktree-aware:
+// when cwd is a `git worktree` checkout the basename is the worktree name
+// (e.g. `issue-306`), not the repo name (`TeamBrain`). We reuse the same
+// main-checkout walk-up that resolveProjectDbPath already does so the rendered
+// project name stays stable across worktrees of the same repo. Per grill verdict
+// §12 (B), the statusline is a local presence/health view; a `项目:<name>` field
+// directly answers the "which repo am I in" question without overstepping into
+// #326's full landing→init→statusline RESCOPE territory.
+function getProjectName(cwd) {
+  try {
+    const mainRoot = findMainCheckoutFromWorktree(cwd);
+    const root = mainRoot || cwd;
+    if (typeof root !== "string" || root.length === 0) return "unknown";
+    const base = path.basename(root);
+    if (!base || base === "." || base === "/" || base === "\\") return "unknown";
+    // Statusline width is precious — cap long names. Drive-letter-only or
+    // pathological inputs fall through `path.basename` to the input itself,
+    // which the cap also catches.
+    return base.length > 32 ? base.slice(0, 29) + "..." : base;
+  } catch {
+    return "unknown";
+  }
+}
+
 const PROJECT_DB = resolveProjectDbPath(process.cwd());
 const GLOBAL_DB = path.join(os.homedir(), ".teamagent", "global.db");
 const EVENTS_DB = path.join(os.homedir(), ".teamagent", "events.db");
@@ -814,8 +838,14 @@ function main() {
   const ccFields = buildCcFields(cc);
   const ccSegment = ccFields.length > 0 ? ` | ${ccFields.join(" | ")}` : "";
 
+  // issue #306 — project name surfaces between the existing 4-field prefix
+  // (TeamAgent | 规则 | 帮过 | 拦过) and any CC stdin fields, so existing tests
+  // that pin the exact 4-field prefix substring keep passing while new
+  // presence info (which repo this session is in) becomes visible at a glance.
+  const projectName = getProjectName(process.cwd());
+
   process.stdout.write(
-    `TeamAgent | 规则:${formatMetric(count)} | 帮过:${formatMetric(helpedToday)}今/${formatMetric(helpedWeek)}周 | 拦过:${formatMetric(riskToday)}今${ccSegment} | ${hint}`,
+    `TeamAgent | 规则:${formatMetric(count)} | 帮过:${formatMetric(helpedToday)}今/${formatMetric(helpedWeek)}周 | 拦过:${formatMetric(riskToday)}今 | 项目:${projectName}${ccSegment} | ${hint}`,
   );
 
   // issue #350 — after the status row is rendered, best-effort push a CC
