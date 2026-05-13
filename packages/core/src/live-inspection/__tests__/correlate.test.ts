@@ -64,19 +64,12 @@ describe("correlate", () => {
     expect(out.timeline).toHaveLength(1);
   });
 
-  it("counts pre-tool deny via permissionDecision payload", () => {
+  it("counts hook-pre.blocked as preDenied (matched/warned do not count)", () => {
     const events = [
-      evt("hook-pre.matched", "2026-05-13T10:00:00Z", {
-        // payload is appended via SqliteEventLog hydrate; we mimic the
-        // hydrated shape directly here.
-        ...({ permissionDecision: "deny" } as Partial<PersistedEvent>),
-      }),
-      evt("hook-pre.matched", "2026-05-13T10:05:00Z", {
-        ...({ permissionDecision: "allow" } as Partial<PersistedEvent>),
-      }),
-      evt("hook-pre.matched", "2026-05-13T10:10:00Z", {
-        ...({ permissionDecision: "deny" } as Partial<PersistedEvent>),
-      }),
+      evt("hook-pre.blocked", "2026-05-13T10:00:00Z"),
+      evt("hook-pre.matched", "2026-05-13T10:05:00Z"),
+      evt("hook-pre.blocked", "2026-05-13T10:10:00Z"),
+      evt("hook-pre.warned", "2026-05-13T10:15:00Z"),
     ];
     const out = correlate({
       events,
@@ -86,7 +79,7 @@ describe("correlate", () => {
       window: WINDOW,
     });
     expect(out.counts.preDenied).toBe(2);
-    expect(out.counts.events).toBe(3);
+    expect(out.counts.events).toBe(4);
   });
 
   it("counts narrative recurrence and prompt injections", () => {

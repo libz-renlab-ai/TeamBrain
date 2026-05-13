@@ -42,17 +42,11 @@ export function correlate(input: CorrelateInput): CorrelateOutput {
     if (e.timestamp < since || e.timestamp > until) continue;
     timeline.push({ kind: "event", at: e.timestamp, event: e });
     counts.events++;
-    if (
-      e.kind === "hook-pre.matched" ||
-      e.kind === "hook-pre.blocked" ||
-      e.kind === "hook-pre.warned"
-    ) {
-      // PreToolUse permissionDecision deny lives in the `payload` blob (see
-      // SqliteEventLog hydrate): the union-type kind alone is insufficient.
-      const decision = (e as unknown as { permissionDecision?: string })
-        .permissionDecision;
-      if (decision === "deny") counts.preDenied++;
-    }
+    // pre-tool-use-handler.ts emits `hook-pre.blocked` when TeamAgent's
+    // block enforcement fires (returns permissionDecision="allow" to Claude
+    // but records the would-deny intent via the event kind itself —
+    // permissionDecision is NOT persisted). Count those.
+    if (e.kind === "hook-pre.blocked") counts.preDenied++;
     if (e.kind === "ai.narrative.recurred") counts.narrativeRecurred++;
     // user-prompt-injected lives in attribution channel; M4-A also persists
     // it as `ai.narrative.injected` to events.db. Both kinds count.

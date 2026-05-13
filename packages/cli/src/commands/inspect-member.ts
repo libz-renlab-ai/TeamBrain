@@ -377,11 +377,7 @@ function fakeAbnormalEvents(
     });
   };
   if (kind === "repeated_deny") {
-    for (let i = 0; i < 3; i++) {
-      push("hook-pre.matched", {
-        ...({ permissionDecision: "deny" } as Partial<PersistedEvent>),
-      });
-    }
+    for (let i = 0; i < 3; i++) push("hook-pre.blocked");
   } else if (kind === "education_loop") {
     for (let i = 0; i < 3; i++) push("ai.narrative.recurred");
   } else if (kind === "stuck") {
