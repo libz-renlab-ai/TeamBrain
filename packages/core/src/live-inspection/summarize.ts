@@ -29,8 +29,9 @@ export function summarize(result: InspectionResult): string {
   const lines: string[] = [];
   lines.push(`## Inspection summary`);
   lines.push("");
-  lines.push(`- **member**: \`${result.member}\``);
-  if (result.project) lines.push(`- **project**: \`${result.project}\``);
+  lines.push(`- **member**: \`${escapeMdInline(result.member)}\``);
+  if (result.project)
+    lines.push(`- **project**: \`${escapeMdInline(result.project)}\``);
   lines.push(
     `- **window**: ${result.window.since} → ${result.window.until}`
   );
