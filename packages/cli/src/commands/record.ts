@@ -114,7 +114,15 @@ export function parseRecordArgs(rest: string[]): RecordParsedArgs {
     case 'import': {
       const file = rest[1];
       if (!file) {
-        throw new RecordArgError('Usage: teamagent record import <file> [--label <l>]');
+        // Issue #310: audio may be recorded off-device (phone / external recorder) and
+        // imported later — discoverability fix, mention the off-device path inline so
+        // the user does not need to read docs to discover it.
+        throw new RecordArgError(
+          'Usage: teamagent record import <file> [--label <l>]\n' +
+            '  <file> may be any audio file ffmpeg accepts (m4a / wav / mp3 / ogg / opus / flac).\n' +
+            '  Common recipe: record on phone (voice memo / phone recorder), transfer to laptop,\n' +
+            '  then `teamagent record import <file>` — no need to open the laptop while recording.',
+        );
       }
       // Issue #296: a transcript JSON file belongs to `teamagent recording`
       // (Recording Memory), not this audio recorder. Catch the wrong-tool
