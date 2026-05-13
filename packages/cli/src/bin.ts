@@ -34,6 +34,13 @@ import {
   renderM5StatusResult,
 } from "./commands/m5-status.js";
 import {
+  executeInspectMember,
+  parseInspectMemberArgs,
+  renderInspectMemberHelp,
+  renderInspectMemberResult,
+  InspectMemberError,
+} from "./commands/inspect-member.js";
+import {
   runM5Publish,
   parseM5PublishArgs,
   renderM5PublishResult,
@@ -392,6 +399,26 @@ async function main(): Promise<void> {
       const opts = parseM5PublishArgs(rest);
       const result = await runM5Publish(opts);
       process.stdout.write(renderM5PublishResult(result) + "\n");
+      return;
+    }
+    case "inspect-member": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(renderInspectMemberHelp() + "\n");
+        return;
+      }
+      try {
+        const opts = parseInspectMemberArgs(rest);
+        const out = await executeInspectMember(opts);
+        process.stdout.write(renderInspectMemberResult(out) + "\n");
+      } catch (err) {
+        if (err instanceof InspectMemberError) {
+          process.stderr.write(`inspect-member: ${err.message}\n`);
+          process.stderr.write(renderInspectMemberHelp() + "\n");
+          process.exitCode = 2;
+          return;
+        }
+        throw err;
+      }
       return;
     }
     case "pitfall": {

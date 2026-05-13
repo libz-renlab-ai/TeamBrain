@@ -22,3 +22,7 @@ export {
   runInstallStateStoreContract,
   InMemoryInstallStateStore,
 } from "./__tests__/install-state-store-contract.js";
+export {
+  runGitHubActivityPortContract,
+  InMemoryGitHubActivityPort,
+} from "./__tests__/github-activity-port-contract.js";
