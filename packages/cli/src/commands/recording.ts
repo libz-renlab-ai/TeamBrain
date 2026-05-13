@@ -534,6 +534,22 @@ export function parseRecordingArgs(argv: string[]): RecordingCommandOptions {
   if (opts.action === "import" && !opts.filePath) {
     throw new Error("recording import requires --file <path>");
   }
+  // Issue #296: `teamagent recording` (Recording Memory, transcript JSON) is
+  // distinct from `teamagent record` (digital-twin audio recorder). When the
+  // user passes an audio file here, the bare JSON.parse error downstream is
+  // unhelpful — redirect to the right subsystem instead.
+  if (
+    opts.action === "import" &&
+    opts.filePath &&
+    /\.(ogg|opus|wav|mp3|m4a|flac|webm|aac)$/i.test(opts.filePath)
+  ) {
+    throw new Error(
+      `recording import expects a transcript JSON file, got an audio file (${opts.filePath}). ` +
+        `Did you mean 'teamagent record import ${opts.filePath}'? ` +
+        `'teamagent recording' is the Recording Memory subsystem (transcript-first); ` +
+        `'teamagent record' is the digital-twin audio recorder. See 'teamagent record --help'.`,
+    );
+  }
   if (opts.action === "search" && !opts.query) {
     throw new Error("recording search requires --query <text>");
   }
@@ -564,7 +580,7 @@ export async function executeRecording(
         {
           name: "import",
           usage: "teamagent recording import --file <material.json>",
-          output: "imports transcript-first recording material",
+          output: "imports transcript JSON (NOT audio — use 'teamagent record import' for audio files)",
         },
         {
           name: "search",

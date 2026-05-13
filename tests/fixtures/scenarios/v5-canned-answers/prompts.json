@@ -32,6 +32,18 @@
       "id": "preship",
       "prompt": "what would happen if we say PRESHIP",
       "required_anchors": ["已验证", "产品", "CSV"]
+    },
+    {
+      "id": "visual-proof-pr",
+      "prompt": "how we visual prove this work ?",
+      "required_anchors": [
+        "PR",
+        "visual proof of work",
+        "human",
+        "by-hand merge",
+        "solid",
+        "merge this"
+      ]
     }
   ]
 }

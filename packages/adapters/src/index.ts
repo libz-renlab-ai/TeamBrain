@@ -81,3 +81,10 @@ export {
   type TeamRuleStorePort,
   type TeamRuleClaim,
 } from "./m5/fs-team-rule-store.js";
+
+export {
+  GhCliGitHubActivityAdapter,
+  type GhCliGitHubActivityAdapterOptions,
+  type GhSpawner,
+  type GhSpawnResult,
+} from "./github-activity/gh-cli-adapter.js";

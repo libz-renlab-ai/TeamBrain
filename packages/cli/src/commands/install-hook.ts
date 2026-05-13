@@ -184,17 +184,25 @@ function defaultDigitalTwinEntry(): string {
  * Issue #146 install-hook TODO — default source path for `bin-uploader.cjs`
  * (the digital-twin uploader daemon spawned by `bin-digital-twin-tap.cjs`).
  *
- * Path mirrors the monorepo fallback used by `resolveDaemonBin` in
- * `bin-digital-twin-tap.ts`: cli package's `../digital-twin/dist/bin-uploader.cjs`.
- * For npm-flat layouts where digital-twin is colocated with cli, callers
- * pass `daemonBinaryEntry` through `InstallHookOptions`. The staging helper
- * `stageDaemonBinaryToUser` is best-effort: if the source is missing (e.g.
- * the digital-twin package wasn't built in this worktree), the install
- * proceeds without the bundled binary and `resolveDaemonBin`'s runtime
- * self-install path still serves as a safety net.
+ * Issue #368 (v0.11.1) — now resolves to `<cliRoot>/dist/bin-uploader.cjs`,
+ * the same dist directory the other staged hook bins come from. Previously
+ * this pointed at `<cliRoot>/../digital-twin/dist/bin-uploader.cjs`, which
+ * exists only in a monorepo checkout: in the published tarball there's no
+ * sibling `digital-twin` package, so `stageDaemonBinaryToUser` silently
+ * no-op'd ("source missing") and `resolveDaemonBin`'s monorepo fallback
+ * (also pointing at a non-existent path) returned null. Net effect on
+ * every curl-installed machine: zero uploads, no error.
+ *
+ * Fix flow:
+ *   1. teamagent tsup.config (release tarball) builds bin-uploader.cjs into
+ *      packages/teamagent/dist → tarball ships it at <install>/dist/.
+ *   2. cli tsup.hook.config (monorepo dev) builds bin-uploader.cjs into
+ *      packages/cli/dist → matches cliRoot() walk-up in dev.
+ *   3. defaultDaemonBinaryEntry returns <cliRoot>/dist/bin-uploader.cjs;
+ *      both layouts above land it where this expects.
  */
 function defaultDaemonBinaryEntry(): string {
-  return path.join(cliRoot(), "..", "digital-twin", "dist", "bin-uploader.cjs");
+  return path.join(cliRoot(), "dist", "bin-uploader.cjs");
 }
 
 /**

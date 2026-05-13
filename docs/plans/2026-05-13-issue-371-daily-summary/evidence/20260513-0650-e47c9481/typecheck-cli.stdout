@@ -1,0 +1,4 @@
+
+> @teamagent/cli@0.1.0 typecheck /Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/cli
+> tsc --noEmit
+

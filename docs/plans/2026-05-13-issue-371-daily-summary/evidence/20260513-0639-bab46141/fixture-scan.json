@@ -1,0 +1,33 @@
+{
+  "date": "2026-05-13",
+  "windowStartMs": 1778601600000,
+  "windowEndMs": 1778654600498,
+  "projects": [
+    {
+      "displayName": "OtherRepo",
+      "canonicalCwd": "/fake/project/OtherRepo",
+      "sessionCount": 1,
+      "userTurnCount": 1,
+      "assistantCharCount": 0,
+      "firstUserExcerpt": "solo work in other repo",
+      "lastUserExcerpt": "solo work in other repo",
+      "toolsUsed": [],
+      "hadWorktreeSession": false
+    },
+    {
+      "displayName": "TeamBrain",
+      "canonicalCwd": "/fake/project/TeamBrain",
+      "sessionCount": 2,
+      "userTurnCount": 2,
+      "assistantCharCount": 12,
+      "firstUserExcerpt": "worktree task1 implementation",
+      "lastUserExcerpt": "host repo morning standup",
+      "toolsUsed": [],
+      "hadWorktreeSession": true
+    }
+  ],
+  "worktreeMergedCount": 1,
+  "skippedSessionCount": 0,
+  "triggeredBy": "cli",
+  "archivedPath": "/var/folders/ty/f0pf8_w91zb3j4fpjd0zrhvm0000gn/T/tmp.u7j2Y5PQlY/daily/2026-05-13.md"
+}
