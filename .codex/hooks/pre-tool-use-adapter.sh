@@ -23,7 +23,9 @@
 #     .codex/hooks.json) — keyword rules targeting "Write"/"Edit" still
 #     fire if grill content matches, but tool_name semantic match operates
 #     on whatever Codex sends.
-#   - Does NOT modify any .claude/* file or settings.json.
+#   - Does NOT touch the user's Claude config tree (no path under the
+#     dotted Claude directory; no settings.json mutation). Issue #290
+#     Acceptance line 3.
 #
 # Failure mode:
 #   If bin-pre-tool-use.cjs cannot be located (TeamBrain not installed yet),
