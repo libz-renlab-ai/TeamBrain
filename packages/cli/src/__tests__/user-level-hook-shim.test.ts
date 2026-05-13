@@ -4,7 +4,10 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 
-import { buildUserLevelHookCommand } from "../lib/user-level-hook-shim.js";
+import {
+  buildUserLevelHookCommand,
+  HOOK_NODE_VERSION_INJECT_BODY,
+} from "../lib/user-level-hook-shim.js";
 
 /**
  * Issue #209 regression set. The two required behaviours of the shim are:
@@ -22,7 +25,7 @@ describe("buildUserLevelHookCommand — shim shape", () => {
     // Body is path-free — path goes through positional argv. This is what
     // makes the shim robust to apostrophes in $HOME (regression test below).
     expect(cmd.startsWith("bash -c '")).toBe(true);
-    expect(cmd).toContain(`'[ -f "$1" ] || exit 0; exec node "$1"'`);
+    expect(cmd).toContain(`[ -f "$1" ] || exit 0`);
     expect(cmd).toContain("|| exit 0");
     // The path appears AFTER the body, as the trailing argv (preceded by
     // `_` placeholder for $0).
@@ -30,6 +33,24 @@ describe("buildUserLevelHookCommand — shim shape", () => {
     // No path interpolation inside the body — guards against re-introducing
     // the inline form.
     expect(cmd).not.toContain("[ -f /abs/path/bin-stop.cjs ]");
+  });
+
+  it("issue #445: shim body branches Node version to inject --experimental-sqlite on 22.5+ and 23.0-23.4", () => {
+    // Body contract — keep the shape stable so install-hook generated
+    // settings.json entries are forward-compatible. Three anchors:
+    //   1) version probe via `node -p process.versions.node`
+    //   2) case match against 22.[5-9].*|22.[1-9][0-9].*|23.[0-4].*
+    //   3) flag-injected exec on match, plain exec on default
+    expect(HOOK_NODE_VERSION_INJECT_BODY).toContain(
+      "v=$(node -p process.versions.node",
+    );
+    expect(HOOK_NODE_VERSION_INJECT_BODY).toContain(
+      "22.[5-9].*|22.[1-9][0-9].*|23.[0-4].*",
+    );
+    expect(HOOK_NODE_VERSION_INJECT_BODY).toContain(
+      'exec node --experimental-sqlite "$1"',
+    );
+    expect(HOOK_NODE_VERSION_INJECT_BODY).toContain('*) exec node "$1"');
   });
 
   it("normalises Windows backslash paths to forward slashes", () => {
@@ -133,6 +154,80 @@ process.stdin.on("end", () => {
 
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
+  });
+
+  /**
+   * Issue #445: stub the `node` binary on PATH with a tiny shell that
+   * (a) reports a configurable version when invoked as `node -p
+   * process.versions.node`, (b) echoes its own argv to stdout when invoked
+   * with any other args. The shim runs against this stubbed `node` and we
+   * inspect whether `--experimental-sqlite` made it into the exec argv.
+   *
+   * This catches a regression where the case-statement match falls through
+   * (e.g. someone simplifies the glob and drops `22.[1-9][0-9].*` so
+   * 22.10–22.99 stop getting the flag) without needing real Node 23.3 on
+   * the test runner.
+   */
+  function runShimWithFakeNode(versionToReport: string): {
+    status: number | null;
+    stdout: string;
+    stderr: string;
+  } {
+    const fakeBin = path.join(tmpDir, "fake-node-bin");
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeNode = path.join(fakeBin, "node");
+    // Bundle exists so `[ -f "$1" ]` passes.
+    const bundle = path.join(tmpDir, "bin-stop.cjs");
+    fs.writeFileSync(bundle, "// noop\n", "utf-8");
+    // Stub `node`:
+    //   * `node -p process.versions.node` → echo version, exit 0
+    //   * any other argv (the actual exec call from the shim) → print argv,
+    //     exit 0 so we can assert on what the shim was about to exec.
+    fs.writeFileSync(
+      fakeNode,
+      `#!/usr/bin/env bash\n` +
+        `if [ "$1" = "-p" ] && [ "$2" = "process.versions.node" ]; then\n` +
+        `  echo "${versionToReport}"\n` +
+        `  exit 0\n` +
+        `fi\n` +
+        `echo "fake-node-argv: $@"\n` +
+        `exit 0\n`,
+      { mode: 0o755, encoding: "utf-8" },
+    );
+    const cmd = buildUserLevelHookCommand(bundle);
+    const r = spawnSync("bash", ["-c", cmd], {
+      encoding: "utf-8",
+      env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+    });
+    return { status: r.status, stdout: r.stdout, stderr: r.stderr };
+  }
+
+  it("issue #445: Node 23.3.0 → shim execs `node --experimental-sqlite <bundle>`", () => {
+    const r = runShimWithFakeNode("23.3.0");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("fake-node-argv: --experimental-sqlite");
+  });
+
+  it("issue #445: Node 22.10.0 → shim still injects flag (covers 22.[1-9][0-9].* glob)", () => {
+    const r = runShimWithFakeNode("22.10.0");
+    expect(r.stdout).toContain("fake-node-argv: --experimental-sqlite");
+  });
+
+  it("issue #445: Node 23.5.0 → shim execs plain `node <bundle>` (no flag)", () => {
+    const r = runShimWithFakeNode("23.5.0");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("fake-node-argv:");
+    expect(r.stdout).not.toContain("--experimental-sqlite");
+  });
+
+  it("issue #445: Node 24.0.0 → no flag", () => {
+    const r = runShimWithFakeNode("24.0.0");
+    expect(r.stdout).not.toContain("--experimental-sqlite");
+  });
+
+  it("issue #445: Node 22.4.0 → no flag (band is below 22.5 where node:sqlite first appeared)", () => {
+    const r = runShimWithFakeNode("22.4.0");
+    expect(r.stdout).not.toContain("--experimental-sqlite");
   });
 
   it("present bundle that throws: stderr surfaces (no shim-level swallowing)", () => {
