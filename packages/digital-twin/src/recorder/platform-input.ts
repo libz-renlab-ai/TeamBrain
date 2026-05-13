@@ -3,11 +3,19 @@
  * the local default audio source.
  *
  * - macOS: `avfoundation` `:0` (default audio input — typically the built-in mic)
- * - Windows: `dshow` `audio=virtual-audio-capturer` (or `audio=Microphone`)
+ * - Windows: `dshow` `audio=Microphone` (first DirectShow microphone device)
  * - Linux: `pulse` `default`
  *
+ * Issue #297: Windows previously defaulted to `audio=virtual-audio-capturer`
+ * (a third-party loopback filter from `rdp/virtual-audio-capturer` that ships
+ * separately). That captured the speaker mix, not the user's voice, and silently
+ * failed on stock Windows 11 boxes without the filter installed. The new default
+ * targets the built-in microphone, matching macOS/Linux behavior. Users with
+ * different device names should run `teamagent record devices` to list available
+ * audio inputs and pass `--device "audio=<name>"` to `record start`.
+ *
  * Callers can override the device string via `deviceArg` (e.g. ":1" for the
- * second avfoundation input, or `audio=Microphone` on Windows).
+ * second avfoundation input, or `audio=Stereo Mix` on Windows for loopback).
  */
 export interface PlatformInput {
   format: string;
@@ -26,7 +34,7 @@ export function resolvePlatformInput(opts: ResolvePlatformInputOptions): Platfor
     case 'win32':
       return {
         format: 'dshow',
-        device: opts.deviceArg ?? 'audio=virtual-audio-capturer',
+        device: opts.deviceArg ?? 'audio=Microphone',
       };
     case 'linux':
       return { format: 'pulse', device: opts.deviceArg ?? 'default' };

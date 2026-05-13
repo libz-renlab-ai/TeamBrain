@@ -55,10 +55,15 @@ describe('resolvePlatformInput', () => {
     expect(got.device).toBe(':0');
   });
 
-  it('returns dshow virtual-audio-capturer on win32', () => {
+  it('returns dshow audio=Microphone on win32 (#297 — was virtual-audio-capturer)', () => {
     const got = resolvePlatformInput({ platform: 'win32' });
     expect(got.format).toBe('dshow');
-    expect(got.device).toMatch(/^audio=/);
+    expect(got.device).toBe('audio=Microphone');
+  });
+
+  it('NEVER defaults to virtual-audio-capturer on win32 (regression guard for #297)', () => {
+    const got = resolvePlatformInput({ platform: 'win32' });
+    expect(got.device).not.toBe('audio=virtual-audio-capturer');
   });
 
   it('returns pulse default on linux', () => {
