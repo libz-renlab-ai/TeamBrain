@@ -24,11 +24,15 @@ Status: **canonical** for the `track:symphony` lifecycle. Cross-track rules
 [`docs/TWO-DRIVER-COEXISTENCE.md`](TWO-DRIVER-COEXISTENCE.md). This file
 covers the Symphony track in isolation.
 
-> Runtime status (2026-05-12): Symphony's upstream `openai/symphony` repo
-> ships only a Linear tracker adapter. A `Symphony.Tracker.Github` module
-> does not exist yet. Until it does, this document is **the contract a
-> future GitHub adapter must obey**, and the `track:symphony` label
-> functions as a "do not let fixed-flow touch this" parking signal.
+> Runtime status (2026-05-14): the upstream `openai/symphony` repo still
+> ships only a Linear tracker adapter, BUT a Symphony fork
+> [`LiuShiyuMath/symphony#claude-multi-provider`](https://github.com/LiuShiyuMath/symphony/tree/claude-multi-provider)
+> now implements both (a) a multi-provider agent runner that drives
+> Claude Code (`claude -p` headless) instead of Codex, and (b) a
+> `Symphony.Tracker.Github` adapter that calls `gh` CLI for label-based
+> issue dispatch. This document is now **executable contract** —
+> dispatched runs land via the fork. See ADR-0015 for the policy shift
+> and the fork's `elixir/CLAUDE-PROVIDER.md` for the runner matrix.
 
 ## TL;DR — 5-phase lifecycle, human gate at END
 
