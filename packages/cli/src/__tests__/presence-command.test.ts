@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { executePresence } from "../commands/presence.js";
 
 const ANCHOR_MS = Date.parse("2026-05-13T12:00:00Z");
+
+const ENV_KEYS = [
+  "TEAMAGENT_REALTIME_URL",
+  "TEAMAGENT_REALTIME_TOKEN",
+] as const;
 
 function snapshotResponse(snap: unknown): typeof fetch {
   const handler = async (): Promise<Response> => {
@@ -15,6 +20,22 @@ function snapshotResponse(snap: unknown): typeof fetch {
 }
 
 describe("teamagent presence — CLI subcommand contract", () => {
+  // Hermetic env: prior tests in other files may have set TEAMAGENT_REALTIME_URL
+  // and not cleaned up (afterEach guarded by `if (orig)`). Snapshot + restore
+  // at this describe boundary so each test sees a clean process.env.
+  const saved: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of ENV_KEYS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
   it("prints state=unknown when TEAMAGENT_REALTIME_URL is unset", async () => {
     const result = await executePresence({
       receiverUrl: undefined,
