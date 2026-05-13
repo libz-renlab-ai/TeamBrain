@@ -34,7 +34,14 @@ summary` items 4, 6, 7.
 
 Concrete edits:
 
-1. **`apps/landing/src/index.html`** (item 4 + item 7):
+1. **`apps/landing/src/index.html`** (item 4 + item 7, **legacy mirror only**):
+   The live landing deploy goes through `landing/rocketteam` (Next.js submodule)
+   per `.github/workflows/landing-deploy.yml` + `landing/build-static.sh`.
+   RocketTeam is already clean of the forbidden strings (verified via
+   `grep -rE 'PreToolUse|拦截 PreToolUse|拦截机制|TeamAgent 安装成功' landing/rocketteam`
+   → no hits). The edits below trim the **legacy static-HTML mirror** so it
+   stops drifting away from the live RocketTeam copy and the judge-harness P1
+   probe stays green; the live site behaviour is unchanged by this PR.
    - Drop `PreToolUse interception` from `<meta name="description">`.
    - Drop `PreToolUse hook` clause from hero `<img alt="...">`.
    - Collapse install-box from two lines (`curl ... | bash` + `teamagent init`)
