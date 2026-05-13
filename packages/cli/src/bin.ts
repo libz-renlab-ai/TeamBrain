@@ -34,6 +34,13 @@ import {
   renderM5StatusResult,
 } from "./commands/m5-status.js";
 import {
+  executeInspectMember,
+  parseInspectMemberArgs,
+  renderInspectMemberHelp,
+  renderInspectMemberResult,
+  InspectMemberError,
+} from "./commands/inspect-member.js";
+import {
   runM5Publish,
   parseM5PublishArgs,
   renderM5PublishResult,
@@ -121,6 +128,12 @@ import {
   renderCompileCursorResult,
 } from "./commands/compile-cursor.js";
 import {
+  executeDaily,
+  parseDailyArgs,
+  renderDailyHelp,
+  renderDailyStdout,
+} from "./commands/daily.js";
+import {
   executeDocsPropagate,
   parseDocsPropagateArgs,
   renderDocsPropagationResult,
@@ -180,6 +193,7 @@ import {
   renderPackList,
   renderPackRemove,
 } from "./commands/pack.js";
+import { executePresence } from "./commands/presence.js";
 import {
   executeDigitalTwin,
   parseDigitalTwinArgs,
@@ -385,6 +399,26 @@ async function main(): Promise<void> {
       const opts = parseM5PublishArgs(rest);
       const result = await runM5Publish(opts);
       process.stdout.write(renderM5PublishResult(result) + "\n");
+      return;
+    }
+    case "inspect-member": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(renderInspectMemberHelp() + "\n");
+        return;
+      }
+      try {
+        const opts = parseInspectMemberArgs(rest);
+        const out = await executeInspectMember(opts);
+        process.stdout.write(renderInspectMemberResult(out) + "\n");
+      } catch (err) {
+        if (err instanceof InspectMemberError) {
+          process.stderr.write(`inspect-member: ${err.message}\n`);
+          process.stderr.write(renderInspectMemberHelp() + "\n");
+          process.exitCode = 2;
+          return;
+        }
+        throw err;
+      }
       return;
     }
     case "pitfall": {
@@ -824,6 +858,35 @@ async function main(): Promise<void> {
       }
       return;
     }
+    case "presence": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        process.stdout.write(
+          "Usage: teamagent presence\n" +
+          "\n" +
+          "Probes ${TEAMAGENT_REALTIME_URL}/api/cc-status/latest for the\n" +
+          "current teammate's latest snapshot and prints the derived green\n" +
+          "light state (active | idle | offline | error). One-line output.\n" +
+          "\n" +
+          "Env:\n" +
+          "  TEAMAGENT_REALTIME_URL    receiver base URL (required for live state)\n" +
+          "  TEAMAGENT_REALTIME_TOKEN  optional bearer\n" +
+          "\n" +
+          "Issue #308 grill verdict §11: presence = green/yellow/gray/red.\n",
+        );
+        return;
+      }
+      try {
+        const result = await executePresence({});
+        process.stdout.write(result.stdout);
+        if (result.exitCode !== 0) process.exit(result.exitCode);
+      } catch (err) {
+        process.stderr.write(
+          `${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(2);
+      }
+      return;
+    }
     case "recording": {
       try {
         const opts = parseRecordingArgs(rest);
@@ -1015,6 +1078,22 @@ async function main(): Promise<void> {
       const opts = parseCompileCursorArgs(rest);
       const result = await executeCompileCursor(opts);
       process.stdout.write(renderCompileCursorResult(result));
+      return;
+    }
+    case "daily": {
+      let opts;
+      try {
+        opts = parseDailyArgs(rest);
+      } catch (err) {
+        process.stderr.write(`${(err as Error).message}\n`);
+        process.exit(2);
+      }
+      if (opts.help) {
+        process.stdout.write(renderDailyHelp());
+        return;
+      }
+      const out = executeDaily(opts);
+      process.stdout.write(renderDailyStdout(out, opts));
       return;
     }
     case "docs-propagate": {
@@ -1394,9 +1473,10 @@ async function main(): Promise<void> {
           "  teamagent review [N] [--scope=personal|team|global]",
           "                                   列出最近 N 条知识（默认 10），供人工复核",
           "  teamagent init [--dry-run] [--skip-import] [--skip-hook] [--install-plugins] [--target=claude|codex|both]",
-          "                                   一键安装到当前项目：建目录 + 注入元原则 + 导入已有规则 + 注册 Hook + 导出 Skills",
+          "                                   一键安装到当前项目：建目录 + 注入元原则 + 导入已有规则 + 注册集成 + 导出 Skills",
           "                                   默认 target=claude；codex 会创建 .codex/skills 软链接且不注册 Claude hook",
           "                                   --install-plugins: 同时注册团队标配插件（opt-in，改写用户全局 settings）",
+          "                                   TEAMAGENT_VERBOSE_INIT=1: 在成功输出中恢复 4-step 下一步列表 + plugin tip + 🆕 本次新增 tail",
           "  teamagent install-codex [--dry-run] [--skip-import]",
           "                                   Codex 快捷安装：导出 Skills，并创建 .codex/skills 软链接",
           "  teamagent doctor [--fix [--dry-run]] [--json] [--cwd=<path>] [--help]",
@@ -1430,6 +1510,8 @@ async function main(): Promise<void> {
           "                                   真实 SQLite + analyze + compile + PreToolUse 测评学习、触发、误触发和新成员可见性",
           "  teamagent recording --help",
           "                                   Recording Memory 导入、检索、注入、指标和 golden benchmark",
+          "  teamagent daily [--projects-root=PATH] [--archive] [--format=json|context] [--help]",
+          "                                   [issue-371] 跨项目扫 ~/.claude/projects 今天活动，输出 member×project 一句话日报骨架",
           "  teamagent dogfood-report [--output=path]",
           "                                   扫 events.jsonl + knowledge.jsonl + git log，自动生成自举报告",
           "  teamagent bug-report [--out=path] [--stdout]",

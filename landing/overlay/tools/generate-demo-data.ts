@@ -326,56 +326,51 @@ const PROFILES: TeamMemberProfile[] = [
   )
 ];
 
+// Task shape mirrors `Task` in src/types/index.ts: status is the PMA decision
+// state machine, decision is `PMADecisionV2 | null`. Demo data uses minimally
+// valid shapes so /tasks/ renders without crashing on the client.
 interface DemoTask {
   id: string;
   description: string;
-  status: 'pending' | 'assigned' | 'completed';
-  assignee?: string;
+  status: 'predicting' | 'predicted' | 'accepted' | 'overridden' | 'completed';
+  decision: null | { final_assignee: string; reason: string };
+  override_to?: string;
+  override_reason?: string;
+  importance?: 'low' | 'medium' | 'high' | 'critical';
+  urgency?: 'low' | 'medium' | 'high' | 'critical';
   created_at: string;
+  updated_at: string;
+}
+
+function task(
+  id: string,
+  description: string,
+  status: DemoTask['status'],
+  assignee: string | null,
+  importance: DemoTask['importance'] = 'medium',
+  urgency: DemoTask['urgency'] = 'medium'
+): DemoTask {
+  return {
+    id,
+    description,
+    status,
+    decision: assignee
+      ? { final_assignee: assignee, reason: '画像匹配的推荐人选' }
+      : null,
+    importance,
+    urgency,
+    created_at: NOW,
+    updated_at: NOW
+  };
 }
 
 const TASKS: DemoTask[] = [
-  {
-    id: 't_001',
-    description: '把 RocketTeam 静态导出版接到 GitHub Pages，替换 apps/landing 旧 HTML',
-    status: 'assigned',
-    assignee: '邵岚',
-    created_at: NOW
-  },
-  {
-    id: 't_002',
-    description: 'Phase-2 hook 系统的 4 通道契约测试补齐',
-    status: 'assigned',
-    assignee: '苏漾',
-    created_at: NOW
-  },
-  {
-    id: 't_003',
-    description: '本周三场 prospect 用户访谈纪要合成成洞察 doc',
-    status: 'assigned',
-    assignee: '黎萤',
-    created_at: NOW
-  },
-  {
-    id: 't_004',
-    description: 'Slack ingestion 的客户原话脱敏规则审计',
-    status: 'pending',
-    created_at: NOW
-  },
-  {
-    id: 't_005',
-    description: '清理 apps/landing/dist 与 docs/backup/phase1 旧产物',
-    status: 'completed',
-    assignee: '陈观潮',
-    created_at: NOW
-  },
-  {
-    id: 't_006',
-    description: '发布周日历定稿 + 8 条推文初稿',
-    status: 'completed',
-    assignee: '于聿',
-    created_at: NOW
-  }
+  task('t_001', '把 RocketTeam 静态导出版接到 GitHub Pages，替换 apps/landing 旧 HTML', 'accepted', '邵岚', 'high', 'high'),
+  task('t_002', 'Phase-2 hook 系统的 4 通道契约测试补齐', 'accepted', '苏漾', 'high', 'medium'),
+  task('t_003', '本周三场 prospect 用户访谈纪要合成成洞察 doc', 'accepted', '黎萤', 'high', 'high'),
+  task('t_004', 'Slack ingestion 的客户原话脱敏规则审计', 'predicted', '陆江璃', 'critical', 'medium'),
+  task('t_005', '清理 apps/landing/dist 与 docs/backup/phase1 旧产物', 'completed', '陈观潮', 'medium', 'low'),
+  task('t_006', '发布周日历定稿 + 8 条推文初稿', 'completed', '于聿', 'high', 'high')
 ];
 
 import type { TeamResource } from '../src/types';

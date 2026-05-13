@@ -1968,7 +1968,7 @@ export function renderInitResult(result: InitResult): string {
     { icon: "🛡️", label: "前置守卫", stepKeys: ["nested-init-guard"] },
     { icon: "🔍", label: "检测项目环境", stepKeys: ["detect-stack"] },
     { icon: "📦", label: "初始化知识库", stepKeys: ["pre-check", "create-dirs", "load-preset", "load-seed", "scan-rules", "structure-rules"] },
-    { icon: "🔗", label: "注册 Hook", stepKeys: ["install-hook", "audit-orphan-hooks", "write-required-artifacts"] },
+    { icon: "🔗", label: "注册集成", stepKeys: ["install-hook", "audit-orphan-hooks", "write-required-artifacts"] },
     { icon: "🔌", label: "安装团队标配插件", stepKeys: ["install-plugins"] },
     { icon: "📄", label: "导出 Skills", stepKeys: ["compile-skills", MIRROR_CLAIM_STEP, STATIC_USER_SKILLS_STEP] },
     { icon: "🔗", label: "链接 Codex 文件", stepKeys: ["link-codex-files"] },
@@ -1993,32 +1993,50 @@ export function renderInitResult(result: InitResult): string {
     lines.push("");
   }
 
-  lines.push("━".repeat(36));
   if (result.ok) {
-    lines.push("✅ TeamAgent 安装成功！\n");
+    // Issue #326 RESCOPE item 6 + 7: FIXEDFLOW banner moves BEFORE the
+    // success block so the trailing block is the minimal 5-line
+    // "TeamAgent 已就绪 + Next: cd / claude" per grill-spec-acceptance.md
+    // §Implementation summary item 6. Plugin tip and post-init what's-new
+    // tail are gated behind TEAMAGENT_VERBOSE_INIT (kept in source for
+    // doctor / future --verbose-init flag).
     appendFixedflowBanner(lines);
-    lines.push("下一步:");
-    const hasAnyCompileTarget = result.steps.some(
-      (s) => s.step === "compile-skills" || s.step === "link-codex-files",
-    );
-    const hasClaude =
-      result.steps.some((s) => s.step === "install-hook" && !s.detail.includes("target=codex")) ||
-      !hasAnyCompileTarget;
-    const hasCodex = result.steps.some((s) => s.step === "link-codex-files");
-    let next = 1;
-    if (hasClaude) lines.push(`  ${next++}. 重新打开 Claude Code（让 hook 生效）`);
-    if (hasCodex) lines.push(`  ${next++}. 启动新的 Codex 会话（让 .codex/skills 生效）`);
-    lines.push(`  ${next++}. 运行 teamagent doctor 验证安装`);
-    lines.push(`  ${next++}. 运行 teamagent stats 查看知识库状态`);
-    const pluginsInstalled = result.steps.some(
-      (s) => s.step === "install-plugins",
-    );
-    if (hasClaude && !pluginsInstalled) {
+
+    const verbose = process.env["TEAMAGENT_VERBOSE_INIT"] === "1";
+    if (verbose) {
+      const hasAnyCompileTarget = result.steps.some(
+        (s) => s.step === "compile-skills" || s.step === "link-codex-files",
+      );
+      const hasClaude =
+        result.steps.some(
+          (s) => s.step === "install-hook" && !s.detail.includes("target=codex"),
+        ) || !hasAnyCompileTarget;
+      const hasCodex = result.steps.some((s) => s.step === "link-codex-files");
+      lines.push("下一步（verbose）:");
+      let next = 1;
+      if (hasClaude) lines.push(`  ${next++}. 重新打开 Claude Code（让 hook 生效）`);
+      if (hasCodex) lines.push(`  ${next++}. 启动新的 Codex 会话（让 .codex/skills 生效）`);
+      lines.push(`  ${next++}. 运行 teamagent doctor 验证安装`);
+      lines.push(`  ${next++}. 运行 teamagent stats 查看知识库状态`);
+      const pluginsInstalled = result.steps.some(
+        (s) => s.step === "install-plugins",
+      );
+      if (hasClaude && !pluginsInstalled) {
+        lines.push("");
+        lines.push("💡 团队标配插件（与 .claude/settings.json:enabledPlugins 同步）默认不装");
+        lines.push("   需要时运行: teamagent install-plugins");
+      }
       lines.push("");
-      lines.push("💡 团队标配插件（与 .claude/settings.json:enabledPlugins 同步）默认不装");
-      lines.push("   需要时运行: teamagent install-plugins");
     }
+
+    lines.push("━".repeat(36));
+    lines.push("✅ TeamAgent 已就绪");
+    lines.push("");
+    lines.push("下一步：");
+    lines.push("  cd your-project");
+    lines.push("  claude");
   } else {
+    lines.push("━".repeat(36));
     lines.push("❌ 安装未完成，请修复以上问题后重试");
     lines.push("   运行 teamagent doctor 获取诊断建议");
   }
@@ -2031,11 +2049,15 @@ export function renderInitResult(result: InitResult): string {
     lines.push(result.packPrompt);
   }
 
-  // Issue #225 — post-init "what's new" tail. Only rendered on the ok path of
-  // a non-dry-run init so first-time users see what shipped with this version.
-  // Reads CHANGELOG via the same loader the SessionStart prompt uses; gracefully
-  // returns empty when CHANGELOG is missing (dev install / tarball without copy).
-  if (result.ok && !result.dryRun) {
+  // Issue #225 — post-init "what's new" tail. Gated behind TEAMAGENT_VERBOSE_INIT
+  // per issue #326 RESCOPE item 6: success output must be minimal. Function +
+  // helpers stay in source so a future --verbose-init flag or `teamagent doctor`
+  // can re-surface them; default success path is the 5-line minimal block.
+  if (
+    result.ok &&
+    !result.dryRun &&
+    process.env["TEAMAGENT_VERBOSE_INIT"] === "1"
+  ) {
     const tail = buildPostInitWhatsNewTail();
     if (tail.length > 0) {
       lines.push(tail);

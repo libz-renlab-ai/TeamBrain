@@ -1,0 +1,78 @@
+
+> @teamagent/cli@0.1.0 prebuild /Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/cli
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+
+> @teamagent/cli@0.1.0 build /Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/cli
+> tsup src/bin.ts --format esm && pnpm build:hook
+
+[34mCLI[39m Building entry: src/bin.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Target: es2022
+[34mESM[39m Build start
+[32mESM[39m [1mdist/whatsnew-TTPUBVRZ.js          [22m[32m3.64 KB[39m
+[32mESM[39m [1mdist/reclassify-RIDG2D5U.js        [22m[32m2.98 KB[39m
+[32mESM[39m [1mdist/arg-utils-G37T67JI.js         [22m[32m767.00 B[39m
+[32mESM[39m [1mdist/first-run-D37G2KOZ.js         [22m[32m4.30 KB[39m
+[32mESM[39m [1mdist/try-GIRXYZ7Y.js               [22m[32m2.85 KB[39m
+[32mESM[39m [1mdist/demo-QIEEBRRS.js              [22m[32m10.25 KB[39m
+[32mESM[39m [1mdist/migrate-auto-RNPGLKGP.js      [22m[32m1.35 KB[39m
+[32mESM[39m [1mdist/fetch-latest-KYHU7ICF.js      [22m[32m5.07 KB[39m
+[32mESM[39m [1mdist/install-user-hook-FM32FXO6.js [22m[32m159.00 B[39m
+[32mESM[39m [1mdist/update-RF2KLKDT.js            [22m[32m15.98 KB[39m
+[32mESM[39m [1mdist/warmup-MFTVAWE7.js            [22m[32m8.97 KB[39m
+[32mESM[39m [1mdist/init-ZLGUIBZI.js              [22m[32m369.00 B[39m
+[32mESM[39m [1mdist/doctor-RGHOFVAB.js            [22m[32m837.00 B[39m
+[32mESM[39m [1mdist/calibrate-UZZQUMPA.js         [22m[32m225.00 B[39m
+[32mESM[39m [1mdist/migrate-v1-to-v2-ZEHP737S.js  [22m[32m2.64 KB[39m
+[32mESM[39m [1mdist/chunk-FDTLF3I5.js             [22m[32m7.31 KB[39m
+[32mESM[39m [1mdist/chunk-ACPVCGBY.js             [22m[32m3.61 KB[39m
+[32mESM[39m [1mdist/migrate-v7-64LC74QF.js        [22m[32m2.99 KB[39m
+[32mESM[39m [1mdist/uninstall-U7K54Y7Q.js         [22m[32m329.00 B[39m
+[32mESM[39m [1mdist/verify-WX7XZXW6.js            [22m[32m253.00 B[39m
+[32mESM[39m [1mdist/chunk-ZIZN4BFJ.js             [22m[32m587.00 B[39m
+[32mESM[39m [1mdist/compile-7EIPGALM.js           [22m[32m209.00 B[39m
+[32mESM[39m [1mdist/chunk-MJJDXZKJ.js             [22m[32m68.57 KB[39m
+[32mESM[39m [1mdist/chunk-LRR74HED.js             [22m[32m11.06 KB[39m
+[32mESM[39m [1mdist/chunk-TL2SRD6G.js             [22m[32m9.06 KB[39m
+[32mESM[39m [1mdist/install-plugins-YLTRADYQ.js   [22m[32m213.00 B[39m
+[32mESM[39m [1mdist/chunk-IPJR34LI.js             [22m[32m40.34 KB[39m
+[32mESM[39m [1mdist/bin.js                        [22m[32m346.85 KB[39m
+[32mESM[39m [1mdist/m5-delete-GVMRDFKN.js         [22m[32m223.00 B[39m
+[32mESM[39m [1mdist/chunk-FLY5KTEQ.js             [22m[32m3.63 KB[39m
+[32mESM[39m [1mdist/m5-share-TMAV2C6Y.js          [22m[32m215.00 B[39m
+[32mESM[39m [1mdist/pitfall-H3PWN4PO.js           [22m[32m287.00 B[39m
+[32mESM[39m [1mdist/chunk-OQZZBNWM.js             [22m[32m23.43 KB[39m
+[32mESM[39m [1mdist/chunk-BSBIPTQ5.js             [22m[32m5.21 KB[39m
+[32mESM[39m [1mdist/chunk-IXQYRO2L.js             [22m[32m4.95 KB[39m
+[32mESM[39m [1mdist/install-hook-S7SF44E6.js      [22m[32m519.00 B[39m
+[32mESM[39m [1mdist/warmup-state-ECNRFJ2F.js      [22m[32m365.00 B[39m
+[32mESM[39m [1mdist/chunk-7RXE436F.js             [22m[32m5.63 KB[39m
+[32mESM[39m [1mdist/chunk-QLLD4ITL.js             [22m[32m23.35 KB[39m
+[32mESM[39m [1mdist/migrate-v6-BLSGUC57.js        [22m[32m247.00 B[39m
+[32mESM[39m [1mdist/chunk-2LIW643Q.js             [22m[32m21.40 KB[39m
+[32mESM[39m [1mdist/chunk-7PGM7ZQN.js             [22m[32m4.78 KB[39m
+[32mESM[39m [1mdist/chunk-2P426QHC.js             [22m[32m2.41 KB[39m
+[32mESM[39m ⚡️ Build success in 283ms
+
+> @teamagent/cli@0.1.0 build:hook /Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/cli
+> tsup --config tsup.hook.config.ts
+
+[34mCLI[39m Building entry: {"bin-pre-tool-use":"src/bin-pre-tool-use.ts","bin-post-tool-use":"src/bin-post-tool-use.ts","bin-user-prompt-submit":"src/bin-user-prompt-submit.ts","bin-session-start":"src/bin-session-start.ts","bin-stop":"src/bin-stop.ts","bin-session-end":"src/bin-session-end.ts","bin-pre-compact":"src/bin-pre-compact.ts","bin-updater":"src/bin-updater.ts","bin-digital-twin-tap":"src/bin-digital-twin-tap.ts","bin-embedder":"src/bin-embedder.ts"}
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Using tsup config: /Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/cli/tsup.hook.config.ts
+[34mCLI[39m Target: node20
+[34mCJS[39m Build start
+[32mCJS[39m [1mdist/bin-post-tool-use.cjs      [22m[32m193.02 KB[39m
+[32mCJS[39m [1mdist/bin-pre-tool-use.cjs       [22m[32m393.64 KB[39m
+[32mCJS[39m [1mdist/bin-user-prompt-submit.cjs [22m[32m354.33 KB[39m
+[32mCJS[39m [1mdist/bin-digital-twin-tap.cjs   [22m[32m109.81 KB[39m
+[32mCJS[39m [1mdist/bin-embedder.cjs           [22m[32m1.58 MB[39m
+[32mCJS[39m [1mdist/bin-updater.cjs            [22m[32m7.11 MB[39m
+[32mCJS[39m [1mdist/bin-session-end.cjs        [22m[32m7.49 MB[39m
+[32mCJS[39m [1mdist/bin-session-start.cjs      [22m[32m7.23 MB[39m
+[32mCJS[39m [1mdist/bin-stop.cjs               [22m[32m7.49 MB[39m
+[32mCJS[39m [1mdist/bin-pre-compact.cjs        [22m[32m7.49 MB[39m
+[32mCJS[39m ⚡️ Build success in 1546ms

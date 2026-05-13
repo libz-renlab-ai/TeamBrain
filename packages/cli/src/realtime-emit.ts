@@ -28,13 +28,16 @@
  *   import { emitCcStatus } from "./realtime-emit.js";
  *   emitCcStatus({ event: "session_start", sessionId, cwd });
  */
-import { hostname } from "node:os";
+import { homedir, hostname } from "node:os";
 import {
   CC_STATUS_SCHEMA_VERSION,
+  digitalTwinPaths,
   getMachineId,
   getUserId,
+  loadConfig,
   postCcStatusSnapshot,
   type CcStatusSnapshot,
+  type DigitalTwinConfig,
   type PostCcStatusOutcome,
 } from "@teamagent/digital-twin";
 
@@ -76,6 +79,16 @@ export interface EmitInput {
   readonly model?: string;
   /** Optional context token count from the hook payload. */
   readonly contextTokens?: number;
+  /**
+   * Optional raw user prompt text. Issue #308 grill §3 mandates "完整存 raw
+   * prompt" for leader-side evidence / replay. The caller (UserPromptSubmit
+   * hook) is responsible for gating this behind the
+   * `TEAMAGENT_REALTIME_RAW_PROMPT=1` env opt-in — emit threads whatever it
+   * receives directly to `CcStatusSnapshot.raw_prompt`. Empty string is
+   * treated as "unset" (so an opt-in caller can still skip individual
+   * empty prompts).
+   */
+  readonly rawPrompt?: string;
 }
 
 const TIMEOUT_MS = 50;
@@ -108,10 +121,101 @@ function debugLog(line: string): void {
 let cachedUserId: string | null = null;
 let cachedMachineId: string | null = null;
 
-/** Test-only — clears the in-process identity cache. */
+/**
+ * Issue #350 (v0.11.1) — cached digital-twin config-derived realtime URL.
+ * Read once per process from `~/.teamagent/digital-twin.json` so each hook
+ * fire stays under the 50ms critical-path budget. Three terminal states:
+ *
+ *   '__unread'    — uninitialized; trigger one fs read on next emit
+ *   null          — config absent / disabled / unparseable; skip emit
+ *   string        — resolved baseUrl from `uploader.endpoint`
+ */
+const CONFIG_URL_UNREAD = "__unread" as const;
+let cachedConfigBaseUrl: string | null | typeof CONFIG_URL_UNREAD = CONFIG_URL_UNREAD;
+
+/** Test-only — clears the in-process identity + config-url caches. */
 export function __resetIdentityCacheForTests(): void {
   cachedUserId = null;
   cachedMachineId = null;
+  cachedConfigBaseUrl = CONFIG_URL_UNREAD;
+}
+
+/**
+ * Issue #350 (v0.11.1) — resolve the realtime cc-status base URL.
+ *
+ * Order of precedence:
+ *   1. `TEAMAGENT_REALTIME_URL` env var, gated to loopback unless
+ *      `TEAMAGENT_REALTIME_ALLOW_REMOTE=1`. The loopback gate is the security
+ *      boundary called out on PR #404: an attacker who can flip an env var
+ *      should not be able to exfiltrate cwd / git email / bearer to an
+ *      arbitrary URL. Env-set URLs stay default-loopback.
+ *   2. `~/.teamagent/digital-twin.json` `uploader.endpoint`, when the file
+ *      exists and `uploader.enabled === true`. This path **bypasses** the
+ *      loopback gate intentionally: the URL there was written either by the
+ *      user running `teamagent digital-twin login` or by `ensureDefaultConfig`
+ *      auto-creating the team-shared config (`http://192.168.22.88:8080`
+ *      from `config.ts:DEFAULT_ENDPOINT`). Either way the URL is the team's
+ *      explicit, persistent choice — not an environmental override an
+ *      attacker can flip mid-session. PR #404's threat model is unaffected.
+ *
+ * Returns null when neither source resolves a usable URL — emitCcStatus then
+ * skips, same as before this change.
+ */
+function resolveBaseUrl(): string | null {
+  const envUrl = readEnv("TEAMAGENT_REALTIME_URL");
+  if (envUrl) {
+    if (
+      urlIsLoopback(envUrl) ||
+      readEnv("TEAMAGENT_REALTIME_ALLOW_REMOTE") === "1"
+    ) {
+      return envUrl;
+    }
+    debugLog(
+      `skip env URL (non-loopback, set TEAMAGENT_REALTIME_ALLOW_REMOTE=1 to override) url=${envUrl}`,
+    );
+    return null;
+  }
+  // Env unset → check the user's saved digital-twin config.
+  if (cachedConfigBaseUrl === CONFIG_URL_UNREAD) {
+    cachedConfigBaseUrl = readConfigBaseUrl();
+  }
+  return cachedConfigBaseUrl;
+}
+
+/**
+ * Resolve `$HOME` for the config lookup. Test seam: env-override takes
+ * precedence so the test sandbox (which mkdtemps a tmp HOME) works on
+ * Windows too, where `os.homedir()` reads SHGetKnownFolderPath and
+ * ignores `$env:USERPROFILE` / `$env:HOME` overrides.
+ */
+function homeForConfig(): string {
+  return (
+    process.env.TEAMAGENT_HOME ??
+    process.env.HOME ??
+    process.env.USERPROFILE ??
+    homedir()
+  );
+}
+
+function readConfigBaseUrl(): string | null {
+  try {
+    const paths = digitalTwinPaths(homeForConfig());
+    const cfg: DigitalTwinConfig | null = loadConfig(paths.configFile);
+    if (!cfg) return null;
+    if (!cfg.uploader?.enabled) return null;
+    const ep = cfg.uploader?.endpoint;
+    if (typeof ep !== "string" || ep.length === 0) return null;
+    // Cheap sanity check — must parse as http(s) URL.
+    try {
+      const u = new URL(ep);
+      if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    } catch {
+      return null;
+    }
+    return ep;
+  } catch {
+    return null;
+  }
 }
 
 function buildSnapshot(input: EmitInput): CcStatusSnapshot {
@@ -162,6 +266,19 @@ function buildSnapshot(input: EmitInput): CcStatusSnapshot {
     snap.context_tokens = tokens;
     snap.context_pct = Math.round((tokens / 200_000) * 100) / 100;
   }
+  // Issue #308 grill §3: opt-in raw prompt evidence. Defense-in-depth — the
+  // hook layer (bin-user-prompt-submit.ts) is the policy boundary, but a
+  // future direct caller of emitCcStatus would otherwise bypass the env
+  // gate. Re-check here so the transport refuses to send prompt content
+  // unless TEAMAGENT_REALTIME_RAW_PROMPT=1 is explicitly set, regardless of
+  // what the caller passed. /review pre-landing adversarial review #9.
+  if (
+    typeof input.rawPrompt === "string" &&
+    input.rawPrompt.length > 0 &&
+    readEnv("TEAMAGENT_REALTIME_RAW_PROMPT") === "1"
+  ) {
+    snap.raw_prompt = input.rawPrompt;
+  }
   return snap;
 }
 
@@ -179,24 +296,15 @@ export function emitCcStatus(input: EmitInput): void {
     debugLog(`skip (TEAMAGENT_DISABLED=1) event=${input.event}`);
     return;
   }
-  const baseUrl = readEnv("TEAMAGENT_REALTIME_URL");
+  // Issue #350 (v0.11.1) — `resolveBaseUrl()` consolidates the env-var path
+  // (loopback-gated, unchanged threat model) with a saved-config fallback
+  // (`~/.teamagent/digital-twin.json` `uploader.endpoint` when `enabled`).
+  // The saved-config path is intentionally not loopback-gated — see the
+  // function comment for the security rationale. Returns null when neither
+  // source resolves; we skip in that case (same outcome as pre-v0.11.1).
+  const baseUrl = resolveBaseUrl();
   if (!baseUrl) {
-    debugLog(`skip (TEAMAGENT_REALTIME_URL unset) event=${input.event}`);
-    return;
-  }
-  // Loopback-only by default. A teammate who actually wants to push to a
-  // team-shared LAN receiver opts in explicitly with
-  // TEAMAGENT_REALTIME_ALLOW_REMOTE=1. Adversarial review on PR #404 caught
-  // that without this default, an attacker who can set TEAMAGENT_REALTIME_URL
-  // (compromised dotfile, supply-chain pnpm script, hostile teammate-config
-  // sync) gets cwd + git email + bearer token exfiltrated on every hook.
-  if (
-    !urlIsLoopback(baseUrl) &&
-    readEnv("TEAMAGENT_REALTIME_ALLOW_REMOTE") !== "1"
-  ) {
-    debugLog(
-      `skip (non-loopback URL, set TEAMAGENT_REALTIME_ALLOW_REMOTE=1 to override) event=${input.event} url=${baseUrl}`,
-    );
+    debugLog(`skip (no base URL resolved) event=${input.event}`);
     return;
   }
   let snapshot: CcStatusSnapshot;

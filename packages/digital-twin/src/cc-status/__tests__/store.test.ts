@@ -77,6 +77,24 @@ describe('sanitizeCcStatusSnapshot', () => {
     expect(s).not.toHaveProperty('quota_stale');
     expect(s).not.toHaveProperty('session_health');
   });
+
+  it('preserves raw_prompt up to its 64 KiB cap (issue #308 grill §3)', () => {
+    // Adversarial finding #2: prior whitelist dropped raw_prompt silently.
+    // Pin the contract that a normal-sized prompt survives sanitization.
+    const s = sanitizeCcStatusSnapshot(snap({ raw_prompt: 'hello presence' }))!;
+    expect(s.raw_prompt).toBe('hello presence');
+  });
+
+  it('clamps an over-long raw_prompt to 64 KiB', () => {
+    const huge = 'x'.repeat(70_000);
+    const s = sanitizeCcStatusSnapshot(snap({ raw_prompt: huge }))!;
+    expect(s.raw_prompt!.length).toBe(65_536);
+  });
+
+  it('omits raw_prompt when caller did not include it (no field, no truthy default)', () => {
+    const s = sanitizeCcStatusSnapshot(snap())!;
+    expect(s).not.toHaveProperty('raw_prompt');
+  });
 });
 
 describe('cc-status store roundtrip', () => {

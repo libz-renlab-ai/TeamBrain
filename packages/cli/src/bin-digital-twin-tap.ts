@@ -125,6 +125,24 @@ export function resolveDaemonBin(
   const userInstalled = path.join(paths.digitalTwinDir, 'bin-uploader.cjs');
   if (ex(userInstalled)) return userInstalled;
 
+  // Issue #368 (v0.11.1) — same-dir fallback. In a published tarball install,
+  // `bin-digital-twin-tap.cjs` lives at `<install>/dist/` next to a sibling
+  // `bin-uploader.cjs` (both bundled by `packages/teamagent/tsup.config.ts`).
+  // Returning that sibling directly lets the very first Stop hook fire — on a
+  // machine where `teamagent install-user-hook` had no chance to stage the
+  // binary yet — spawn the daemon. Self-install logic below still triggers on
+  // first hit so subsequent ticks resolve via `userInstalled` (cheaper, and
+  // stable across `git pull` / nvm switch).
+  const sameDirBin = path.join(here, 'bin-uploader.cjs');
+  if (ex(sameDirBin)) {
+    return selfInstallFromSource(
+      sameDirBin,
+      userInstalled,
+      paths.digitalTwinDir,
+      deps,
+    );
+  }
+
   const monorepoDist = path.join(
     here,
     '..',
@@ -134,19 +152,40 @@ export function resolveDaemonBin(
     'bin-uploader.cjs',
   );
   if (!ex(monorepoDist)) return null;
+  return selfInstallFromSource(
+    monorepoDist,
+    userInstalled,
+    paths.digitalTwinDir,
+    deps,
+  );
+}
 
+/**
+ * Best-effort atomic stage of `<src>` → `<dest>`. Mirrors the prior inline
+ * monorepo-self-install body; factored out so the same-dir fallback path can
+ * reuse the EXDEV / EBUSY / atomic-rename handling unchanged. Always returns
+ * a path the caller can hand to `node spawn` — either `dest` (after a
+ * successful copy) or `src` itself (on copy failure, so the daemon still
+ * spawns this tick from the read-only source).
+ */
+function selfInstallFromSource(
+  src: string,
+  dest: string,
+  destDir: string,
+  deps: ResolveDaemonBinDeps,
+): string {
   const md = deps.mkdirSync ?? mkdirSync;
   const cp = deps.copyFileSync ?? copyFileSync;
   const rn = deps.renameSync ?? renameSync;
   const ul = deps.unlinkSync ?? unlinkSync;
   const log = deps.log ?? ((m: string) => process.stderr.write(m));
 
-  const tmpPath = `${userInstalled}.tmp.${process.pid}.${process.hrtime.bigint()}`;
+  const tmpPath = `${dest}.tmp.${process.pid}.${process.hrtime.bigint()}`;
   try {
-    md(paths.digitalTwinDir, { recursive: true });
-    cp(monorepoDist, tmpPath);
-    rn(tmpPath, userInstalled);
-    return userInstalled;
+    md(destDir, { recursive: true });
+    cp(src, tmpPath);
+    rn(tmpPath, dest);
+    return dest;
   } catch {
     try {
       ul(tmpPath);
@@ -154,13 +193,13 @@ export function resolveDaemonBin(
       /* tmp may not exist if cp threw */
     }
     try {
-      cp(monorepoDist, userInstalled);
-      return userInstalled;
+      cp(src, dest);
+      return dest;
     } catch (copyErr) {
       log(
         `[teamagent.digital-twin] resolveDaemonBin self-install failed: ${String(copyErr)}\n`,
       );
-      return monorepoDist;
+      return src;
     }
   }
 }
