@@ -83,7 +83,7 @@ export function parseRecordArgs(rest: string[]): RecordParsedArgs {
   const sub = rest[0];
   if (!sub) {
     throw new RecordArgError(
-      'Usage: teamagent record <start|stop|import> [args]',
+      'Usage: teamagent record <start|stop|import|devices> [args]',
     );
   }
   switch (sub) {
