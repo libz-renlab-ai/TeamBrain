@@ -36,6 +36,11 @@ import {
 import { handleBpPush, handleInbox } from './bpp/server-handlers.js';
 import { handleRevoke } from './bpp/revoke.js';
 import { handleForcePush } from './bpp/force-push.js';
+// Gap 2 (production gap close): SSE realtime broadcaster + accept handler.
+// Each startMockServer instance gets its own broadcaster so cross-instance
+// subscriptions stay isolated (tests run many parallel servers).
+import { BppSseBroadcaster } from './bpp/sse-broadcast.js';
+import { handleInboxAct } from './bpp/accept-handler.js';
 
 // Re-exported here for backwards compat — `safeUserId` / `dateStamp` were
 // originally defined in this module before `cc-status/path-safety.ts` split
@@ -78,6 +83,8 @@ const ROUTE_BP_PUSH = '/v1/bp-push';
 const ROUTE_BP_REVOKE = '/v1/revoke';
 /** BPP Phase 4 — lead-only force push. Body: { bp_id, receiver_id, lead_user_id }. */
 const ROUTE_BP_FORCE_PUSH = '/v1/bp-push/force';
+/** BPP Gap 2 — accept/reject an inbox item. Body: { inbox_id, receiver_id, action }. */
+const ROUTE_INBOX_ACT = '/v1/inbox/act';
 const ALLOWED_VIDEO_CONTAINERS = new Set(['mov', 'mp4', 'webm', 'mkv']);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -632,9 +639,41 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
   mkdirSync(outputDir, { recursive: true });
   const host = opts.host ?? '127.0.0.1';
   const now = opts.now ?? (() => new Date());
+  // Gap 2: per-instance SSE broadcaster — receivers subscribe via
+  // GET /v1/inbox/stream?receiver=<id>, server-side fires events after
+  // handleBpPush/handleRevoke succeed. Held in closure so tests stay isolated.
+  const broadcaster = new BppSseBroadcaster();
 
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     if (req.method === 'GET') {
+      // Gap 2 — SSE endpoint: GET /v1/inbox/stream?receiver=<id>. Long-lived
+      // text/event-stream connection; each push/revoke broadcast writes one
+      // `data: <json>\n\n` frame. Handled here (not in handleGet) so we can
+      // close over `broadcaster` without threading it through a positional arg.
+      const url = req.url ?? '';
+      const path = url.split('?')[0];
+      if (path === '/v1/inbox/stream') {
+        const q = new URLSearchParams(url.includes('?') ? url.slice(url.indexOf('?') + 1) : '');
+        const receiver = q.get('receiver');
+        if (typeof receiver !== 'string' || receiver.length === 0) {
+          send(res, 400, { ok: false, error: 'receiver query param required' });
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader('content-type', 'text/event-stream');
+        res.setHeader('cache-control', 'no-cache, no-transform');
+        res.setHeader('connection', 'keep-alive');
+        const sink = (line: string): void => {
+          res.write(line);
+        };
+        broadcaster.subscribe(receiver, sink);
+        // Initial comment frame flushes headers and lets the client know it's connected.
+        res.write(`: connected receiver=${receiver}\n\n`);
+        const cleanup = (): void => broadcaster.disconnect(receiver, sink);
+        req.on('close', cleanup);
+        res.on('error', () => {});
+        return;
+      }
       handleGet(req, res, outputDir, now);
       return;
     }
@@ -650,7 +689,8 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       route !== ROUTE_VIDEOS &&
       route !== ROUTE_BP_PUSH &&
       route !== ROUTE_BP_REVOKE &&
-      route !== ROUTE_BP_FORCE_PUSH
+      route !== ROUTE_BP_FORCE_PUSH &&
+      route !== ROUTE_INBOX_ACT
     ) {
       send(res, 404);
       return;
@@ -691,6 +731,14 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       if (route === ROUTE_BP_PUSH) {
         try {
           const result = handleBpPush(outputDir, json);
+          // Gap 2: fire SSE event AFTER successful write so subscribers
+          // refresh their inbox UI without polling. Targeted fan-out to
+          // delivered receivers only (broadcaster ignores absent subs).
+          broadcaster.broadcast({
+            type: 'bp-pushed',
+            bp_id: result.bp_id,
+            receivers: result.delivered_to,
+          });
           send(res, 200, result);
         } catch (err) {
           send(res, 400, {
@@ -707,6 +755,12 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       if (route === ROUTE_BP_REVOKE) {
         try {
           const result = handleRevoke(outputDir, json);
+          // Gap 2: revoke fans out to every live subscriber per spec §5.3.
+          broadcaster.broadcast({
+            type: 'bp-revoked',
+            bp_id: result.bp_id,
+            receivers: [],
+          });
           send(res, 200, result);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -721,11 +775,42 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       if (route === ROUTE_BP_FORCE_PUSH) {
         try {
           const result = handleForcePush(outputDir, json);
+          // Gap 2: force-push is still a push — fire targeted bp-pushed.
+          // handleForcePush returns { ok, inbox_id, receiver_id } and only
+          // creates an inbox row, so we surface the bp_id from the request
+          // body and the single recipient from the result.
+          const reqBody = json as { bp_id?: string };
+          if (typeof reqBody.bp_id === 'string') {
+            broadcaster.broadcast({
+              type: 'bp-pushed',
+              bp_id: reqBody.bp_id,
+              receivers: [result.receiver_id],
+            });
+          }
           send(res, 200, result);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           const status = /not authorized/i.test(msg) ? 403 : 400;
           send(res, status, { ok: false, error: msg });
+        }
+        return;
+      }
+
+      // Gap 2 — POST /v1/inbox/act. Body: { inbox_id, receiver_id, action }.
+      // Accept compiles the BP into a SKILL.md under the user's HOME; reject
+      // just flips status + audit. We pass process.env.HOME / USERPROFILE so
+      // tests that override HOME stay isolated.
+      if (route === ROUTE_INBOX_ACT) {
+        try {
+          const userHome =
+            process.env.HOME ?? process.env.USERPROFILE ?? process.cwd();
+          const result = handleInboxAct(outputDir, userHome, json);
+          send(res, 200, result);
+        } catch (err) {
+          send(res, 400, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
         return;
       }
