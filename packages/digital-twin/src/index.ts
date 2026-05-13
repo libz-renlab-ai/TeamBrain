@@ -205,8 +205,13 @@ export {
 export {
   resolvePlatformInput,
   installHintForPlatform,
+  listAudioDevicesArgs,
+  listAudioDevices,
   type PlatformInput,
   type ResolvePlatformInputOptions,
+  type ListAudioDevicesOptions,
+  type ListAudioDevicesResult,
+  type ListAudioDevicesSpawnSync,
 } from './recorder/platform-input.js';
 
 export {

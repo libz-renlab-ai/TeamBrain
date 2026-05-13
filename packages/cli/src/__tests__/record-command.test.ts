@@ -11,6 +11,7 @@ import {
   executeRecordStart,
   executeRecordStop,
   executeRecordImport,
+  executeRecordDevices,
 } from '../commands/record.js';
 
 function freshHome(): string {
@@ -107,6 +108,14 @@ describe('parseRecordArgs', () => {
 
   it('rejects import with no file', () => {
     expect(() => parseRecordArgs(['import'])).toThrow(RecordArgError);
+  });
+
+  it('parses devices subcommand (#297)', () => {
+    expect(parseRecordArgs(['devices'])).toEqual({ sub: 'devices' });
+  });
+
+  it('rejects unknown subcommand mentioning the new devices verb in help (#297)', () => {
+    expect(() => parseRecordArgs(['nope'])).toThrow(/start\|stop\|import\|devices/);
   });
 });
 
@@ -362,6 +371,92 @@ describe('executeRecordImport (wired to ffmpeg-wrapper)', () => {
   });
 });
 
+describe('executeRecordDevices (issue #297)', () => {
+  it('prints ffmpeg device-listing output and exits 0 when output is non-empty', () => {
+    const c = captureOutput();
+    const r = executeRecordDevices(
+      { sub: 'devices' },
+      {
+        print: c.print,
+        printErr: c.printErr,
+        platform: 'win32',
+        detectFfmpeg: () => ({ available: true, version: '6.0' }),
+        listAudioDevices: ({ platform }) => ({
+          raw: '[dshow @ ...] DirectShow audio devices\n[dshow @ ...]  "Microphone (Realtek)"\n[dshow @ ...]  "Stereo Mix"\n',
+          exitCode: 1,
+          argv: ['-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'],
+        }),
+      },
+    );
+    expect(r.exitCode).toBe(0);
+    const joined = c.out.join('\n');
+    expect(joined).toContain('DirectShow audio devices');
+    expect(joined).toContain('"Microphone (Realtek)"');
+    expect(joined).toContain('-list_devices');
+    expect(joined).toContain('--device');
+  });
+
+  it('exits 1 with helpful stderr when ffmpeg is missing', () => {
+    const c = captureOutput();
+    const r = executeRecordDevices(
+      { sub: 'devices' },
+      {
+        print: c.print,
+        printErr: c.printErr,
+        platform: 'win32',
+        detectFfmpeg: () => ({ available: false }),
+      },
+    );
+    expect(r.exitCode).toBe(1);
+    expect(c.err.join('\n')).toContain('ffmpeg not found');
+  });
+
+  it('exits 1 with diagnostic when listAudioDevices returns no output', () => {
+    const c = captureOutput();
+    const r = executeRecordDevices(
+      { sub: 'devices' },
+      {
+        print: c.print,
+        printErr: c.printErr,
+        platform: 'darwin',
+        detectFfmpeg: () => ({ available: true, version: '6.0' }),
+        listAudioDevices: () => ({
+          raw: '',
+          exitCode: 0,
+          argv: ['-f', 'avfoundation', '-list_devices', 'true', '-i', ''],
+        }),
+      },
+    );
+    expect(r.exitCode).toBe(1);
+    expect(c.err.join('\n')).toContain('record devices: ffmpeg produced no output');
+  });
+
+  it('uses platform-correct argv (Linux pulse)', () => {
+    const c = captureOutput();
+    let receivedArgv: readonly string[] | null = null;
+    const r = executeRecordDevices(
+      { sub: 'devices' },
+      {
+        print: c.print,
+        printErr: c.printErr,
+        platform: 'linux',
+        detectFfmpeg: () => ({ available: true, version: '6.0' }),
+        listAudioDevices: ({ platform }) => {
+          // simulate listAudioDevices internal: derive argv from platform
+          const argv =
+            platform === 'linux'
+              ? (['-sources', 'pulse'] as const)
+              : ([] as const);
+          receivedArgv = argv;
+          return { raw: 'pulse sources output', exitCode: 0, argv };
+        },
+      },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(receivedArgv).toEqual(['-sources', 'pulse']);
+  });
+});
+
 describe('executeRecord top-level dispatcher', () => {
   it('dispatches start', async () => {
     const c = captureOutput();
@@ -408,5 +503,25 @@ describe('executeRecord top-level dispatcher', () => {
     );
     expect(r.exitCode).toBe(0);
     expect(c.out.join('\n')).toContain('record: imported');
+  });
+
+  it('dispatches devices (#297)', async () => {
+    const c = captureOutput();
+    const r = await executeRecord(
+      { sub: 'devices' },
+      {
+        print: c.print,
+        printErr: c.printErr,
+        platform: 'win32',
+        detectFfmpeg: () => ({ available: true, version: '6.0' }),
+        listAudioDevices: () => ({
+          raw: 'fake device list',
+          exitCode: 1,
+          argv: ['-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'],
+        }),
+      },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(c.out.join('\n')).toContain('fake device list');
   });
 });
