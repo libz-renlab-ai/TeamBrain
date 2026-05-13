@@ -8,15 +8,17 @@
    └────────────┘           └────────────┘           └────────────┬─────────────┘
                                                                   │
                                                                   ▼
-                                                ┌──────────────────────────────┐
-                                                │ HTML artifact hosted on the  │
-                                                │ PR proposer's OWN storage    │
-                                                │ (GH Pages / S3 / R2 /        │
-                                                │  Vercel / personal domain)   │
-                                                │  NOT inside repo             │
-                                                │  NOT in /tmp on build agent  │
-                                                │  NOT on localhost            │
-                                                └──────────────────────────────┘
+                                                ┌──────────────────────────────────────┐
+                                                │ HTML artifact hosted on the          │
+                                                │ PR proposer's OWN storage            │
+                                                │ (self-hosted GitHub Pages, single    │
+                                                │  canonical URL form per              │
+                                                │  docs/VISUAL-PROOF-FORMAT.md:        │
+                                                │  https://<username>.github.io/       │
+                                                │    <artifact-repo>/<pr>/<name>.html) │
+                                                │  NOT S3/R2/Vercel/imgur              │
+                                                │  NOT inside repo / /tmp / localhost  │
+                                                └──────────────────────────────────────┘
 ```
 
 适用范围：本仓库里任何「带可视化证据的 PR」工作流——design / UI 改动、dashboard / status board、verification render、screenshot diff、demo recording、benchmark report、QA evidence、`/review` finding 复现等所有需要 reviewer **眼睛实际看一眼**才能判定的 PR。
@@ -28,48 +30,43 @@
 
 ## What counts as "PR proposer's own storage"
 
-| 类别 | 允许 ✅ | 不允许 ❌ |
-|------|-------|----------|
-| GitHub Pages | `username.github.io/*` / 仓库 fork 的 Pages | TeamBrain 主仓库的 GH Pages（构建机产物，非 proposer 个人 storage） |
-| 对象存储 | proposer 个人 / 公司 AWS S3 公有 bucket、Cloudflare R2、阿里云 OSS、腾讯云 COS、Backblaze B2 | 仓库 CI 共享 S3、临时 presigned URL（过期后失效） |
-| 静态站点托管 | proposer 个人 Vercel / Netlify / Cloudflare Pages / Render | TeamBrain 团队共享 Vercel 项目（视为 repo 内置不算个人 storage） |
-| 个人域名 | proposer 自有域名 + 静态服务 | `localhost:*` / `127.0.0.1:*` / `192.168.*` / `10.*` LAN-only |
-| Gist (proposer-served viewer) | GitHub Gist HTML 通过 **proposer 自托管的 viewer**（如 proposer 个人 GH Pages 上的 fetch + render） | 普通 gist 文本预览（不渲染 HTML） |
-| Gist (third-party viewer) | ⚠️ `https://htmlpreview.github.io/?<gist-raw-url>` —— **`htmlpreview.github.io` 是第三方免费服务（cwong/htmlpreview），不在 proposer 控制下**，无 SLA、常被 rate-limit、拒绝 >2MB 的 gist；仅在没有更好选择时降级使用，并在 PR comment 里显式写「third-party viewer，可能失效」 | 把 `htmlpreview.github.io` 当作 proposer 自己的 storage 报给 reviewer |
-| IMG-only escape hatch | ⚠️ imgur / cloudinary 截图链接 —— **仅当 evidence 本质是单张静态图且 HTML 反而冗余时**；**注意**：imgur 对匿名上传 6 个月低互动后会删，cloudinary free tier 30 天无访问转 cold storage，**默认违反 90 天 floor**，必须用 paid plan 或个人账号 + 显式 retention 设置；canonical anchor 仍 mandate HTML，本行只是退化场景 | 把 imgur / cloudinary 当作长期 HTML 托管（不是它们的设计场景） |
-| 短期分享服务 | （无）| `transfer.sh`（14 天默认）/ `0x0.st`（变量 retention）/ `catbox.moe`（可永久但需登录、去匿名化）—— PR 还没 merge 链接可能已死 |
+**Canonical authority**：file format + URL form + hosting allowlist 的 single source of truth 是 [`docs/VISUAL-PROOF-FORMAT.md`](VISUAL-PROOF-FORMAT.md)（在 PR #409 中作为 canonical 落地）。本文件**不重复**那份契约，只指向它并强调本规则适用的工作流位置（issue → PR → comment）。
 
-**底线**：reviewer 在任何一台机器上点开 PR comment 里的链接都能看到完整产物；PR branch 被 delete、worktree 被回收、构建机被销毁后，链接仍然能打开**至少 90 天**（建议永久，让 release notes / changelog 反查时还能用）。
+简而言之，per `docs/VISUAL-PROOF-FORMAT.md`：
+
+| | 唯一允许 ✅ | 不允许 ❌ |
+|---|---|---|
+| 文件格式 | `*.html`（`<!DOCTYPE html>` 起头、self-contained、无 third-party CDN） | `*.txt` / `*.json` / `*.log` / 截图 raw png 单独（这些是 auditable raw evidence，不是 visual proof）|
+| 托管 | PR proposer 的 **self-hosted GitHub Pages**：`https://<username>.github.io/<artifact-repo>/<pr-or-feature>/<name>-<ts>.html`（**单一 canonical 形态、无 alternative**） | TeamBrain repo 的 GH Pages / S3 / R2 / Vercel / Netlify / Cloudflare Pages / imgur / cloudinary / GitHub user-images CDN / pastebin / `/tmp` / `localhost` / 仓库内 |
+| URL pasting | PR body 顶部 `## Visual proof` section 链接 + PR comment append 链接（reviewer-visible first comment） | 私 DM / 仅口头 / commit message only |
+| 辅助 PNG/JPG | 允许，但**必须**与 HTML artifact 托管在同一 GH Pages site，且 HTML 是 mandatory primary evidence | GitHub user-images CDN 上传 / 嵌入 raw blob URL |
+
+**底线**：reviewer 在任何一台机器上点开 PR comment 里的 GH Pages URL 都能看到完整 HTML 渲染；PR branch 被 delete、worktree 被回收、构建机被销毁后，链接仍然能打开（GH Pages 保留 commit 历史，proposer 自己可 revert）。本规则**不引入**其它 storage 类别——任何 S3 / R2 / Vercel / personal domain 都被 `docs/VISUAL-PROOF-FORMAT.md` 显式排除。
 
 ## Why / 为什么这么设计
 
 - **Propose issue first**：与 `docs/FIXEDFLOW.md` 的 issue→PR→merge 主线对齐，保留 audit trail。视觉证据型工作不像普通 fix 可以反推 `git log`，issue + visual proof 是唯一能让团队事后还原「当时看到了什么」的载体。
 - **Make PR without asking**：proposer 已经把视觉产物烤好、要拿给 reviewer 看，再问一遍许可只是 lazy signal（user-level `lazy-signals.md`）。`docs/CLAIMED-WORKTREE-NO-PERMISSION.md` 已经明确 claim 落地后 driver / proposer 不需要二次审批，本规则延伸到「带视觉产物的 PR」场景。
 - **Visual proof in HTML (not PNG, not video)**：HTML 可以承载结构化数据 + 交互 + 多 viewport 截图 + diff side-by-side + canonical metadata（commit SHA / branch / 时间戳 / probe 输出 JSON），单一文件即可成为 reviewable artifact；纯 PNG / mp4 不携带 reviewable 元信息，且无法 ctrl-F。Reviewer 在 PR 上点链接就能在浏览器里看，**不需要** clone branch / 启动 dev server / 跑 `pnpm frontend:dev`。
-- **Hosted on proposer's own storage**：(1) repo 内 HTML 会被 `pnpm typecheck` 扫 / `/review` 报噪 / `compile` 误覆盖 / `docs/POP-OPEN-HTML.md` 三条铁律的「NOT in project」直接冲突；(2) 构建机 `/tmp` 在 PR cleanup 后立刻消失，reviewer 后开第二天就 404；(3) `localhost` 只在 proposer 本机能看；(4) 共享团队 storage 让 proposer 失去对证据的控制权（哪天被覆盖 / 被回收，proposer 无从恢复）。让 proposer 用自己的 storage 是把证据**所有权**与 PR 作者**强绑定**。
+- **Hosted on proposer's own self-hosted GitHub Pages**：per `docs/VISUAL-PROOF-FORMAT.md`，唯一 canonical hosting 是 PR proposer 的 `https://<username>.github.io/<artifact-repo>/...`。理由（详见 VISUAL-PROOF-FORMAT.md `### Why self-hosted not centralized`）：(1) cost & rate-limit isolation；(2) provenance（URL 里 `<username>` 直接担保 PR author 身份）；(3) permanence with rollback（GH Pages 保留 commit 历史，proposer 可 revert 而不需 admin）；(4) no special secrets（GH Pages 默认 public，零授权门槛）。
 
 ## How to make the proof / 操作骨架
 
 1. **生成 HTML 到 `/tmp/teamagent/<feature>/<slug>-<ts>.html`**（沿用 `docs/POP-OPEN-HTML.md` 三条铁律的写盘约定），本地用 `open -a "Google Chrome"` 先自查。
-2. **上传到 proposer 自己的 storage**——按 proposer 习惯：
+2. **推到自己的 self-hosted GitHub Pages**（per `docs/VISUAL-PROOF-FORMAT.md` canonical URL 形态：`https://<username>.github.io/<artifact-repo>/<pr-or-feature>/<name>-<ts>.html`，**单一形态、无 alternative**）：
    ```bash
-   # 例：GitHub Pages（proposer 个人仓库）
-   cp /tmp/teamagent/<feature>/<slug>-<ts>.html ~/projects/<username>.github.io/teamagent/<slug>-<ts>.html
-   (cd ~/projects/<username>.github.io && git add -A && git commit -m "proof: PR #N <slug>" && git push)
-   # 公网地址：https://<username>.github.io/teamagent/<slug>-<ts>.html
-
-   # 例：S3 public bucket
-   aws s3 cp /tmp/teamagent/<feature>/<slug>-<ts>.html s3://<my-public-bucket>/teamagent/<slug>-<ts>.html --acl public-read
-
-   # 例：Cloudflare R2 + 自定义域
-   rclone copy /tmp/teamagent/<feature>/<slug>-<ts>.html r2:<bucket>/teamagent/
+   # 提前一次性 bootstrap（per docs/VISUAL-PROOF-FORMAT.md）：在 GitHub 上创建一个独立的 artifact-repo（推荐 <username>/teambrain-proof），enable GH Pages，clone 到 ~/projects/teambrain-proof/。
+   cp /tmp/teamagent/<feature>/<slug>-<ts>.html ~/projects/teambrain-proof/pr-<N>/<slug>-<ts>.html
+   (cd ~/projects/teambrain-proof && git add -A && git commit -m "proof: PR #<N> <slug>" && git push)
+   # 公网地址：https://<username>.github.io/teambrain-proof/pr-<N>/<slug>-<ts>.html
    ```
+   **禁止** S3 / R2 / Vercel / Netlify / Cloudflare Pages / imgur / cloudinary / gist + htmlpreview / `/tmp` / `localhost` / TeamBrain repo 自己的 GH Pages（详见 `docs/VISUAL-PROOF-FORMAT.md` § Hosting）。
 3. **在 PR 上 append comment**（不是改 PR body，是单独一条 comment，便于多次迭代各自留痕）：
    ```bash
    gh pr comment <PR-N> --body "$(cat <<'EOF'
    Visual proof of work for this PR:
 
-   - https://<proposer-storage>/teamagent/<slug>-<ts>.html
+   - https://<username>.github.io/teambrain-proof/pr-<N>/<slug>-<ts>.html
 
    Captured at: <ISO-timestamp>
    Branch: <branch-name>
