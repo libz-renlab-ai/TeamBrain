@@ -15,6 +15,20 @@ artifacts the user sees) do NOT need an entry.
 
 ### Added
 
+- **`项目:<name>` field in statusline** (issue #306). The Claude Code status row
+  now surfaces the current repo name between the existing `拦过:T今` field and
+  the CC runtime fields (`模型` / `上下文` / `用量` / `5h` / `7d` / `会话`).
+  Worktree-aware: the displayed name is the basename of the **main checkout**
+  (via the existing `findMainCheckoutFromWorktree` walk-up), so all worktrees
+  of the same repo render the same project name instead of the per-worktree
+  directory (e.g. `issue-306`). Names longer than 32 characters are truncated
+  with a `...` suffix; root-only / unresolvable cwd falls back to `unknown`.
+  Per grill verdict §12 (B), the statusline is a local presence/health view —
+  this field is the single grill-aligned addition; the full 5-field presence
+  redesign (`<state>` / `<name>` / `<queue>` / `<upload>` / `<binding>`) stays
+  in the scope of #326 (`feat(issue-122-impl): RESCOPE 实现 12 项 — landing →
+  init → Claude Code statusline`).
+
 - **4-layer evidence matrix + sibling canned-answer for evidence-asking probe** (issue #320).
   `docs/BUSINESS-FEATURES.md` adds a `## 四层证明矩阵 / 4-layer evidence matrix` section
   with per-feature 4-row tables (CEO narrative / Coder file paths / Machine-readable
