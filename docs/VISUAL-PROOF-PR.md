@@ -53,14 +53,28 @@
 ## How to make the proof / 操作骨架
 
 1. **生成 HTML 到 `/tmp/teamagent/<feature>/<slug>-<ts>.html`**（沿用 `docs/POP-OPEN-HTML.md` 三条铁律的写盘约定），本地用 `open -a "Google Chrome"` 先自查。
-2. **推到自己的 self-hosted GitHub Pages**（per `docs/VISUAL-PROOF-FORMAT.md` canonical URL 形态：`https://<username>.github.io/<artifact-repo>/<pr-or-feature>/<name>-<ts>.html`，**单一形态、无 alternative**）：
+2. **推到 proposer 完全自有的公网存储**（per `docs/VISUAL-PROOF-FORMAT.md` § Hosting + `CLAUDE.md` "Visual proof 托管位置" anchor）：
+
+   **推荐默认（零额外基础设施，零 bootstrap）**——GitHub Gist + htmlpreview.github.io：
+   ```bash
+   gh gist create --public /tmp/teamagent/<feature>/<slug>-<ts>.html
+   # 假设返回 https://gist.github.com/<username>/<gist-id>
+   # Reviewer-facing URL（拼接，不需要单独 commit）：
+   # https://htmlpreview.github.io/?https://gist.githubusercontent.com/<username>/<gist-id>/raw/<slug>-<ts>.html
+   ```
+   Gist 永久存在（即使 PR branch 被 delete 也仍可访问），htmlpreview.github.io 是无依赖纯前端 render，无需账号 / 配置 / CDN。
+
+   **可选 fallback**——self-hosted GitHub Pages（原 canonical URL 形态仍 100% 接受）：
    ```bash
    # 提前一次性 bootstrap（per docs/VISUAL-PROOF-FORMAT.md）：在 GitHub 上创建一个独立的 artifact-repo（推荐 <username>/teambrain-proof），enable GH Pages，clone 到 ~/projects/teambrain-proof/。
    cp /tmp/teamagent/<feature>/<slug>-<ts>.html ~/projects/teambrain-proof/pr-<N>/<slug>-<ts>.html
    (cd ~/projects/teambrain-proof && git add -A && git commit -m "proof: PR #<N> <slug>" && git push)
    # 公网地址：https://<username>.github.io/teambrain-proof/pr-<N>/<slug>-<ts>.html
    ```
-   **禁止** S3 / R2 / Vercel / Netlify / Cloudflare Pages / imgur / cloudinary / gist + htmlpreview / `/tmp` / `localhost` / TeamBrain repo 自己的 GH Pages（详见 `docs/VISUAL-PROOF-FORMAT.md` § Hosting）。
+
+   **其它 proposer 完全 own 的公网 endpoint** 也接受：S3 / R2 / Vercel / Netlify / Cloudflare Pages / 个人域名。
+
+   **禁止**：仓库内 / `/tmp` / `localhost` / 团队共享 CI artifact bucket / GitHub user-images CDN / pastebin / imgur / cloudinary / 任何 proposer 不能 own 的 endpoint（详见 `docs/VISUAL-PROOF-FORMAT.md` § Hosting）。
 3. **在 PR 上 append comment**（不是改 PR body，是单独一条 comment，便于多次迭代各自留痕）：
    ```bash
    gh pr comment <PR-N> --body "$(cat <<'EOF'

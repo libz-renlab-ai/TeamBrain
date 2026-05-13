@@ -51,20 +51,61 @@ PR #399 是这条规则的 forcing-function：它在 `docs/plans/2026-05-11-feat
 
 两者是 **互补**，不是 either-or：raw evidence 给 grep / diff / `claudefast` judge，HTML 给人眼。一个 PR 声称有 visual proof，必须有 browser-renderable HTML；只放 raw txt/json 的 PR 不允许在 body 写 "visual proof"。
 
-## Hosting — PR proposer's self-hosted GitHub Pages
+## Hosting — public storage the PR proposer fully owns
 
-每个 PR proposer 负责把 HTML artifact 推到**自己的** GH Pages site（不是 TeamBrain repo 的 GH Pages，不是 anthropic、不是 vercel、不是 netlify、不是 imgur）。**Canonical 路径只走 project-pages 模式**——一个单一约定的 URL 形态，没有 alternative：
+Visual proof of work HTML must be hosted on **public storage the PR proposer fully owns**. Two equally accepted paths; **recommended default is GitHub Gist + htmlpreview.github.io** (zero extra infra).
+
+### Recommended default: GitHub Gist + htmlpreview.github.io
+
+零 bootstrap、零额外基础设施：一行 `gh gist create --public visual-proof-PR-<N>.html` 即得永久 raw URL，reviewer 在浏览器里点开 htmlpreview 链接即可看到完整 HTML 渲染。
+
+```bash
+gh gist create --public --desc "Visual proof for PR #<N>" /tmp/teamagent/<feature>/<slug>-<ts>.html
+# returns: https://gist.github.com/<username>/<gist-id>
+
+# Reviewer-facing URL（拼接，不需要单独 commit / push）：
+# https://htmlpreview.github.io/?https://gist.githubusercontent.com/<username>/<gist-id>/raw/<slug>-<ts>.html
+```
+
+理由：
+1. **零 bootstrap** —— 不用建 `<artifact-repo>` repo、不用 enable Pages、不用记 deploy workflow。
+2. **htmlpreview.github.io 是无依赖纯前端 render** —— fetch raw blob 后浏览器内 parse + display，对所有公开 gist URL 都生效，零账号、零配置。
+3. **Permanence** —— Gist 在 PR branch delete 之后仍永久存在，complies with `docs/VISUAL-PROOF-PR.md` 的「proof survives branch deletion」约束。
+4. **Provenance** —— Gist URL 含 proposer 的 `<username>` 段（`https://gist.github.com/<username>/<gist-id>`），与 self-hosted GH Pages 同样担保 PR author 身份。
+5. **格式契约 100% 继承** —— gist 文件就是 `.html`，self-contained / 内联 CSS / 无 third-party CDN 这些 §file format 既有约束完全适用。
+
+### Fallback: self-hosted GitHub Pages (原 canonical URL 形态仍接受)
+
+If proposer prefers a self-hosted GH Pages site (e.g., they already have `<username>/teambrain-proof` set up, or they want richer multi-page artifacts with relative `<script src="./vendored.js">` includes), the original URL form is **100% still accepted**:
 
 ```
 https://<username>.github.io/<artifact-repo>/<pr-or-feature>/<name>-<ts>.html
 ```
 
-- `<username>` = PR author 的 GitHub handle（例：本仓库主用户 `liush2yuxjtu` 对应 `https://liush2yuxjtu.github.io/`）
-- `<artifact-repo>` = 该用户专门用于托管 PR visual proof 的 separate public repo（推荐 `teambrain-proof` 这种独立 sub-repo；**禁止**把 `<username>.github.io` 这种 user-pages root 同时当 `<artifact-repo>` 用——会导致 URL 自指 `<username>.github.io/<username>.github.io/...` 与 anchor URL 例子的 3-segment path 不一致，且 reviewer 没法靠 URL 形态区分 visual proof artifact vs 其它 user-pages root 内容）
-- `<pr-or-feature>` = PR 编号或 feature slug（例：`pr-399/` / `feature-1-init/`）
+- `<username>` = PR author 的 GitHub handle
+- `<artifact-repo>` = 该用户专门用于托管 PR visual proof 的 separate public repo（推荐 `teambrain-proof`；禁止 reuse `<username>.github.io` user-pages root 见下方 §Bootstrap 说明）
+- `<pr-or-feature>` = PR 编号或 feature slug
 - `<name>-<ts>.html` = artifact 文件名 + unix 时间戳避免覆盖
 
-理由：单一 canonical 形态把 anchor URL 例子（`https://<username>.github.io/<repo>/<path>.html`，3 段 path）与实际 PR body URL 形态绑死，reviewer 一眼能验证 URL 结构 ；user-pages root 模式（少一层 `<artifact-repo>`）虽然技术上也满足 8 个 substring 锚点，但会引入"URL 形态不匹配 anchor URL 例子"的 reviewer 困惑，本规则不接受这种 ambiguity，强制 sub-repo 模式。
+This path requires one-time bootstrap (see §Bootstrap below). After bootstrap, every PR reuses the same `teambrain-proof` repo + a new `pr-<N>/` subdir.
+
+### Other accepted endpoints
+
+Anything else the PR proposer **fully owns** is also accepted: S3 bucket on the proposer's own AWS account, R2 on their own Cloudflare, Vercel / Netlify / Cloudflare Pages under their account, or a personal domain.
+
+### Forbidden
+
+无论选哪条 hosting 路径，下列 endpoint 一律**禁止**——任一命中即 reject：
+
+- 仓库内（TeamBrain repo 自身 / 子目录）
+- `/tmp` / `/var` / `~/Downloads` / 任何本地路径
+- `localhost` / `127.0.0.1` / `0.0.0.0`
+- 团队共享 CI artifact bucket（任何 proposer 不能 unilaterally rotate / delete 的 endpoint）
+- GitHub user-images CDN（`user-images.githubusercontent.com`，rate-limited、author 不能 own）
+- pastebin / imgur / cloudinary / Google Drive / Dropbox shared link
+- TeamBrain repo 自己的 GH Pages（与 `landing-deploy.yml` 冲突，且不是 proposer-owned）
+
+底线：reviewer 在任何一台机器上点开 PR comment / body 里的 URL 都能看到完整 HTML 渲染；PR branch 被 delete、worktree 被回收、构建机被销毁后，链接仍然能打开；proposer 在不需要任何外部 admin 介入的情况下，可以 revert / delete / update 自己的 artifact。
 
 ### Why self-hosted not centralized
 
