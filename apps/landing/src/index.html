@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TeamAgent — Evolving Rules for Claude Code</title>
-  <meta name="description" content="TeamAgent gives Claude Code cross-session memory, PreToolUse interception, and team-wide sync. Not just CLAUDE.md — a living rules engine.">
+  <meta name="description" content="TeamAgent gives Claude Code cross-session memory and team-wide rule sync. Not just CLAUDE.md — a living rules engine.">
   <link rel="canonical" href="https://github.com/libz-renlab-ai/TeamBrain">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -64,12 +64,11 @@
     <!-- MAINTENANCE: when replacing double-moment.gif, regenerate double-moment-static.png from the same recording (see TOOLCHAIN.md). The static frame is what reduced-motion users see; stale PNG = lying to motion-sensitive users. -->
     <picture>
       <source media="(prefers-reduced-motion: reduce)" srcset="double-moment-static.png" />
-      <img class="hero-gif" src="double-moment.gif" alt="TeamAgent double-moment 演示：用户教 AI 用 dayjs 替代 moment.js，新会话里 PreToolUse hook 自动应用学过的规则，AI 不再重复同一错误" loading="eager" fetchpriority="high" width="688" height="490" />
+      <img class="hero-gif" src="double-moment.gif" alt="TeamAgent double-moment 演示：用户教 AI 用 dayjs 替代 moment.js，新会话里 TeamAgent 自动应用学过的规则，AI 不再重复同一错误" loading="eager" fetchpriority="high" width="688" height="490" />
     </picture>
 
     <div class="install-box">
       <pre>curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash</pre>
-      <pre>teamagent init</pre>
     </div>
 
     <section class="section">
@@ -94,7 +93,7 @@
               <td><span class="check" aria-hidden="true">✓</span><span class="sr-only">支持</span></td>
             </tr>
             <tr>
-              <th scope="row">工具调用前拦截 PreToolUse</th>
+              <th scope="row">团队规则自动应用</th>
               <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
               <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
               <td><span class="cross" aria-hidden="true">✗</span><span class="sr-only">不支持</span></td>
@@ -117,7 +116,7 @@
       <ul class="bullets">
         <li>每次开新会话，AI 就像失忆了一样，同一个错误犯两遍</li>
         <li>团队里每个人调教 AI 的经验无法共享，各自为战</li>
-        <li>想让 AI 在执行危险操作前停下来，但没有拦截机制</li>
+        <li>想让 AI 在动手前先按团队规则来，但没有自动执行机制</li>
         <li>CLAUDE.md 越写越长，AI 却不按规则来</li>
       </ul>
 
