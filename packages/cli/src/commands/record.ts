@@ -208,6 +208,11 @@ export function executeRecordStart(
     r.printErr(
       `record start failed: ${err instanceof Error ? err.message : String(err)}`,
     );
+    // Issue #297: nudge users toward the discovery + escape-hatch surface.
+    r.printErr(
+      'hint: run `teamagent record devices` to list available audio devices, ' +
+        'then pass `--device "<name>"` to override the platform default.',
+    );
     return { exitCode: 1 };
   }
 }

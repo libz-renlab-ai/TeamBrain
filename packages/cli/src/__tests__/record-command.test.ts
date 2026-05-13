@@ -229,6 +229,25 @@ describe('executeRecordStart (wired to ffmpeg-wrapper)', () => {
     expect(c.err.join('\n')).toContain('record start failed');
     expect(c.err.join('\n')).toContain('ffmpeg not found');
   });
+
+  it('error path includes a hint pointing to `record devices` (#297)', () => {
+    const c = captureOutput();
+    executeRecordStart(
+      { sub: 'start' },
+      {
+        homedir: () => home,
+        print: c.print,
+        printErr: c.printErr,
+        ulid: () => 'X',
+        ffmpegStart: () => {
+          throw new Error('Could not find audio device');
+        },
+      },
+    );
+    const errOut = c.err.join('\n');
+    expect(errOut).toContain('record devices');
+    expect(errOut).toContain('--device');
+  });
 });
 
 describe('executeRecordStop (wired to ffmpeg-wrapper)', () => {
