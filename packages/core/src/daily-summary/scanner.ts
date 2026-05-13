@@ -121,7 +121,10 @@ export function scanTodayActivity(opts: ScanOptions): ScanResult {
         continue;
       }
       if (stat.mtimeMs < windowStartMs) continue;
-      if (stat.mtimeMs > windowEndMs) continue;
+      // No upper bound: the operator's current Claude session is actively
+      // being appended to; its mtime can land a few ms past the cached
+      // `nowDate` sample. Grill §2 explicitly requires "当前会话也算今天",
+      // so accept any mtime >= today's local-midnight.
 
       let raw: string;
       try {

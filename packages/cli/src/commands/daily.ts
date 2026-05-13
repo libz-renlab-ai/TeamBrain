@@ -47,6 +47,12 @@ export interface DailyOptions {
   format?: "json" | "context";
   /** Show help and exit. */
   help?: boolean;
+  /**
+   * Informational label written into the archive's "Triggered by:" line.
+   * Defaults to "cli" when invoked from the CLI; hook callers pass the
+   * matcher reason (e.g. "whitelist", "slash") for audit-trail visibility.
+   */
+  triggeredBy?: string;
 }
 
 export interface DailyResult {
@@ -173,15 +179,16 @@ export interface DailyExecOutput {
 export function executeDaily(opts: DailyOptions = {}): DailyExecOutput {
   const result = buildDailyResult(opts);
   const json = JSON.stringify(result, null, 2) + "\n";
+  const matcherReason = opts.triggeredBy ?? "cli";
   const contextMarkdown = composeAdditionalContext({
     date: result.date,
     digests: result.projects,
-    matcherReason: "cli",
+    matcherReason,
   });
   const archiveMarkdown = composeArchiveMarkdown({
     date: result.date,
     digests: result.projects,
-    matcherReason: "cli",
+    matcherReason,
   });
   // Resolve archive root: TEAMAGENT_HOME env wins when set (matches the
   // convention used across the CLI — see install-state-fs-store.ts:62); else
@@ -193,7 +200,13 @@ export function executeDaily(opts: DailyOptions = {}): DailyExecOutput {
 
   if (opts.archive) {
     fs.mkdirSync(path.dirname(archivePath), { recursive: true });
-    fs.writeFileSync(archivePath, archiveMarkdown, "utf-8");
+    // Atomic write: tmpfile + rename. Two concurrent operators (or the same
+    // operator hitting `/daily` in two terminals at once) writing to the
+    // same archive path would otherwise interleave on writeFileSync and
+    // leave a half-written file. mkdtemp + rename is safe on the same fs.
+    const tmpPath = `${archivePath}.${Date.now()}-${Math.random().toString(36).slice(2, 8)}.tmp`;
+    fs.writeFileSync(tmpPath, archiveMarkdown, "utf-8");
+    fs.renameSync(tmpPath, archivePath);
     const out: DailyExecOutput = {
       result: { ...result, archivedPath: archivePath },
       json: JSON.stringify({ ...result, archivedPath: archivePath }, null, 2) + "\n",

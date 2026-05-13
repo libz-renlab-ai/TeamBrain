@@ -245,6 +245,7 @@ async function main(): Promise<void> {
             projectsRoot: path.join(home, ".claude", "projects"),
             archive: true,
             format: "context",
+            triggeredBy: dailyMatch.reason,
           });
           const out: UserPromptOutput = {
             hookSpecificOutput: {
