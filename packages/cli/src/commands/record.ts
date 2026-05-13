@@ -83,7 +83,10 @@ export function parseRecordArgs(rest: string[]): RecordParsedArgs {
   const sub = rest[0];
   if (!sub) {
     throw new RecordArgError(
-      'Usage: teamagent record <start|stop|import|devices> [args]',
+      // Issue #296: distinguish from `teamagent recording` (Recording Memory).
+      "Usage: teamagent record <start|stop|import|devices> [args]\n" +
+        "  'teamagent record' is the digital-twin audio recorder.\n" +
+        "  For transcript JSON ingestion, use 'teamagent recording'.",
     );
   }
   switch (sub) {
@@ -112,6 +115,18 @@ export function parseRecordArgs(rest: string[]): RecordParsedArgs {
       const file = rest[1];
       if (!file) {
         throw new RecordArgError('Usage: teamagent record import <file> [--label <l>]');
+      }
+      // Issue #296: a transcript JSON file belongs to `teamagent recording`
+      // (Recording Memory), not this audio recorder. Catch the wrong-tool
+      // mistake at parse time with a redirect rather than letting ffmpeg
+      // fail downstream with a cryptic "not a valid audio file".
+      if (/\.json$/i.test(file)) {
+        throw new RecordArgError(
+          `record import takes an audio file, got a JSON file (${file}). ` +
+            `Did you mean 'teamagent recording import --file ${file}'? ` +
+            `'teamagent record' is the digital-twin audio recorder; ` +
+            `'teamagent recording' is the Recording Memory subsystem. See 'teamagent recording --help'.`,
+        );
       }
       const result: RecordParsedArgs = { sub: 'import', filePath: file };
       for (let i = 2; i < rest.length; i++) {
