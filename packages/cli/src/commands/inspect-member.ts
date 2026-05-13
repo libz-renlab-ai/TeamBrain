@@ -35,8 +35,9 @@ import type { PersistedEvent } from "@teamagent/types";
 export interface InspectMemberOptions {
   member: string;
   project?: string;
-  /** Window keyword or absolute pair. */
-  window: "24h" | "7d" | "since-creation" | "session+24h";
+  /** Window keyword. `session+24h` was removed as a placeholder; add it
+   *  back once session-anchoring is wired through to a real anchor time. */
+  window: "24h" | "7d" | "since-creation";
   /** ISO 8601; explicit injected "now" for determinism. */
   now: string;
   /** Optional output path for the inspection.json. */
@@ -88,26 +89,21 @@ export function parseInspectMemberArgs(
     else if (a?.startsWith("--project="))
       project = a.slice("--project=".length);
     else if (a === "--window") {
-      const v = args[++i];
-      if (
-        v !== "24h" &&
-        v !== "7d" &&
-        v !== "since-creation" &&
-        v !== "session+24h"
-      ) {
+      const v = takeValue(args, ++i, "--window");
+      if (v !== "24h" && v !== "7d" && v !== "since-creation") {
         throw new InspectMemberError(
           "bad_flag",
           `unknown --window value: ${v}`
         );
       }
       window = v;
-    } else if (a === "--now") now = args[++i];
+    } else if (a === "--now") now = takeValue(args, ++i, "--now");
     else if (a?.startsWith("--now=")) now = a.slice("--now=".length);
-    else if (a === "--out") out = args[++i];
+    else if (a === "--out") out = takeValue(args, ++i, "--out");
     else if (a?.startsWith("--out=")) out = a.slice("--out=".length);
     else if (a === "--github-fake") githubFake = true;
     else if (a === "--fake-abnormal") {
-      const v = args[++i];
+      const v = takeValue(args, ++i, "--fake-abnormal");
       if (v !== "repeated_deny" && v !== "education_loop" && v !== "stuck") {
         throw new InspectMemberError(
           "bad_flag",
@@ -115,7 +111,8 @@ export function parseInspectMemberArgs(
         );
       }
       fakeAbnormal = v;
-    } else if (a === "--teamagent-home") teamagentHome = args[++i];
+    } else if (a === "--teamagent-home")
+      teamagentHome = takeValue(args, ++i, "--teamagent-home");
     else if (a?.startsWith("--teamagent-home="))
       teamagentHome = a.slice("--teamagent-home=".length);
     else if (a === "--help" || a === "-h") {
@@ -153,7 +150,7 @@ export function renderInspectMemberHelp(): string {
     "",
     "Options:",
     "  --project <owner/repo>     GitHub repo slug (default: omit → fake-only)",
-    "  --window <name>            24h | 7d | since-creation | session+24h",
+    "  --window <name>            24h | 7d | since-creation",
     "                             (default: 24h)",
     "  --now <ISO8601>            override 'now' (default: real wall clock)",
     "  --out <path>               also write inspection JSON here",
@@ -164,6 +161,21 @@ export function renderInspectMemberHelp(): string {
     "                             ~/.teamagent)",
     "  -h, --help                 show this help",
   ].join("\n");
+}
+
+function takeValue(
+  args: readonly string[],
+  i: number,
+  flag: string
+): string {
+  const v = args[i];
+  if (v === undefined) {
+    throw new InspectMemberError(
+      "bad_flag",
+      `${flag} requires a value`
+    );
+  }
+  return v;
 }
 
 interface ExecuteDeps {
@@ -257,9 +269,12 @@ export async function executeInspectMember(
     abnormalSignals,
   };
 
-  // 5) write inspection.json (always)
+  // 5) write inspection.json (always). Sanitize member for filename
+  //    component so a malicious value like `../../etc/passwd` can never
+  //    escape the inspections dir; project slug is already sanitized.
   const inspectionsDir = path.join(home, projectSlug, "inspections");
-  const inspectionFileName = `${tsForFilename(opts.now)}-${opts.member}.json`;
+  const memberFsSafe = sanitize(opts.member);
+  const inspectionFileName = `${tsForFilename(opts.now)}-${memberFsSafe}.json`;
   const inspectionPath = path.join(inspectionsDir, inspectionFileName);
   writeFile(inspectionPath, JSON.stringify(result, null, 2) + "\n");
 
@@ -298,8 +313,12 @@ function resolveWindow(
   window: InspectMemberOptions["window"],
   now: string
 ): { since: string; until: string } {
-  const until = now;
+  // Window comparisons in correlate() use lexicographic ISO compare; both
+  // bounds must be normalized to UTC `Z`. We always emit `Z` and (defensively)
+  // re-normalize the until bound to canonical form so callers passing offset
+  // form ("...+09:00") still compare correctly.
   const nowMs = new Date(now).getTime();
+  const until = new Date(nowMs).toISOString();
   let sinceMs = nowMs;
   switch (window) {
     case "24h":
@@ -310,9 +329,6 @@ function resolveWindow(
       break;
     case "since-creation":
       sinceMs = 0; // 1970-01-01 — covers any sane repo lifetime
-      break;
-    case "session+24h":
-      sinceMs = nowMs - 24 * 3600 * 1000;
       break;
   }
   return { since: new Date(sinceMs).toISOString(), until };
@@ -342,7 +358,10 @@ function defaultRandomSuffix(): string {
 
 function defaultWriteFile(filePath: string, contents: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, contents, "utf-8");
+  // mode 0o600 — incident.json + inspection.json contain timeline entries
+  // with PersistedEvent payloads (user prompts, hook snippets). On shared
+  // hosts the default umask would leave these world-readable.
+  fs.writeFileSync(filePath, contents, { encoding: "utf-8", mode: 0o600 });
 }
 
 function readEventsFromDb(dbPath: string): PersistedEvent[] {
@@ -351,7 +370,15 @@ function readEventsFromDb(dbPath: string): PersistedEvent[] {
   try {
     log = new SqliteEventLog(openDb(dbPath));
     return log.readAll();
-  } catch {
+  } catch (err) {
+    // Don't silently mask DB corruption as "no activity" — that produces
+    // a misleading `no_activity` incident. Warn the operator so they can
+    // see why the inspection saw no events.
+    process.stderr.write(
+      `inspect-member: failed to read events.db at ${dbPath}: ${
+        err instanceof Error ? err.message : String(err)
+      }\n`
+    );
     return [];
   } finally {
     log?.close();

@@ -223,6 +223,90 @@ describe("GhCliGitHubActivityAdapter", () => {
     expect(calls.length).toBe(callsBefore); // no spawn ever happened
   });
 
+  it("returns [] when gh stdout is non-JSON (rate limit HTML, truncated body)", async () => {
+    const adapter = new GhCliGitHubActivityAdapter({
+      spawner: async () => ({
+        kind: "exit",
+        code: 0,
+        stdout: "<html>rate limited</html>",
+        stderr: "",
+      }),
+      defaultProject: "owner/repo",
+    });
+    const opts = {
+      author: "alice",
+      since: "2026-05-13T00:00:00Z",
+      until: "2026-05-13T23:59:59Z",
+    };
+    // commits also has git-log fallback wired separately, but malformed
+    // JSON with zero-exit code stays on the gh path (parseCommits → [])
+    await expect(adapter.fetchPullRequestsByAuthor(opts)).resolves.toEqual([]);
+    await expect(adapter.fetchIssuesByAuthor(opts)).resolves.toEqual([]);
+  });
+
+  it("returns [] when gh times out (each method)", async () => {
+    const adapter = new GhCliGitHubActivityAdapter({
+      spawner: async () => ({ kind: "timeout" }),
+      defaultProject: "owner/repo",
+    });
+    const opts = {
+      author: "alice",
+      since: "2026-05-13T00:00:00Z",
+      until: "2026-05-13T23:59:59Z",
+    };
+    await expect(adapter.fetchPullRequestsByAuthor(opts)).resolves.toEqual([]);
+    await expect(adapter.fetchIssuesByAuthor(opts)).resolves.toEqual([]);
+  });
+
+  it("classifies open / closed-but-not-merged / merged PR states", async () => {
+    const adapter = new GhCliGitHubActivityAdapter({
+      spawner: async () => ({
+        kind: "exit",
+        code: 0,
+        stdout: JSON.stringify({
+          items: [
+            {
+              number: 1,
+              title: "open pr",
+              state: "open",
+              created_at: "2026-05-13T01:00:00Z",
+              user: { login: "alice" },
+            },
+            {
+              number: 2,
+              title: "closed pr",
+              state: "closed",
+              created_at: "2026-05-13T02:00:00Z",
+              closed_at: "2026-05-13T03:00:00Z",
+              user: { login: "alice" },
+            },
+            {
+              number: 3,
+              title: "merged pr",
+              state: "closed",
+              created_at: "2026-05-13T04:00:00Z",
+              closed_at: "2026-05-13T05:00:00Z",
+              pull_request: { merged_at: "2026-05-13T05:00:00Z" },
+              user: { login: "alice" },
+            },
+          ],
+        }),
+        stderr: "",
+      }),
+      defaultProject: "owner/repo",
+    });
+    const r = await adapter.fetchPullRequestsByAuthor({
+      author: "alice",
+      since: "2026-05-13T00:00:00Z",
+      until: "2026-05-13T23:59:59Z",
+    });
+    expect(r.map((p) => `${p.number}:${p.state}`)).toEqual([
+      "1:open",
+      "2:closed",
+      "3:merged",
+    ]);
+  });
+
   it("refuses project slugs that fail the owner/repo regex (allowlist)", async () => {
     const { spawner, calls } = makeRouter();
     const adapter = new GhCliGitHubActivityAdapter({ spawner });

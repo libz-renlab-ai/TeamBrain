@@ -72,6 +72,92 @@ describe("summarize", () => {
     expect(md).toContain("**repeated_deny**");
   });
 
+  it("escapes backticks and brackets in user-controlled commit messages / titles", () => {
+    const md = summarize(
+      makeResult({
+        timeline: [
+          {
+            kind: "commit",
+            at: "2026-05-13T10:00:00Z",
+            commit: {
+              sha: "abc1234",
+              message: "evil ](javascript:alert(1)) `rm -rf /`",
+              authoredAt: "2026-05-13T10:00:00Z",
+              author: "alice",
+              repo: "o/r",
+            },
+          },
+          {
+            kind: "pull-request",
+            at: "2026-05-13T11:00:00Z",
+            pr: {
+              number: 99,
+              title: "title with `backtick` and [link](evil)",
+              state: "open",
+              createdAt: "2026-05-13T11:00:00Z",
+              author: "alice",
+              repo: "o/r",
+            },
+          },
+        ],
+      })
+    );
+    // raw `javascript:` link syntax must not appear unescaped
+    expect(md).not.toMatch(/[^\\]\]\(javascript:/);
+    // raw triple-backtick injection must be neutralized
+    expect(md).not.toMatch(/[^\\]`rm/);
+    // brackets must be escaped
+    expect(md).toContain("\\[");
+    expect(md).toContain("\\]");
+  });
+
+  it("renders timeline entries for event / pull-request / issue kinds", () => {
+    const md = summarize(
+      makeResult({
+        timeline: [
+          {
+            kind: "event",
+            at: "2026-05-13T10:00:00Z",
+            event: {
+              id: "e1",
+              kind: "hook-pre.matched",
+              timestamp: "2026-05-13T10:00:00Z",
+              schema_version: 1,
+            },
+          },
+          {
+            kind: "pull-request",
+            at: "2026-05-13T11:00:00Z",
+            pr: {
+              number: 7,
+              title: "p",
+              state: "open",
+              createdAt: "2026-05-13T11:00:00Z",
+              author: "alice",
+              repo: "o/r",
+            },
+          },
+          {
+            kind: "issue",
+            at: "2026-05-13T12:00:00Z",
+            issue: {
+              number: 9,
+              title: "i",
+              state: "open",
+              createdAt: "2026-05-13T12:00:00Z",
+              author: "alice",
+              repo: "o/r",
+              labels: [],
+            },
+          },
+        ],
+      })
+    );
+    expect(md).toContain("event `hook-pre.matched`");
+    expect(md).toContain("PR #7 (open)");
+    expect(md).toContain("issue #9 (open)");
+  });
+
   it("renders a timeline tail of up to 20 entries", () => {
     const timeline: InspectionResult["timeline"] = [];
     for (let i = 0; i < 30; i++) {

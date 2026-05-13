@@ -40,6 +40,24 @@ describe("parseInspectMemberArgs", () => {
     ).toThrowError(InspectMemberError);
   });
 
+  it("rejects flags that need a value but get none", () => {
+    expect(() => parseInspectMemberArgs(["alice", "--window"])).toThrowError(
+      InspectMemberError
+    );
+    expect(() => parseInspectMemberArgs(["alice", "--now"])).toThrowError(
+      InspectMemberError
+    );
+    expect(() => parseInspectMemberArgs(["alice", "--out"])).toThrowError(
+      InspectMemberError
+    );
+    expect(() =>
+      parseInspectMemberArgs(["alice", "--teamagent-home"])
+    ).toThrowError(InspectMemberError);
+    expect(() =>
+      parseInspectMemberArgs(["alice", "--fake-abnormal"])
+    ).toThrowError(InspectMemberError);
+  });
+
   it("rejects unknown --fake-abnormal value", () => {
     expect(() =>
       parseInspectMemberArgs(["alice", "--fake-abnormal", "weird"])

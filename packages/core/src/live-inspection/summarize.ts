@@ -1,6 +1,27 @@
 import type { InspectionResult } from "./types.js";
 
 /**
+ * Escape backticks, fenced-block markers, and control characters from
+ * user-controlled strings (commit messages, PR/issue titles, event kinds)
+ * before splicing into Markdown. The events.db is filled by hook channels
+ * that can carry attacker-influenced text — un-escaped, a commit message
+ * like `](javascript:alert(1))` or three backticks could pivot if the
+ * Markdown is later rendered in an HTML viewer.
+ *
+ * We do NOT call sanitizeUserFacingText here because that strips ANSI /
+ * C1 controls but leaves backticks and `]` intact; the Markdown renderer
+ * is what we're defending against, not a terminal.
+ */
+function escapeMdInline(s: string): string {
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]");
+}
+
+/**
  * Render an inspection result as Markdown for human terminal display.
  * Pure function: no IO, no side effects.
  */
@@ -61,14 +82,18 @@ function renderEntry(
 ): string {
   switch (entry.kind) {
     case "event":
-      return `event \`${entry.event.kind}\``;
+      return `event \`${escapeMdInline(entry.event.kind)}\``;
     case "commit":
-      return `commit \`${entry.commit.sha.slice(0, 7)}\` ${
+      return `commit \`${entry.commit.sha.slice(0, 7)}\` ${escapeMdInline(
         entry.commit.message
-      }`;
+      )}`;
     case "pull-request":
-      return `PR #${entry.pr.number} (${entry.pr.state}) ${entry.pr.title}`;
+      return `PR #${entry.pr.number} (${entry.pr.state}) ${escapeMdInline(
+        entry.pr.title
+      )}`;
     case "issue":
-      return `issue #${entry.issue.number} (${entry.issue.state}) ${entry.issue.title}`;
+      return `issue #${entry.issue.number} (${
+        entry.issue.state
+      }) ${escapeMdInline(entry.issue.title)}`;
   }
 }
