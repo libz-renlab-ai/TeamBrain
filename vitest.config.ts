@@ -24,6 +24,12 @@ export default defineConfig({
       threads: {
         singleThread: true,
       },
+      forks: {
+        // isolate=false 让每个 fork worker 复用进程跑多个文件（默认 isolate=true 是
+        // 每文件一个新 fork，310 个冷启动反而比串行慢）。fork 之间仍是不同进程，
+        // process.env 隔离保留；fork 内文件顺序跑，env mutation 在 afterEach 还原即可。
+        isolate: false,
+      },
     },
     // Xenova 模型首次加载可能需要数秒；给嵌入相关测试留足裕量
     testTimeout: 30000,
