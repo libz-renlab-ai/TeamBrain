@@ -17,27 +17,34 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { emitCcStatus, __resetIdentityCacheForTests } from "../realtime-emit.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
-const ORIGINAL_ENV_URL = process.env.TEAMAGENT_REALTIME_URL;
-const ORIGINAL_ENV_TOKEN = process.env.TEAMAGENT_REALTIME_TOKEN;
-const ORIGINAL_ENV_DISABLED = process.env.TEAMAGENT_DISABLED;
-const ORIGINAL_ENV_ALLOW_REMOTE = process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE;
+// Issue #308 /review finding #10: previous pattern
+// `if (ORIGINAL) process.env.X = ORIGINAL` left the env var leaked to the
+// NEXT test file when the original was undefined (which is typical CI).
+// Snapshot + delete-or-restore — matching presence-command.test.ts.
+const ENV_KEYS = [
+  "TEAMAGENT_REALTIME_URL",
+  "TEAMAGENT_REALTIME_TOKEN",
+  "TEAMAGENT_DISABLED",
+  "TEAMAGENT_REALTIME_ALLOW_REMOTE",
+  "TEAMAGENT_REALTIME_RAW_PROMPT",
+] as const;
 
 describe("emitCcStatus", () => {
+  const saved: Record<string, string | undefined> = {};
   beforeEach(() => {
-    delete process.env.TEAMAGENT_REALTIME_URL;
-    delete process.env.TEAMAGENT_REALTIME_TOKEN;
-    delete process.env.TEAMAGENT_DISABLED;
-    delete process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE;
+    for (const k of ENV_KEYS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
     __resetIdentityCacheForTests();
   });
 
   afterEach(() => {
     globalThis.fetch = ORIGINAL_FETCH;
-    if (ORIGINAL_ENV_URL) process.env.TEAMAGENT_REALTIME_URL = ORIGINAL_ENV_URL;
-    if (ORIGINAL_ENV_TOKEN) process.env.TEAMAGENT_REALTIME_TOKEN = ORIGINAL_ENV_TOKEN;
-    if (ORIGINAL_ENV_DISABLED) process.env.TEAMAGENT_DISABLED = ORIGINAL_ENV_DISABLED;
-    if (ORIGINAL_ENV_ALLOW_REMOTE)
-      process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE = ORIGINAL_ENV_ALLOW_REMOTE;
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
   });
 
   it("is a no-op when TEAMAGENT_REALTIME_URL is unset", () => {

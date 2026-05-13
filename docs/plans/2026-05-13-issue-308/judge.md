@@ -44,7 +44,8 @@ pnpm vitest run src/__tests__/presence-state-machine.test.ts \
 ## Probe 2: Stop hook emits exactly one cc-status POST
 
 **Goal.** Verify that one Stop hook fire produces exactly one POST to
-`/v1/cc-status` with `event === "stop"`.
+`/v1/cc-status` with `event === "stop"` — the foreground entry emits,
+the detached pipeline child does not.
 
 **Run.**
 
@@ -56,12 +57,15 @@ pnpm vitest run packages/cli/src/__tests__/bin-stop-emit.test.ts \
 **Pass criteria.**
 
 - `numFailedTests === 0`
-- Test assertion (read from `assertionResults[].title`): "Stop hook emits one cc-status snapshot with event=stop"
+- A test titled "foreground emits, detached child does not (single Stop = single POST)" passes.
+- A test titled "returns true when env flag is set AND tmp-file argv[2] exists" passes.
 
 ## Probe 3: `pnpm teamagent presence` CLI smoke
 
 **Goal.** Verify the CLI subcommand exits 0 and prints a `state=...` line in
-both happy path and unset-URL path.
+both happy path and unset-URL path. Hits the real receiver route
+`/api/cc-status?user=<user>` (NOT `/api/cc-status/latest?user_id=` — see
+adversarial-finding #1).
 
 **Run.**
 
@@ -86,6 +90,16 @@ jq -n --arg out "$OUT" --argjson ec "$EC" \
 
 - 3a: `exit_code === 0 && stdout =~ /state=unknown/`
 - 3b: `exit_code === 0 && stdout =~ /^state=(active|idle|offline|error)/`
+
+Also runs as unit tests (no live receiver needed):
+
+```bash
+pnpm vitest run packages/cli/src/__tests__/presence-command.test.ts \
+  --reporter=json --outputFile=judge_out/probe-3c-cli-unit.json
+```
+
+Including "targets the correct receiver route /api/cc-status?user=<user>"
+which pins the URL shape against future regression.
 
 ## Probe 4: schema is additive (backward-compat)
 
@@ -112,7 +126,11 @@ jq -n --argjson s "$STATUS" --arg b "$BODY" \
 
 - `http_status === 200`
 - Server stored snapshot retains `raw_prompt` field (readback via
-  `GET /api/cc-status/latest?user_id=u1`).
+  `GET /api/cc-status?user=u1`). The `cc-status/store.ts` sanitizer
+  whitelists `raw_prompt` in `SNAPSHOT_KEYS` + `STRING_KEYS` + caps it at
+  64 KiB in `STRING_FIELD_CAP`; without those entries the field is
+  silently dropped (this was adversarial-finding #2 — verify the keys
+  are still in the whitelist before declaring PASS).
 
 ## Probe 5: privacy default — raw_prompt is OFF unless opt-in
 
@@ -128,8 +146,9 @@ pnpm vitest run packages/cli/src/__tests__/realtime-emit.test.ts \
 
 **Pass criteria.**
 
-- A test named "UserPromptSubmit omits raw_prompt by default" passes.
-- A test named "UserPromptSubmit includes raw_prompt when TEAMAGENT_REALTIME_RAW_PROMPT=1" passes.
+- A test titled "omits raw_prompt when rawPrompt is undefined (privacy default)" passes.
+- A test titled "omits raw_prompt when rawPrompt is empty string (filtered)" passes.
+- A test titled "threads raw_prompt only when TEAMAGENT_REALTIME_RAW_PROMPT=1 (defense in depth)" passes.
 
 ## Verdict shape
 
