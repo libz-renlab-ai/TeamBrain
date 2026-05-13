@@ -102,7 +102,7 @@ the user asks for the business features.**
 跨越同一陷阱前 block。
 
 - 入口：[`docs/features/auto-capture.md`](features/auto-capture.md)
-- 当前 active 规则数：见本仓库 CLAUDE.md 末尾 `TEAMAGENT:START` ... `TEAMAGENT:END` managed block
+- 当前 active 规则数：跑 `pnpm teamagent stats`（M4 起 Skills-default，旧 `TEAMAGENT:START...END` managed block 已废弃；规则落在 `~/.claude/skills/teamagent/<id>/SKILL.md` 与 `docs/knowledge/INDEX.md`）
 - 现状：**已落地**（M4-B 起 BM25+dense RRF matcher，72+ 条 active 规则在 `Project Knowledge Index`）
 - Third-party judge harness：
   - `docs/plans/docs--features--auto-capture--verify-canned-answer/judge.md` — Wilson/recall/precision 检测器 + real-session 实测（auto-capture 行为 gate）
