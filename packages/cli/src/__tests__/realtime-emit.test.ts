@@ -17,27 +17,34 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { emitCcStatus, __resetIdentityCacheForTests } from "../realtime-emit.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
-const ORIGINAL_ENV_URL = process.env.TEAMAGENT_REALTIME_URL;
-const ORIGINAL_ENV_TOKEN = process.env.TEAMAGENT_REALTIME_TOKEN;
-const ORIGINAL_ENV_DISABLED = process.env.TEAMAGENT_DISABLED;
-const ORIGINAL_ENV_ALLOW_REMOTE = process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE;
+// Issue #308 /review finding #10: previous pattern
+// `if (ORIGINAL) process.env.X = ORIGINAL` left the env var leaked to the
+// NEXT test file when the original was undefined (which is typical CI).
+// Snapshot + delete-or-restore — matching presence-command.test.ts.
+const ENV_KEYS = [
+  "TEAMAGENT_REALTIME_URL",
+  "TEAMAGENT_REALTIME_TOKEN",
+  "TEAMAGENT_DISABLED",
+  "TEAMAGENT_REALTIME_ALLOW_REMOTE",
+  "TEAMAGENT_REALTIME_RAW_PROMPT",
+] as const;
 
 describe("emitCcStatus", () => {
+  const saved: Record<string, string | undefined> = {};
   beforeEach(() => {
-    delete process.env.TEAMAGENT_REALTIME_URL;
-    delete process.env.TEAMAGENT_REALTIME_TOKEN;
-    delete process.env.TEAMAGENT_DISABLED;
-    delete process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE;
+    for (const k of ENV_KEYS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
     __resetIdentityCacheForTests();
   });
 
   afterEach(() => {
     globalThis.fetch = ORIGINAL_FETCH;
-    if (ORIGINAL_ENV_URL) process.env.TEAMAGENT_REALTIME_URL = ORIGINAL_ENV_URL;
-    if (ORIGINAL_ENV_TOKEN) process.env.TEAMAGENT_REALTIME_TOKEN = ORIGINAL_ENV_TOKEN;
-    if (ORIGINAL_ENV_DISABLED) process.env.TEAMAGENT_DISABLED = ORIGINAL_ENV_DISABLED;
-    if (ORIGINAL_ENV_ALLOW_REMOTE)
-      process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE = ORIGINAL_ENV_ALLOW_REMOTE;
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
   });
 
   it("is a no-op when TEAMAGENT_REALTIME_URL is unset", () => {
@@ -193,5 +200,92 @@ describe("emitCcStatus", () => {
     // a generous ceiling — observed elapsed is typ. <5ms on CI.
     expect(elapsed).toBeLessThan(50);
     resolveLater(new Response(null, { status: 204 }));
+  });
+
+  // Issue #308 grill §3 — raw prompt threading + privacy default
+  describe("raw_prompt (issue #308 grill §3)", () => {
+    async function captureBody(emit: () => void): Promise<Record<string, unknown>> {
+      process.env.TEAMAGENT_REALTIME_URL = "http://127.0.0.1:9787";
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(null, { status: 204 }),
+      );
+      globalThis.fetch = fetchSpy as unknown as typeof fetch;
+      emit();
+      await new Promise((r) => setTimeout(r, 5));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0]!;
+      return JSON.parse((init as RequestInit).body as string);
+    }
+
+    it("omits raw_prompt when rawPrompt is undefined (privacy default)", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({ event: "user_prompt_submit", sessionId: "s-1" });
+      });
+      expect(body.raw_prompt).toBeUndefined();
+    });
+
+    it("omits raw_prompt when rawPrompt is empty string (filtered)", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "user_prompt_submit",
+          sessionId: "s-2",
+          rawPrompt: "",
+        });
+      });
+      expect(body.raw_prompt).toBeUndefined();
+    });
+
+    it("threads raw_prompt only when TEAMAGENT_REALTIME_RAW_PROMPT=1 (defense in depth)", async () => {
+      // Without the env opt-in, the transport drops raw_prompt regardless
+      // of what the caller passed. Even a direct caller bypassing the hook
+      // policy gate (bin-user-prompt-submit.ts) cannot exfiltrate prompt
+      // text. /review adversarial finding #9.
+      const bodyWithoutOptIn = await captureBody(() => {
+        emitCcStatus({
+          event: "user_prompt_submit",
+          sessionId: "s-3a",
+          rawPrompt: "hello presence",
+        });
+      });
+      expect(bodyWithoutOptIn.raw_prompt).toBeUndefined();
+
+      // With the env opt-in, raw_prompt is threaded through.
+      process.env.TEAMAGENT_REALTIME_RAW_PROMPT = "1";
+      try {
+        const bodyWithOptIn = await captureBody(() => {
+          emitCcStatus({
+            event: "user_prompt_submit",
+            sessionId: "s-3b",
+            rawPrompt: "hello presence",
+          });
+        });
+        expect(bodyWithOptIn.raw_prompt).toBe("hello presence");
+      } finally {
+        delete process.env.TEAMAGENT_REALTIME_RAW_PROMPT;
+      }
+    });
+
+    it("stop event accepts no rawPrompt (caller never sets it)", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "stop",
+          sessionId: "s-4",
+          cwd: "/Users/me/repo",
+        });
+      });
+      expect(body.event).toBe("stop");
+      expect(body.raw_prompt).toBeUndefined();
+    });
+
+    it("session_end event posts with event=session_end", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "session_end",
+          sessionId: "s-5",
+          cwd: "/Users/me/repo",
+        });
+      });
+      expect(body.event).toBe("session_end");
+    });
   });
 });

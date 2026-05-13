@@ -38,6 +38,7 @@ import {
   type StopHookInput,
 } from "./bin-stop.js";
 import { postShutdown } from "./embedder-client.js";
+import { emitCcStatus } from "./realtime-emit.js";
 
 const SESSION_END_ENV_KEY = "TEAMAGENT_SESSION_END_PIPELINE";
 
@@ -86,6 +87,19 @@ async function main(): Promise<void> {
         await runFullRescanPipeline(ctx.input);
         return;
       }
+
+      // Issue #308 grill §11: SessionEnd also signals presence offline (the
+      // user closed the window / ran /clear / Ctrl+C). Emit on the
+      // foreground entry only, mirroring the Stop hook contract: one
+      // SessionEnd → one POST, not double-counted by the self-spawned child
+      // (the detached branch above already returned before reaching here).
+      try {
+        emitCcStatus({
+          event: "session_end",
+          sessionId: ctx.input.session_id,
+          cwd: ctx.cwd,
+        });
+      } catch { /* never propagate */ }
 
       // Issue #164: best-effort POST /shutdown to drop our refcount on the
       // embedder daemon. Daemon decrements its members list; when count

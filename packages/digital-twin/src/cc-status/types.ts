@@ -82,6 +82,18 @@ export interface CcStatusSnapshot {
   files_touched?: number;
   /** ISO timestamp of the first transcript line for this session. */
   session_started_at?: string;
+
+  // ---- raw prompt evidence (issue #308, grill §3) ----
+  /**
+   * Raw user prompt text captured at UserPromptSubmit. Privacy-sensitive:
+   * client side ONLY threads this when `TEAMAGENT_REALTIME_RAW_PROMPT=1` is
+   * set; default behavior leaves it `undefined` so a leaked / misconfigured
+   * receiver URL never exfiltrates prompt content. The receiver may
+   * persist this to a `raw_events` table for evidence / replay; downstream
+   * pipelines generate normalized_event summaries from it. Other event
+   * kinds (session_start / stop / session_end / status) leave this unset.
+   */
+  raw_prompt?: string;
 }
 
 /**
