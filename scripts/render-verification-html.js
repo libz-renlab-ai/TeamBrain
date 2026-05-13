@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // render-verification-html.js — build self-contained verification report for issue #427.
 //
-// Reads baseline.json + post-c4.json + post-c2.json + post-c1.json + post-c3.json
-// and renders a single self-contained HTML showing all 23 rules' status across the
-// 4 cluster merges. No external CDN. Output: docs/plans/2026-05-13-issue-427-claude-md-slim/verification.html
+// Reads baseline.json + post-c{N}.json files and renders a single self-contained
+// HTML showing all 23 rules' status across the merged stages. No external CDN.
+// Output: docs/plans/2026-05-13-issue-427-claude-md-slim/verification.html
+//
+// Stage list is configured below; remove or add entries to match what's actually
+// in the PR (e.g. B-mode shipping only C4 → keep baseline + post-c4 only).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -14,9 +17,6 @@ const OUT = path.join(PLAN_DIR, "verification.html");
 const stages = [
   { id: "baseline", label: "Baseline (pre-merge)", file: "baseline.json" },
   { id: "post-c4", label: "After C4 (permission)", file: "post-c4.json" },
-  { id: "post-c2", label: "After C2 (HTML)", file: "post-c2.json" },
-  { id: "post-c1", label: "After C1 (lifecycle)", file: "post-c1.json" },
-  { id: "post-c3", label: "After C3 (workflow)", file: "post-c3.json" },
 ];
 
 const data = stages.map((s) => ({
@@ -160,17 +160,11 @@ ${ruleRows}
 
 <p><strong>Why this is sufficient:</strong> each anchor rule in CLAUDE.md self-declares "judge harness 必须 grep 全部 N 个锚点" — making byte-level substring presence the contract. The merge refactor moves and restructures content but preserves anchor substrings bit-identically; the probe verifies that preservation. A model-invocation probe (runtime emission test) would test a stronger property (does the model actually emit the anchor when asked?) but introduces nondeterminism and is out of scope for this PR.</p>
 
-<p><strong>Out of scope:</strong> (a) model emission verification (would require <code>claudefast</code>, which is not installed on the Windows host; deferred to follow-up); (b) the ~13 rules without explicit substring anchors (link-only and policy-text bullets); (c) the 2 additional weak clusters identified during grill (commit/merge sequence and plan-docs) — deferred to follow-up per grill decision Q7.</p>
+<p><strong>Out of scope (deferred to follow-up issues):</strong> (a) clusters C1 (lifecycle, 8 cards → 1), C2 (HTML, 4 cards → 1), C3 (workflow, 3 cards → 1) — these merges were drafted and locally validated against an earlier <code>main</code> snapshot (88,424 bytes; commits on backup branch <code>backup-issue-427-work</code>) but were not landed in this PR because <code>main</code> drifted forward by 6 commits during the work window (cross-agent collision: PR #431 closed #427 with unrelated content; PRs #424/#425/#426/#429 added 5+ new anchor cards including <code>VISUAL-PROOF-CONTENT</code>, <code>VISUAL-PROOF-HOSTING</code>, <code>VISUAL-PROOF-HUMAN-MERGE</code>, <code>FAST-PATH-PR</code>) and the merged-card content for those clusters now needs re-integration with the new anchor text (notably <code>VISUAL-PROOF-PR</code>'s anchor changed from <code>own storage</code> → <code>public storage</code>). C4 (permission) was unaffected by the drift, so it ships here as a canary; (b) model emission verification (would require <code>claudefast</code>, which is not installed on the Windows host); (c) the ~13 rules without explicit substring anchors (link-only and policy-text bullets); (d) the 2 additional weak clusters identified during grill (commit/merge sequence and plan-docs).</p>
 
-<h2>4. Commit trail</h2>
-<ul>
-<li><code>10ab294</code> docs(adr-0014): save issue #427 grill</li>
-<li><code>3b07687</code> chore(claude-md): add anchor probe + baseline</li>
-<li><code>72dec53</code> refactor(claude-md): merge cluster C4 (permission)</li>
-<li><code>f943e99</code> refactor(claude-md): merge cluster C2 (HTML)</li>
-<li><code>e18c52e</code> refactor(claude-md): merge cluster C1 (lifecycle)</li>
-<li><code>2acbbd1</code> refactor(claude-md): merge cluster C3 (workflow)</li>
-</ul>
+<h2>4. Reproduce</h2>
+<pre><code>bash scripts/probe-claude-md-anchors.sh CLAUDE.md &gt; /tmp/probe.json
+node scripts/render-verification-html.js</code></pre>
 
 <div class="foot">
 Local pop-open copy: <code>/tmp/teamagent/issue-427/verification-&lt;ts&gt;.html</code> (per POP-OPEN-HTML rule). Committed to PR branch at <code>docs/plans/2026-05-13-issue-427-claude-md-slim/verification.html</code>. Reviewer can open via <code>raw.githack.com</code> URL in PR body or by cloning the branch.
