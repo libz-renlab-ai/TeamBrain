@@ -12,7 +12,11 @@ import {
   type StopDeps,
   type ImportDeps,
 } from '../ffmpeg-wrapper.js';
-import { resolvePlatformInput } from '../platform-input.js';
+import {
+  resolvePlatformInput,
+  listAudioDevicesArgs,
+  listAudioDevices,
+} from '../platform-input.js';
 
 function freshTmp(): string {
   const dir = join(tmpdir(), `dt-rec-${ulid()}`);
@@ -55,10 +59,15 @@ describe('resolvePlatformInput', () => {
     expect(got.device).toBe(':0');
   });
 
-  it('returns dshow virtual-audio-capturer on win32', () => {
+  it('returns dshow audio=Microphone on win32 (#297 — was virtual-audio-capturer)', () => {
     const got = resolvePlatformInput({ platform: 'win32' });
     expect(got.format).toBe('dshow');
-    expect(got.device).toMatch(/^audio=/);
+    expect(got.device).toBe('audio=Microphone');
+  });
+
+  it('NEVER defaults to virtual-audio-capturer on win32 (regression guard for #297)', () => {
+    const got = resolvePlatformInput({ platform: 'win32' });
+    expect(got.device).not.toBe('audio=virtual-audio-capturer');
   });
 
   it('returns pulse default on linux', () => {
@@ -76,6 +85,70 @@ describe('resolvePlatformInput', () => {
     expect(() => resolvePlatformInput({ platform: 'aix' as NodeJS.Platform })).toThrow(
       /unsupported platform/i,
     );
+  });
+});
+
+describe('listAudioDevicesArgs (issue #297)', () => {
+  it('darwin uses avfoundation -list_devices', () => {
+    expect(listAudioDevicesArgs('darwin')).toEqual([
+      '-f', 'avfoundation', '-list_devices', 'true', '-i', '',
+    ]);
+  });
+
+  it('win32 uses dshow -list_devices', () => {
+    expect(listAudioDevicesArgs('win32')).toEqual([
+      '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy',
+    ]);
+  });
+
+  it('linux uses pulse -sources', () => {
+    expect(listAudioDevicesArgs('linux')).toEqual(['-sources', 'pulse']);
+  });
+
+  it('throws on unsupported platform', () => {
+    expect(() =>
+      listAudioDevicesArgs('aix' as NodeJS.Platform),
+    ).toThrow(/unsupported platform/i);
+  });
+});
+
+describe('listAudioDevices (issue #297)', () => {
+  it('returns stderr as raw, captures exit code, echoes argv', () => {
+    const r = listAudioDevices({
+      platform: 'win32',
+      spawnSync: () => ({
+        status: 1,
+        stderr: '[dshow] DirectShow audio devices\n[dshow]  "Microphone"',
+        stdout: null,
+      }),
+    });
+    expect(r.raw).toContain('Microphone');
+    expect(r.exitCode).toBe(1);
+    expect(r.argv).toEqual(['-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
+  });
+
+  it('falls back to stdout when stderr is empty', () => {
+    const r = listAudioDevices({
+      platform: 'linux',
+      spawnSync: () => ({
+        status: 0,
+        stderr: null,
+        stdout: 'pulse sources: alsa_input.pci-0000_00_1f.3.analog-stereo',
+      }),
+    });
+    expect(r.raw).toContain('alsa_input');
+  });
+
+  it('handles Buffer stderr from real spawnSync', () => {
+    const r = listAudioDevices({
+      platform: 'darwin',
+      spawnSync: () => ({
+        status: 1,
+        stderr: Buffer.from('[AVFoundation devices]\n[0] Built-in Microphone'),
+        stdout: Buffer.from(''),
+      }),
+    });
+    expect(r.raw).toContain('Built-in Microphone');
   });
 });
 

@@ -56,3 +56,11 @@ export type {
   InstallStateSchemaVersion,
   InstallStepKey,
 } from "./install-state-store.js";
+export type {
+  GitHubActivityPort,
+  GitHubCommit,
+  GitHubPullRequest,
+  GitHubIssue,
+  FetchByAuthorOptions,
+} from "./github-activity-port.js";
+export { InMemoryGitHubActivityPort } from "./github-activity-port-inmemory.js";

@@ -14,37 +14,147 @@
  *   - getUserId throws → snapshot still builds with hostname fallback.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { emitCcStatus, __resetIdentityCacheForTests } from "../realtime-emit.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
-const ORIGINAL_ENV_URL = process.env.TEAMAGENT_REALTIME_URL;
-const ORIGINAL_ENV_TOKEN = process.env.TEAMAGENT_REALTIME_TOKEN;
-const ORIGINAL_ENV_DISABLED = process.env.TEAMAGENT_DISABLED;
-const ORIGINAL_ENV_ALLOW_REMOTE = process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE;
+// Issue #308 /review finding #10: previous pattern
+// `if (ORIGINAL) process.env.X = ORIGINAL` left the env var leaked to the
+// NEXT test file when the original was undefined (which is typical CI).
+// Snapshot + delete-or-restore — matching presence-command.test.ts.
+//
+// Issue #350 (v0.11.1): HOME + USERPROFILE join the list so the
+// resolveBaseUrl() saved-config fallback (reads <HOME>/.teamagent/digital-twin.json)
+// can be sandboxed to a tmpdir per-test. beforeEach deletes from the env, then
+// the digital-twin-fallback tests explicitly set HOME/USERPROFILE to the
+// freshly-mkdtemped sandbox. afterEach restores the original values via the
+// same loop so no leak.
+const ENV_KEYS = [
+  "TEAMAGENT_REALTIME_URL",
+  "TEAMAGENT_REALTIME_TOKEN",
+  "TEAMAGENT_DISABLED",
+  "TEAMAGENT_REALTIME_ALLOW_REMOTE",
+  "TEAMAGENT_REALTIME_RAW_PROMPT",
+  "HOME",
+  "USERPROFILE",
+] as const;
+
+/**
+ * Issue #350 (v0.11.1) — every test in this file sandboxes HOME / USERPROFILE
+ * to a tmp dir so `resolveBaseUrl()`'s saved-config fallback (which reads
+ * `<HOME>/.teamagent/digital-twin.json`) doesn't see the developer's real
+ * configured endpoint. Tests that exercise the fallback path explicitly
+ * `fs.writeFileSync` a config into the sandbox HOME first.
+ */
+let sandboxHome: string;
 
 describe("emitCcStatus", () => {
+  const saved: Record<string, string | undefined> = {};
   beforeEach(() => {
-    delete process.env.TEAMAGENT_REALTIME_URL;
-    delete process.env.TEAMAGENT_REALTIME_TOKEN;
-    delete process.env.TEAMAGENT_DISABLED;
-    delete process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE;
+    for (const k of ENV_KEYS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    // Issue #350 (v0.11.1) — point HOME / USERPROFILE at a fresh tmpdir so
+    // resolveBaseUrl()'s saved-config fallback can't see the real one. The
+    // loop above already deleted them; this re-sets to the sandbox so
+    // homeForConfig() in realtime-emit.ts returns the sandbox path on both
+    // POSIX and Windows.
+    sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), "realtime-emit-test-"));
+    process.env.HOME = sandboxHome;
+    process.env.USERPROFILE = sandboxHome;
     __resetIdentityCacheForTests();
   });
 
   afterEach(() => {
     globalThis.fetch = ORIGINAL_FETCH;
-    if (ORIGINAL_ENV_URL) process.env.TEAMAGENT_REALTIME_URL = ORIGINAL_ENV_URL;
-    if (ORIGINAL_ENV_TOKEN) process.env.TEAMAGENT_REALTIME_TOKEN = ORIGINAL_ENV_TOKEN;
-    if (ORIGINAL_ENV_DISABLED) process.env.TEAMAGENT_DISABLED = ORIGINAL_ENV_DISABLED;
-    if (ORIGINAL_ENV_ALLOW_REMOTE)
-      process.env.TEAMAGENT_REALTIME_ALLOW_REMOTE = ORIGINAL_ENV_ALLOW_REMOTE;
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    // Issue #350 (v0.11.1) — drop the tmpdir HOME. Best-effort: ignore EBUSY
+    // / EPERM on Windows so a slow handle-release doesn't fail the test.
+    try {
+      fs.rmSync(sandboxHome, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
   });
 
-  it("is a no-op when TEAMAGENT_REALTIME_URL is unset", () => {
+  function writeDigitalTwinConfig(cfg: {
+    enabled: boolean;
+    endpoint: string;
+    token?: string | null;
+  }): void {
+    const cfgDir = path.join(sandboxHome, ".teamagent");
+    fs.mkdirSync(cfgDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cfgDir, "digital-twin.json"),
+      JSON.stringify({
+        schema_version: "1",
+        identity: { user_id: "test@example.com", machine_id: "test-host" },
+        uploader: {
+          enabled: cfg.enabled,
+          endpoint: cfg.endpoint,
+          token: cfg.token ?? null,
+        },
+        consented_at: new Date().toISOString(),
+      }),
+    );
+    __resetIdentityCacheForTests();
+  }
+
+  it("is a no-op when TEAMAGENT_REALTIME_URL is unset AND no saved digital-twin config", () => {
     const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
     emitCcStatus({ event: "session_start", sessionId: "s1", cwd: "/tmp" });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("issue #350 — falls back to digital-twin config endpoint when env unset", async () => {
+    writeDigitalTwinConfig({
+      enabled: true,
+      endpoint: "http://192.168.22.88:8080",
+      token: "team-shared",
+    });
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({ event: "session_start", sessionId: "s-cfg", cwd: "/tmp" });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url] = fetchSpy.mock.calls[0]!;
+    // Config-derived URL bypasses the loopback gate — see resolveBaseUrl()
+    // security rationale.
+    expect(url).toBe("http://192.168.22.88:8080/v1/cc-status");
+  });
+
+  it("issue #350 — does NOT fall back when uploader.enabled is false", () => {
+    writeDigitalTwinConfig({
+      enabled: false,
+      endpoint: "http://192.168.22.88:8080",
+      token: "team-shared",
+    });
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({ event: "session_start", sessionId: "s-paused" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("issue #350 — env URL still wins over saved config", async () => {
+    writeDigitalTwinConfig({
+      enabled: true,
+      endpoint: "http://192.168.22.88:8080",
+      token: "team-shared",
+    });
+    process.env.TEAMAGENT_REALTIME_URL = "http://127.0.0.1:9787";
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({ event: "session_start", sessionId: "s-env-wins" });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://127.0.0.1:9787/v1/cc-status");
   });
 
   it("fires one POST to /v1/cc-status when the URL is set", async () => {
@@ -193,5 +303,92 @@ describe("emitCcStatus", () => {
     // a generous ceiling — observed elapsed is typ. <5ms on CI.
     expect(elapsed).toBeLessThan(50);
     resolveLater(new Response(null, { status: 204 }));
+  });
+
+  // Issue #308 grill §3 — raw prompt threading + privacy default
+  describe("raw_prompt (issue #308 grill §3)", () => {
+    async function captureBody(emit: () => void): Promise<Record<string, unknown>> {
+      process.env.TEAMAGENT_REALTIME_URL = "http://127.0.0.1:9787";
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(null, { status: 204 }),
+      );
+      globalThis.fetch = fetchSpy as unknown as typeof fetch;
+      emit();
+      await new Promise((r) => setTimeout(r, 5));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0]!;
+      return JSON.parse((init as RequestInit).body as string);
+    }
+
+    it("omits raw_prompt when rawPrompt is undefined (privacy default)", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({ event: "user_prompt_submit", sessionId: "s-1" });
+      });
+      expect(body.raw_prompt).toBeUndefined();
+    });
+
+    it("omits raw_prompt when rawPrompt is empty string (filtered)", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "user_prompt_submit",
+          sessionId: "s-2",
+          rawPrompt: "",
+        });
+      });
+      expect(body.raw_prompt).toBeUndefined();
+    });
+
+    it("threads raw_prompt only when TEAMAGENT_REALTIME_RAW_PROMPT=1 (defense in depth)", async () => {
+      // Without the env opt-in, the transport drops raw_prompt regardless
+      // of what the caller passed. Even a direct caller bypassing the hook
+      // policy gate (bin-user-prompt-submit.ts) cannot exfiltrate prompt
+      // text. /review adversarial finding #9.
+      const bodyWithoutOptIn = await captureBody(() => {
+        emitCcStatus({
+          event: "user_prompt_submit",
+          sessionId: "s-3a",
+          rawPrompt: "hello presence",
+        });
+      });
+      expect(bodyWithoutOptIn.raw_prompt).toBeUndefined();
+
+      // With the env opt-in, raw_prompt is threaded through.
+      process.env.TEAMAGENT_REALTIME_RAW_PROMPT = "1";
+      try {
+        const bodyWithOptIn = await captureBody(() => {
+          emitCcStatus({
+            event: "user_prompt_submit",
+            sessionId: "s-3b",
+            rawPrompt: "hello presence",
+          });
+        });
+        expect(bodyWithOptIn.raw_prompt).toBe("hello presence");
+      } finally {
+        delete process.env.TEAMAGENT_REALTIME_RAW_PROMPT;
+      }
+    });
+
+    it("stop event accepts no rawPrompt (caller never sets it)", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "stop",
+          sessionId: "s-4",
+          cwd: "/Users/me/repo",
+        });
+      });
+      expect(body.event).toBe("stop");
+      expect(body.raw_prompt).toBeUndefined();
+    });
+
+    it("session_end event posts with event=session_end", async () => {
+      const body = await captureBody(() => {
+        emitCcStatus({
+          event: "session_end",
+          sessionId: "s-5",
+          cwd: "/Users/me/repo",
+        });
+      });
+      expect(body.event).toBe("session_end");
+    });
   });
 });

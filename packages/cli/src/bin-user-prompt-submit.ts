@@ -38,6 +38,11 @@ import {
   type SqliteEventLog,
 } from "@teamagent/adapters";
 import {
+  matchPrompt as matchDailyPrompt,
+  parseExtraTriggersEnv as parseDailyTriggersEnv,
+} from "@teamagent/core";
+import { executeDaily } from "./commands/daily.js";
+import {
   buildInjectionFromPending,
   persistLastInjected,
   scanUserInput,
@@ -124,11 +129,23 @@ async function main(): Promise<void> {
       // this is the second channel. We fire BEFORE the (slow) rule retrieval
       // path so the kanban reflects "what prompt just landed" as early as
       // possible, even when the rest of the hook is still running.
+      //
+      // Issue #308 grill §3: when the leader has explicitly opted into raw
+      // prompt evidence via TEAMAGENT_REALTIME_RAW_PROMPT=1, thread the
+      // user's prompt text to the snapshot so the receiver can persist it to
+      // raw_events for evidence / replay. Default OFF — the hook is the
+      // policy boundary; realtime-emit is the transport. emitCcStatus also
+      // enforces loopback-only-by-default + TEAMAGENT_REALTIME_ALLOW_REMOTE,
+      // so even with the env opt-in a misconfigured remote URL still fails
+      // closed.
       try {
+        const includeRawPrompt =
+          ctx.env.TEAMAGENT_REALTIME_RAW_PROMPT === "1" && prompt.length > 0;
         emitCcStatus({
           event: "user_prompt_submit",
           ...(sessionId ? { sessionId } : {}),
           cwd,
+          ...(includeRawPrompt ? { rawPrompt: prompt } : {}),
         });
       } catch { /* never propagate */ }
       const sessionsDir = path.join(home, ".teamagent", "sessions");
@@ -207,6 +224,38 @@ async function main(): Promise<void> {
           }
         } catch {
           // M4-A injection is best-effort — never block user input.
+        }
+      }
+
+      // issue #371: daily-summary short-circuit. When the operator types one
+      // of the whitelist phrases (or `/daily`), bypass the slow rule retriever
+      // and recording memory paths and inject a per-project digest of today's
+      // Claude Code activity so the operator's own Claude window can write
+      // the one-line-per-project summary.
+      const dailyDisabled = env.TEAMAGENT_DAILY_DISABLED === "1";
+      const dailyMatch = matchDailyPrompt(prompt, {
+        disabled: dailyDisabled,
+        extraTriggers: parseDailyTriggersEnv(env.TEAMAGENT_DAILY_TRIGGERS),
+      });
+      if (dailyMatch.fire) {
+        try {
+          const dailyOut = executeDaily({
+            cwd,
+            homeDir: home,
+            projectsRoot: path.join(home, ".claude", "projects"),
+            archive: true,
+            format: "context",
+            triggeredBy: dailyMatch.reason,
+          });
+          const out: UserPromptOutput = {
+            hookSpecificOutput: {
+              hookEventName: "UserPromptSubmit",
+              additionalContext: [...blocks, dailyOut.contextMarkdown].join("\n\n"),
+            },
+          };
+          return out;
+        } catch {
+          // Best-effort: fall through to the normal path on any unexpected error.
         }
       }
 

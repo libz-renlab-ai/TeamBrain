@@ -13,7 +13,81 @@ artifacts the user sees) do NOT need an entry.
 
 ## Unreleased
 
+### Changed
+
+- **`teamagent init` success block minimized + landing rescope sweep** (issue #326,
+  delivering items 4, 6, 7 of `docs/plans/2026-05-11-issue-122/grill-spec-acceptance.md`
+  §Implementation summary). `teamagent init` now ends with a 5-line minimal block
+  (`✅ TeamAgent 已就绪` + `下一步：` + `cd your-project` + `claude`); the
+  pre-existing 4-item 下一步 list, `💡 团队标配插件` tip, and `🆕 本次新增`
+  post-init CHANGELOG tail are now gated behind `TEAMAGENT_VERBOSE_INIT=1`
+  (helpers stay in source for `teamagent doctor` / a future `--verbose-init`
+  flag). Step-group label `🔗 注册 Hook` renamed to `🔗 注册集成` to drop the
+  `hook` jargon from the default human display (item 7). `teamagent --help`
+  text and the FIXEDFLOW banner ordering follow suit. Landing copy
+  (`apps/landing/src/index.html`, **legacy static-HTML mirror** — the live
+  deploy is `landing/rocketteam` via `.github/workflows/landing-deploy.yml` +
+  `landing/build-static.sh`, which was already clean of these strings) drops
+  `PreToolUse` / `拦截 PreToolUse` / `拦截机制` vocabulary from
+  `<meta description>`, hero GIF alt, install-box (now one curl line since
+  `release/install.sh` auto-runs init), comparison-table row 2
+  (`工具调用前拦截 PreToolUse` → `团队规则自动应用`), and headache-bullets
+  line 3 (drops `拦截机制`). Items 1, 2, 3, 5, 8, 9, 10, 11, 12 of the
+  12-item RESCOPE were already PRESENT on main per
+  `docs/plans/2026-05-13-issue-326/research.md`. Audit runner
+  `audit/runners/feature-01-init.ts` updated to accept both old
+  (`TeamAgent 安装成功`) and new (`TeamAgent 已就绪`) banner strings for
+  mid-rollout safety. Postinstall.mjs npm-install banner unchanged; that
+  surface is independent of `teamagent init` success and not within #326
+  item 6 scope.
+
 ### Added
+
+- **`teamagent daily` 日报总结 hook + CLI** (issue #371). Says "总结一下今天的日报"
+  / `/daily` to your Claude Code window and the UserPromptSubmit hook
+  intercepts the prompt, LLM-free-scans `~/.claude/projects/<encoded-cwd>/*.jsonl`
+  for today's local-time activity across all your Claude projects, merges
+  `.codex/worktrees/<task>` and `.claude/worktrees/<task>` sessions back to
+  their host repo, and injects a per-project digest (session count / turn
+  count / tools used / first&last user excerpts) as `additionalContext` so
+  your own Claude window writes the one-line-per-project summary itself.
+  Same path also archives the raw activity dump to
+  `${TEAMAGENT_HOME-~/.teamagent}/daily/<YYYY-MM-DD>.md`. CLI side: new
+  `teamagent daily [--projects-root=PATH] [--archive] [--format=json|context]
+  [--help]` subcommand (`--help` emits canonical JSON for snapshot tests per
+  `docs/feature-verification.md`). Three-layer matcher (strict whitelist +
+  `/daily` slash; `日报`/`daily summary` keyword + injectable LLM intent seam;
+  passthrough); LLM seam ships as a stub — graceful degrade to whitelist +
+  slash per grill §4 default. Env knobs: `TEAMAGENT_DAILY_DISABLED=1` to
+  bypass; `TEAMAGENT_DAILY_TRIGGERS=phrase1,phrase2` to extend the whitelist.
+  Verification playbook: `docs/plans/2026-05-13-issue-371-daily-summary/judge.md`.
+- **`项目:<name>` field in statusline** (issue #306). The Claude Code status row
+  now surfaces the current repo name between the existing `拦过:T今` field and
+  the CC runtime fields (`模型` / `上下文` / `用量` / `5h` / `7d` / `会话`).
+  Worktree-aware: the displayed name is the basename of the **main checkout**
+  (via the existing `findMainCheckoutFromWorktree` walk-up), so all worktrees
+  of the same repo render the same project name instead of the per-worktree
+  directory (e.g. `issue-306`). Names longer than 32 characters are truncated
+  with a `...` suffix; root-only / unresolvable cwd falls back to `unknown`.
+  Per grill verdict §12 (B), the statusline is a local presence/health view —
+  this field is the single grill-aligned addition; the full 5-field presence
+  redesign (`<state>` / `<name>` / `<queue>` / `<upload>` / `<binding>`) stays
+  in the scope of #326 (`feat(issue-122-impl): RESCOPE 实现 12 项 — landing →
+  init → Claude Code statusline`).
+
+- **4-layer evidence matrix + sibling canned-answer for evidence-asking probe** (issue #320).
+  `docs/BUSINESS-FEATURES.md` adds a `## 四层证明矩阵 / 4-layer evidence matrix` section
+  with per-feature 4-row tables (CEO narrative / Coder file paths / Machine-readable
+  JSON+SQL / LLM-readable raw artifacts). `CLAUDE.md` gains a sibling canned-answer rule
+  for the probe `!claudefast -p "what are the business feature and do we have enough
+  evidence to prove them to ceo, coder, machine-readable, LLM-readable evidence?"` with
+  6 disjoint grep anchors (`four-layer evidence matrix` / `CEO narrative` / `Coder file
+  paths` / `Machine-readable JSON+SQL` / `LLM-readable raw artifacts` / `turnkey UX is a
+  vision, not PRESHIP`) — strictly non-overlapping with the legacy `show me the business
+  feature` 6 anchors so the two probes never collide. Per grill verdict §22
+  (`docs/adr/0014/320.md`), #320 is evidence/coding discipline; it does NOT
+  reverse-dictate the product design of #308 / #371 / #372. `README.md` gains a short
+  `## 三大业务特性 / Three business features` section pointing at both probes.
 
 - **Digital-twin sidecar + `/api/cc-status` collector** (issue #350, PR #374, #381).
   Every Stop hook now taps a structured session snapshot — session id,

@@ -196,7 +196,7 @@ NODE
 
 预期输出：
 
-- `init` 成功 banner，含“TeamAgent 安装成功”。
+- `init` 成功 banner，含“TeamAgent 已就绪”（旧版本为“TeamAgent 安装成功”，issue #326 RESCOPE item 6 已 trim 为 minimal 5-line block；audit runner 仍接受两种写法以兼容老版本）。
 - 项目 DB、全局 DB、settings、`CLAUDE.md` 均存在。
 - 全局 DB 至少包含 8 条 meta principles + 48 条 seed；首次干净 HOME 下预期 `global/preset = 56`，`id like 'seed-%' = 48`。
 - `settings.local.json` 至少有 `PreToolUse`；bundle 完整时还应有 `PostToolUse`、`UserPromptSubmit`、`Stop`、`statusLine`。

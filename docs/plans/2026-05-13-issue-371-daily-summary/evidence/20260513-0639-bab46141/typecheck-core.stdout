@@ -1,0 +1,33 @@
+
+> @teamagent/core@0.1.0 typecheck /Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core
+> tsc --noEmit
+
+../../fixtures/scenarios/index.ts(5,36): error TS6059: File '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/tech-choice.ts' is not under 'rootDir' '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core/src'. 'rootDir' is expected to contain all source files.
+  The file is in the program because:
+    Imported via "./tech-choice.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+    Imported via "./tech-choice.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+../../fixtures/scenarios/index.ts(6,42): error TS6059: File '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/api-hallucination.ts' is not under 'rootDir' '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core/src'. 'rootDir' is expected to contain all source files.
+  The file is in the program because:
+    Imported via "./api-hallucination.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+    Imported via "./api-hallucination.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+../../fixtures/scenarios/index.ts(7,34): error TS6059: File '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/security.ts' is not under 'rootDir' '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core/src'. 'rootDir' is expected to contain all source files.
+  The file is in the program because:
+    Imported via "./security.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+    Imported via "./security.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+../../fixtures/scenarios/index.ts(8,39): error TS6059: File '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/workflow-order.ts' is not under 'rootDir' '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core/src'. 'rootDir' is expected to contain all source files.
+  The file is in the program because:
+    Imported via "./workflow-order.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+    Imported via "./workflow-order.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+../../fixtures/scenarios/index.ts(9,37): error TS6059: File '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/moment-dayjs.ts' is not under 'rootDir' '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core/src'. 'rootDir' is expected to contain all source files.
+  The file is in the program because:
+    Imported via "./moment-dayjs.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+    Imported via "./moment-dayjs.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+src/scenario/__tests__/runner.test.ts(7,39): error TS6059: File '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/python-version.ts' is not under 'rootDir' '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core/src'. 'rootDir' is expected to contain all source files.
+  The file is in the program because:
+    Imported via "../../../../../fixtures/scenarios/python-version.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core/src/scenario/__tests__/runner.test.ts'
+    Imported via "./python-version.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+    Imported via "./python-version.js" from file '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts'
+src/scenario/__tests__/runner.test.ts(8,30): error TS6059: File '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/fixtures/scenarios/index.ts' is not under 'rootDir' '/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core/src'. 'rootDir' is expected to contain all source files.
+/Users/m1/projects/TeamBrain/.claude/worktrees/issue-371/packages/core:
+[41m[30m ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL [39m[49m [31m@teamagent/core@0.1.0 typecheck: `tsc --noEmit`[39m
+[31mExit status 2[39m
