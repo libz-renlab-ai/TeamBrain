@@ -514,18 +514,47 @@ function skip(name: string, detail: string): DoctorCheckResult {
   return { name, status: "skip", detail };
 }
 
+export function checkNodeVersionAt(rawVersion: string): DoctorCheckResult {
+  return computeNodeVersionResult(rawVersion);
+}
+
 function checkNodeVersion(): DoctorCheckResult {
-  const raw = process.version; // e.g. "v22.4.0"
-  const major = parseInt(raw.slice(1).split(".")[0] ?? "0", 10);
-  if (major >= 22) {
-    return { name: "node-version", status: "pass", detail: `${raw}  (需要 ≥ 22)` };
+  return computeNodeVersionResult(process.version);
+}
+
+function computeNodeVersionResult(raw: string): DoctorCheckResult {
+  // raw is e.g. "v23.3.0"
+  const [majorStr = "0", minorStr = "0"] = raw.slice(1).split(".");
+  const major = parseInt(majorStr, 10);
+  const minor = parseInt(minorStr, 10);
+  if (major < 22) {
+    return {
+      name: "node-version",
+      status: "fail",
+      detail: `${raw} (需要 ≥ 22)`,
+      fix: "nvm install 22 && nvm use 22",
+    };
   }
-  return {
-    name: "node-version",
-    status: "fail",
-    detail: `${raw} (需要 ≥ 22)`,
-    fix: "nvm install 22 && nvm use 22",
-  };
+  // Issue #445 / bug #2: Node 23.0–23.4 doesn't have stable `node:sqlite` as a
+  // built-in module. The teamagent runtime AND the installed hooks
+  // (~/.teamagent/hooks/bin-stop.cjs etc.) all require it; without
+  // `--experimental-sqlite` they crash with ERR_UNKNOWN_BUILTIN_MODULE.
+  // Hooks are spawned by Claude Code, not by the user's shell, so a zshrc
+  // export does NOT propagate to them — even with the right rc, the hook
+  // subprocess still crashes.
+  if (major === 23 && minor < 5) {
+    return {
+      name: "node-version",
+      status: "fail",
+      detail:
+        `${raw}: node:sqlite not stable on 23.0–23.4. ` +
+        `Hooks spawned by Claude Code do NOT inherit NODE_OPTIONS from ` +
+        `your shell rc, so even \`export NODE_OPTIONS='--experimental-sqlite'\` ` +
+        `won't fix bin-stop / bin-session-end crashes.`,
+      fix: "nvm install 24 && nvm use 24  (or upgrade to ≥23.5)",
+    };
+  }
+  return { name: "node-version", status: "pass", detail: `${raw}  (需要 ≥ 22, node:sqlite stable on ≥23.5)` };
 }
 
 export interface ClaudeProbeResult {
