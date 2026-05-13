@@ -28,6 +28,11 @@ import {
   readLatestAllUsers,
   readHistory,
 } from './cc-status/store.js';
+// BPP (Best-Practice Push) — issue/spec dated 2026-05-13. Wires
+// /v1/bp-push (POST) and /v1/inbox (GET) onto the existing
+// digital-twin server so we get realtime fan-out + audit log for
+// free. See docs/superpowers/specs/2026-05-13-best-practice-push-design.md.
+import { handleBpPush, handleInbox } from './bpp/server-handlers.js';
 
 // Re-exported here for backwards compat — `safeUserId` / `dateStamp` were
 // originally defined in this module before `cc-status/path-safety.ts` split
@@ -64,6 +69,8 @@ const ROUTE_RECORDINGS = '/v1/recordings';
 const ROUTE_CC_STATUS = '/v1/cc-status';
 /** Feature #3 wedge — screen-video upload (mov/mp4/webm/mkv). */
 const ROUTE_VIDEOS = '/v1/videos';
+/** BPP — receive a BestPractice + fan out to inbox of N receivers. */
+const ROUTE_BP_PUSH = '/v1/bp-push';
 const ALLOWED_VIDEO_CONTAINERS = new Set(['mov', 'mp4', 'webm', 'mkv']);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -418,6 +425,21 @@ function handleGet(
     return;
   }
 
+  // BPP — GET /v1/inbox?receiver=<id>. Returns the inbox items for a single
+  // receiver. Same LAN-readability caveat as /api/cc-status — auth gate is a
+  // Phase 1 Task 1.6 follow-up (deliberate: Phase 1 MVP keeps server hot path
+  // observable for dev demo).
+  if (path === '/v1/inbox') {
+    const receiver = q.get('receiver');
+    if (typeof receiver !== 'string' || receiver.length === 0) {
+      send(res, 400, { ok: false, error: 'receiver query param required' });
+      return;
+    }
+    const result = handleInbox(outputDir, receiver);
+    send(res, 200, result);
+    return;
+  }
+
   // ── Issue #350 — CC runtime status query API. Unauthenticated, like the
   //    other /api/* endpoints (the issue body flags LAN-readability as a known
   //    exposure; adding auth to /api/* is a separate issue). ──────────────────
@@ -618,7 +640,8 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       route !== ROUTE_CC_SESSIONS &&
       route !== ROUTE_RECORDINGS &&
       route !== ROUTE_CC_STATUS &&
-      route !== ROUTE_VIDEOS
+      route !== ROUTE_VIDEOS &&
+      route !== ROUTE_BP_PUSH
     ) {
       send(res, 404);
       return;
@@ -650,6 +673,22 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
           error: 'invalid json',
           detail: err instanceof Error ? err.message : String(err),
         });
+        return;
+      }
+
+      // BPP — POST /v1/bp-push. Body shape: { bp: BestPractice, receivers: string[] }.
+      // Writes BestPractice + fans out InboxItems to each receiver + appends a
+      // pushed-event to the audit log. See docs/superpowers/specs/2026-05-13-best-practice-push-design.md §4.
+      if (route === ROUTE_BP_PUSH) {
+        try {
+          const result = handleBpPush(outputDir, json);
+          send(res, 200, result);
+        } catch (err) {
+          send(res, 400, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
         return;
       }
 
