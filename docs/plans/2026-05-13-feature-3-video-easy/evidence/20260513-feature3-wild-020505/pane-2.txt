@@ -1,0 +1,31 @@
+
+
+feat-feature3-video-upload on  worktree-feat-feature3-video-upload:feat/m6-feature3-video-upload-wedge [$] v
+ia  v22.21.1
+❯ clear; cd /Users/m1/projects/TeamBrain/.claude/worktrees/feat-feature3-video-upload; echo "=== pane 2: roun
+dtrip-verify (recipient curls share link) ==="
+=== pane 2: roundtrip-verify (recipient curls share link) ===
+
+feat-feature3-video-upload on  worktree-feat-feature3-video-upload:feat/m6-feature3-video-upload-wedge [$] v
+ia  v22.21.1
+❯ echo "[verify] recipient curls the share link"; LINK=$(grep -o "\"link\": *\"[^\"]*\"" /tmp/feature3-eviden
+ce/upload.json | head -1 | sed "s/.*\"link\": *\"\\([^\"]*\\)\".*/\\1/"); echo "LINK=$LINK"; curl -sS -D /tmp
+/feature3-evidence/headers.txt -o /tmp/feature3-evidence/recipient.mp4 -w "status=%{http_code} content-type=%
+{content_type} bytes=%{size_download}\\n" "$LINK"; echo; echo "[verify] SHA-256 byte equality:"; shasum -a 25
+6 /tmp/feature3-evidence/demo-clip.mp4 /tmp/feature3-evidence/recipient.mp4 | awk "{print \"  \" \$0}"; A=$(s
+hasum -a 256 /tmp/feature3-evidence/demo-clip.mp4 | awk "{print \$1}"); B=$(shasum -a 256 /tmp/feature3-evide
+nce/recipient.mp4 | awk "{print \$1}"); [ "$A" = "$B" ] && echo; echo "VERDICT: PASS — bytes match" || echo "
+VERDICT: FAIL"
+[verify] recipient curls the share link
+LINK=http://127.0.0.1:19100/api/file?user=ceo-duck&date=2026-05-12&id=01KRENQ80BE363HS5M18SJ47BC&ext=mp4
+status=200 content-type=video/mp4 bytes=2864
+
+[verify] SHA-256 byte equality:
+  fa54791d5f3765b4eabcf079e49a738755a87d9f790d6ac21672de94240420e9  /tmp/feature3-evidence/demo-clip.mp4
+  fa54791d5f3765b4eabcf079e49a738755a87d9f790d6ac21672de94240420e9  /tmp/feature3-evidence/recipient.mp4
+
+VERDICT: PASS — bytes match
+
+feat-feature3-video-upload on  worktree-feat-feature3-video-upload:feat/m6-feature3-video-upload-wedge [$] v
+ia  v22.21.1
+❯

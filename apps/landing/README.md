@@ -1,6 +1,24 @@
-# apps/landing
+# apps/landing (DEPRECATED — 2026-05-13)
 
-GitHub Pages 静态着陆页，托管于 `libz-renlab-ai.github.io/TeamBrain/`。面向陌生访客，在 ≤30 秒内完成"看到痛点 → 看到演示 → 复制 install 命令"的转化决策。
+> **Retired.** This single-page `apps/landing/` was the original 30-second
+> landing page deployed to `libz-renlab-ai.github.io/TeamBrain/`. As of
+> 2026-05-13 (PR for issue 「frontend → RocketTeam」) the deployed Pages
+> artefact is built from the RocketTeam Next.js submodule via
+> `landing/build-static.sh` and `.github/workflows/landing-deploy.yml`.
+>
+> The new entry point is:
+>
+> - **Source**: `landing/rocketteam/` (git submodule, upstream
+>   `hrdAI3/RocketTeam`) + `landing/overlay/` (TeamBrain-side static-export
+>   patches) + `landing/build-static.sh` (overlay + build script).
+> - **Deployed URL**: `https://libz-renlab-ai.github.io/TeamBrain/` (now
+>   serves the RocketTeam static export with 22 pre-rendered pages and
+>   demo data inlined into `/data/*.json`).
+>
+> `apps/landing/` is kept for one release cycle as a fallback / history
+> reference and will be removed afterwards. The `pnpm --filter landing
+> build` script still works locally (`pnpm install --filter landing` ;
+> `pnpm --filter landing build`) but is no longer reached by CI.
 
 ---
 

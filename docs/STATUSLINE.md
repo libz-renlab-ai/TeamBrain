@@ -41,7 +41,7 @@ Claude Code 一次只渲染一条 `statusLine.command`。如果用户已经有�
 完整渲染（有 CC stdin 时）：
 
 ```
-TeamAgent | 规则:N | 帮过:T今/W周 | 拦过:T今 | 模型:M | 上下文:CK | 用量:$X.XX | 5h:H | 7d:D | 会话:OK | <hint>
+TeamAgent | 规则:N | 帮过:T今/W周 | 拦过:T今 | 项目:<name> | 模型:M | 上下文:CK | 用量:$X.XX | 5h:H | 7d:D | 会话:OK | <hint>
 ```
 
 | 字段 | 来源 | 何时显示 / 跳过 |
@@ -49,6 +49,7 @@ TeamAgent | 规则:N | 帮过:T今/W周 | 拦过:T今 | 模型:M | 上下文:CK 
 | `规则:N` | 项目 / 全局 `.teamagent` knowledge.db (非 wiki) | always（DB 缺 → `规则:-`） |
 | `帮过:T今/W周` | `~/.teamagent/events.db` HELPED_EVENT_KINDS 计数 | always（events.db 缺 → `帮过:-`） |
 | `拦过:T今` | `~/.teamagent/events.db` RISK_EVENT_KINDS 计数 | always |
+| `项目:<name>` | `path.basename` of main checkout (worktree-aware via `findMainCheckoutFromWorktree`); capped at 32 chars + `...` suffix; falls back to `unknown` on root-only / empty / unreadable cwd. issue #306. | always |
 | `模型:M` | CC stdin JSON `model.display_name`（缺则 `model.id`） | stdin 提供时 |
 | `上下文:CK` | `transcript_path` 末尾 256 KB 反向扫到的最近一条 assistant `message.usage` = `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` | transcript 可读且有 usage |
 | `用量:$X.XX` | CC stdin `cost.total_cost_usd` 2 位小数 | `> 0` 时；`=== 0` 跳过避免 `$0.00` 噪声 |

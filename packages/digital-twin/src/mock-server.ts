@@ -19,6 +19,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { join, resolve as resolvePath, sep } from 'node:path';
 import { DASHBOARD_HTML } from './dashboard-html.js';
+import { VIDEOS_DASHBOARD_HTML } from './videos-html.js';
 import { safeUserId, dateStamp } from './cc-status/path-safety.js';
 import {
   appendCcStatusSnapshot,
@@ -61,6 +62,9 @@ const ROUTE_CC_SESSIONS = '/v1/cc-sessions';
 const ROUTE_RECORDINGS = '/v1/recordings';
 /** Issue #350 — lightweight CC runtime status snapshot ingress (plain JSON, not gzipped). */
 const ROUTE_CC_STATUS = '/v1/cc-status';
+/** Feature #3 wedge — screen-video upload (mov/mp4/webm/mkv). */
+const ROUTE_VIDEOS = '/v1/videos';
+const ALLOWED_VIDEO_CONTAINERS = new Set(['mov', 'mp4', 'webm', 'mkv']);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[A-Za-z0-9._-]+$/;
@@ -164,8 +168,36 @@ function atomicWriteFileSync(target: string, data: Buffer): void {
   }
 }
 
-function validateExtParam(raw: string | undefined): 'jsonl' | 'ogg' | null {
-  return raw === 'jsonl' || raw === 'ogg' ? raw : null;
+type GetableExt = 'jsonl' | 'ogg' | 'mov' | 'mp4' | 'webm' | 'mkv';
+function validateExtParam(raw: string | undefined): GetableExt | null {
+  if (
+    raw === 'jsonl' ||
+    raw === 'ogg' ||
+    raw === 'mov' ||
+    raw === 'mp4' ||
+    raw === 'webm' ||
+    raw === 'mkv'
+  ) {
+    return raw;
+  }
+  return null;
+}
+
+function contentTypeForExt(ext: GetableExt): string {
+  switch (ext) {
+    case 'jsonl':
+      return 'text/plain; charset=utf-8';
+    case 'ogg':
+      return 'audio/ogg';
+    case 'mov':
+      return 'video/quicktime';
+    case 'mp4':
+      return 'video/mp4';
+    case 'webm':
+      return 'video/webm';
+    case 'mkv':
+      return 'video/x-matroska';
+  }
 }
 
 /** Confirm a resolved path stays under outputDir (defense-in-depth vs traversal). */
@@ -277,7 +309,114 @@ function handleGet(
     return;
   }
 
+  // Feature #3 wedge — polished Team Videos dashboard. Separate from the
+  // engineering `/` dashboard on purpose: this is the surface a team leader
+  // (not an SRE) actually clicks into.
+  if (path === '/videos' || path === '/videos.html') {
+    res.statusCode = 200;
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    res.end(VIDEOS_DASHBOARD_HTML);
+    return;
+  }
+
   const q = parseQuery(url);
+
+  // Feature #3 wedge — list every uploaded video across all users/dates so
+  // the /videos dashboard can render a single chronological feed.
+  if (path === '/api/videos') {
+    const videos: Array<{
+      id: string;
+      user_id: string;
+      date: string;
+      container: string;
+      size: number;
+      sha256?: string;
+      label?: string;
+      captured_at?: string;
+      link: string;
+    }> = [];
+    const allowedExts = new Set(['mov', 'mp4', 'webm', 'mkv']);
+    try {
+      for (const userName of listDirNames(outputDir)) {
+        if (safeUserId(userName) !== userName) continue;
+        const userDir = join(outputDir, userName);
+        if (!isUnder(outputDir, userDir)) continue;
+        for (const dateName of listDirNames(userDir)) {
+          if (!DATE_RE.test(dateName)) continue;
+          const dateDir = join(userDir, dateName);
+          if (!isUnder(outputDir, dateDir)) continue;
+          let files: string[];
+          try {
+            files = readdirSync(dateDir);
+          } catch {
+            continue;
+          }
+          for (const fname of files) {
+            const m = /^([A-Za-z0-9._-]+)\.([A-Za-z0-9]+)$/.exec(fname);
+            if (!m) continue;
+            const id = m[1]!;
+            const ext = m[2]!.toLowerCase();
+            if (!allowedExts.has(ext)) continue;
+            if (id.includes('..')) continue;
+            const full = join(dateDir, fname);
+            let size = 0;
+            let mtime = '';
+            try {
+              const st = statSync(full);
+              size = st.size;
+              mtime = st.mtime.toISOString();
+            } catch {
+              continue;
+            }
+            const link =
+              '/api/file?user=' + encodeURIComponent(userName) +
+              '&date=' + encodeURIComponent(dateName) +
+              '&id=' + encodeURIComponent(id) +
+              '&ext=' + encodeURIComponent(ext);
+            // Optional per-upload metadata sidecar: `<id>.meta.json`. Same
+            // user/date dir, written by the collector when an upload carried
+            // a `label` or a sender-supplied SHA. Absent metadata is fine —
+            // the dashboard degrades gracefully to just (id / size / date).
+            let label: string | undefined;
+            let sha256: string | undefined;
+            let capturedAt = mtime;
+            try {
+              const metaPath = join(dateDir, id + '.meta.json');
+              if (isUnder(outputDir, metaPath) && existsSync(metaPath)) {
+                const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
+                if (typeof meta.label === 'string') label = meta.label;
+                if (typeof meta.payload_sha256 === 'string') sha256 = meta.payload_sha256;
+                if (typeof meta.captured_at === 'string') capturedAt = meta.captured_at;
+              }
+            } catch {
+              // best-effort
+            }
+            videos.push({
+              id,
+              user_id: userName,
+              date: dateName,
+              container: ext,
+              size,
+              sha256,
+              label,
+              captured_at: capturedAt,
+              link,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      send(res, 500, {
+        error: 'list failed',
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    // Newest first (by captured_at, then mtime fallback).
+    videos.sort((a, b) => (a.captured_at && b.captured_at ? (a.captured_at < b.captured_at ? 1 : -1) : 0));
+    send(res, 200, { videos });
+    return;
+  }
 
   // ── Issue #350 — CC runtime status query API. Unauthenticated, like the
   //    other /api/* endpoints (the issue body flags LAN-readability as a known
@@ -441,11 +580,7 @@ function handleGet(
     try {
       const buf = readFileSync(filePath);
       res.statusCode = 200;
-      if (ext === 'jsonl') {
-        res.setHeader('content-type', 'text/plain; charset=utf-8');
-      } else {
-        res.setHeader('content-type', 'audio/ogg');
-      }
+      res.setHeader('content-type', contentTypeForExt(ext));
       res.setHeader('content-length', String(buf.length));
       // Swallow client-disconnect EPIPE/ECONNRESET — already-sent response,
       // nothing to recover. Without this listener the error crashes Node.
@@ -482,7 +617,8 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
     if (
       route !== ROUTE_CC_SESSIONS &&
       route !== ROUTE_RECORDINGS &&
-      route !== ROUTE_CC_STATUS
+      route !== ROUTE_CC_STATUS &&
+      route !== ROUTE_VIDEOS
     ) {
       send(res, 404);
       return;
@@ -539,6 +675,115 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
           date: r.date,
           session_id: r.session_id,
         });
+        return;
+      }
+
+      // Feature #3 wedge — screen-video upload. Validates container, writes
+      // `<user>/<date>/<id>.<container>` under outputDir, returns a link the
+      // CLI can print verbatim. Kept inline to avoid bumping the existing
+      // recording/cc-session schema; the path semantics are identical to
+      // /v1/recordings so downstream tooling can list videos via the same
+      // GET /sessions/:user/:date endpoints.
+      if (route === ROUTE_VIDEOS) {
+        const obj = json as Record<string, unknown>;
+        const envelope = (obj.envelope ?? {}) as Record<string, unknown>;
+        const idRaw = envelope.video_id ?? envelope.id;
+        let id: string;
+        if (typeof idRaw === 'string' && idRaw.length > 0) {
+          const validated = validateIdParam(idRaw);
+          if (validated === null) {
+            send(res, 400, { error: 'invalid id' });
+            return;
+          }
+          id = validated;
+        } else {
+          id = `video-${Date.now()}-${randomUUID().slice(0, 8)}`;
+        }
+
+        const videoBlock = obj.video as Record<string, unknown> | undefined;
+        const containerRaw = videoBlock?.container ?? envelope.container;
+        const container =
+          typeof containerRaw === 'string' ? containerRaw.toLowerCase() : '';
+        if (!ALLOWED_VIDEO_CONTAINERS.has(container)) {
+          send(res, 400, {
+            error: 'unsupported container',
+            allowed: [...ALLOWED_VIDEO_CONTAINERS],
+          });
+          return;
+        }
+
+        const contentB64 = videoBlock?.content;
+        if (typeof contentB64 !== 'string' || contentB64.length === 0) {
+          send(res, 400, { error: 'missing content', route });
+          return;
+        }
+
+        try {
+          const buf = Buffer.from(contentB64, 'base64');
+          if (buf.length > MAX_DECOMPRESSED_BYTES) {
+            send(res, 413, {
+              error: 'decoded payload too large',
+              limit: MAX_DECOMPRESSED_BYTES,
+            });
+            return;
+          }
+          const userIdSafe = safeUserId(envelope.user_id);
+          const date = dateStamp(envelope.captured_at, now());
+          const targetDir = join(outputDir, userIdSafe, date);
+          const targetFile = join(targetDir, `${id}.${container}`);
+          if (!isUnder(outputDir, targetFile)) {
+            send(res, 400, { error: 'invalid path' });
+            return;
+          }
+          mkdirSync(targetDir, { recursive: true });
+          atomicWriteFileSync(targetFile, buf);
+
+          // Sidecar: persist label / SHA / captured_at so the /videos
+          // dashboard can render upload metadata without rescanning the
+          // file. Optional — absent sidecar = dashboard falls back to
+          // `(id, size, mtime)`. Best-effort write.
+          try {
+            const labelRaw = envelope.label;
+            const shaRaw = envelope.payload_sha256;
+            const capturedRaw = envelope.captured_at;
+            const sidecar: Record<string, unknown> = {};
+            if (typeof labelRaw === 'string' && labelRaw.length > 0) sidecar.label = labelRaw;
+            if (typeof shaRaw === 'string' && shaRaw.length > 0) sidecar.payload_sha256 = shaRaw;
+            if (typeof capturedRaw === 'string' && capturedRaw.length > 0) sidecar.captured_at = capturedRaw;
+            if (Object.keys(sidecar).length > 0) {
+              const metaPath = join(targetDir, `${id}.meta.json`);
+              if (isUnder(outputDir, metaPath)) {
+                atomicWriteFileSync(metaPath, Buffer.from(JSON.stringify(sidecar), 'utf8'));
+              }
+            }
+          } catch {
+            // sidecar failures must never 5xx the upload
+          }
+
+          // Build the share-link the CLI will print verbatim. We reuse the
+          // existing GET /api/file query handler (which now accepts video
+          // extensions) so a recipient who clicks the link gets the bytes
+          // back with no new endpoint to memorise.
+          const link =
+            `/api/file?user=${encodeURIComponent(userIdSafe)}` +
+            `&date=${encodeURIComponent(date)}` +
+            `&id=${encodeURIComponent(id)}` +
+            `&ext=${encodeURIComponent(container)}`;
+          send(res, 200, {
+            ok: true,
+            id,
+            user_id: userIdSafe,
+            date,
+            container,
+            link,
+            payload_size: buf.length,
+          });
+        } catch (err) {
+          send(res, 500, {
+            error: 'decode or write failed',
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        }
         return;
       }
 

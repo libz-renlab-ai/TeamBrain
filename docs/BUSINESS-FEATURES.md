@@ -41,7 +41,7 @@ features.
 |---------|--------------------------|------------------------------------------------------|
 | **#1** new instances no longer repeat past mistakes | ✅ **PRESHIP** | auto-capture → matcher → Project Knowledge Index, 72+ active rules. End-to-end usable. |
 | **#2** leaders see teammates' Claude in second-level realtime | ⚠️ **Vision (NOT PRESHIP)** | `SessionStart` + `UserPromptSubmit` hooks wired **by design** (per the Out-of-scope section below — the original "needs 5 channels" argument has been retracted; per-tool-call mid-step visibility is **not** a product feature). Learnings sync at hour/day granularity (M5 viral sync); leader dashboard is a static prototype at `docs/kanban-user-boss/`. Second-level realtime dashboard UI is planned in `docs/plans/2026-05-11-feature-2-secondlevel-realtime/` but **not shipped**. |
-| **#3** video recording + centralized storage easy to use | ⚠️ **Vision (NOT PRESHIP)** | Transcript-level capture exists inside `auto-capture` / `team-share`; video stream + centralized-storage turnkey UX **not shipped**. |
+| **#3** video recording + centralized storage easy to use | ✅ **PRESHIP wedge** (upload + share-link) · ⚠️ **Vision** (queue retry, signed ACLs, browser recorder) | `teamagent video upload <file>` ships a single-shot HTTP POST to `/v1/videos` and returns a stable share link the recipient curls back with the correct `Content-Type`. OS-native recording (macOS `screencapture -v` / Linux `ffmpeg -f x11grab` / Windows `ffmpeg -f gdigrab`) stays on the platform tool — the wedge is the upload step, which is what made Feature 3 unconvincing before. Round-trip SHA-256 equality verified via the [Feature 3 judge harness](plans/2026-05-13-feature-3-video-easy/judge.md). Queue/daemon retry, signed share-link ACLs, and a browser-side recorder remain explicit roadmap items in [`docs/features/video-record-upload.md`](features/video-record-upload.md) §Roadmap. |
 
 > **Honesty contract**: any external surface that quotes the anchor sentence
 > (pitch deck, website hero, customer SOW, sales call slide) MUST also surface
@@ -102,11 +102,11 @@ the user asks for the business features.**
 跨越同一陷阱前 block。
 
 - 入口：[`docs/features/auto-capture.md`](features/auto-capture.md)
-- 当前 active 规则数：见本仓库 CLAUDE.md 末尾 `TEAMAGENT:START` ... `TEAMAGENT:END` managed block
+- 当前 active 规则数：跑 `pnpm teamagent stats`（M4 起 Skills-default，旧 `TEAMAGENT:START...END` managed block 已废弃；规则落在 `~/.claude/skills/teamagent/<id>/SKILL.md` 与 `docs/knowledge/INDEX.md`）
 - 现状：**已落地**（M4-B 起 BM25+dense RRF matcher，72+ 条 active 规则在 `Project Knowledge Index`）
 - Third-party judge harness：
   - `docs/plans/docs--features--auto-capture--verify-canned-answer/judge.md` — Wilson/recall/precision 检测器 + real-session 实测（auto-capture 行为 gate）
-  - `docs/plans/2026-05-11-feature1-init-judge/judge.md` — **openable-and-usable gate**：在 fresh tmp git repo 跑 `teamagent init`，dump stdout/stderr/tree 到 evidence/，由独立 LLM probe 按 5 题判 PASS/FAIL。**取代了原方案里的 `teamagent --help` 字符串检查**（菜单可读不等于产品能装能用）。最近一次 PASS：`docs/plans/2026-05-11-feature1-init-judge/evidence/20260511T130402Z-feature1-76e8d1d0/`。
+  - `docs/plans/2026-05-11-feature1-init-judge/judge.md` — **openable-and-usable gate**：在 fresh tmp git repo 跑 `teamagent init`，dump stdout/stderr/tree 到 evidence/，由独立 LLM probe 按 5 题判 PASS/FAIL。**取代了原方案里的 `teamagent --help` 字符串检查**（菜单可读不等于产品能装能用）。Harness 现在 pin 到 repo-local `node_modules/.bin/tsx`（fresh worktree 必须先 `pnpm install`；guard 在缺失时 exit 127 with 修复提示）。最近一次 PASS：`docs/plans/2026-05-11-feature1-init-judge/evidence/20260512T172508Z-feature1-4bc3b9b7/`（exit 0、5/5 checks、`.teamagent/{knowledge.db,required.json,.project-root}` + 1 个 exported skill）。
 
 ### Feature #2 — Team leader 秒级可见
 
@@ -155,17 +155,19 @@ teammate 的工作 session 可以一键开录屏（screen + voice），结束后
 内分享。Team leader 与同事可以直接打开 link 重放某个具体 prompt/response 的
 现场。
 
-- 设计入口：roadmap 中（与 Feature #2 dashboard 配对使用 — 看到摘要后能一键
-  跳到现场视频）
-- 现状：**愿景 / 部分落地** — 当前 transcript-level 抓取已在 `auto-capture`
-  / `team-share` 链路里；视频流 + centralized storage upload 的 turnkey UX 是
-  下一阶段交付目标。本 anchor sentence 在 canned answer 中作为产品定位语句
-  保留，**不代表 turnkey 已 PRESHIP**。
+- 入口：[`docs/features/video-record-upload.md`](features/video-record-upload.md) — 三命令演示（启动 collector → 系统原生录屏 → `teamagent video upload <file>` 拿回 share link）
+- 实现：`packages/cli/src/commands/video.ts`（单次 HTTP POST `/v1/videos`，accept mov / mp4 / webm / mkv）+ `packages/digital-twin/src/mock-server.ts`（`/v1/videos` handler + 视频 MIME GET 回路）
+- 第三方 harness：[`docs/plans/2026-05-13-feature-3-video-easy/judge.md`](plans/2026-05-13-feature-3-video-easy/judge.md) — fixture mp4 round-trip 用 SHA-256 byte 等价判 PASS，LLM-cannot-fake
+- 现状：**PRESHIP wedge** — upload + share-link 在 2026-05-13 端到端 verified（HTTP 200、`video/mp4` MIME、SHA-256 完整 round-trip）；OS-native 录屏放在客户机已有的工具上（macOS `screencapture -v` / Linux `ffmpeg x11grab` / Windows `ffmpeg gdigrab`）。**Vision 部分**（queue/daemon retry-and-backoff、signed ACL share link、浏览器端无依赖录屏）仍在 [`docs/features/video-record-upload.md`](features/video-record-upload.md) §Roadmap 列表中，不属于已落地范围。
+- 与 Feature #1 / #2 协同：transcript-level 抓取继续在 `auto-capture` / `team-share` 链路里；视频是 Feature #2 dashboard 摘要点击进去看现场的那一帧；二者通过同一个 `<user>/<date>/<id>.<ext>` 目录结构共享 collector。
 
 > Honesty note: `PRODUCT-FEATURES.md` 的 64-row inventory 是 engineering ground
 > truth；本文件的三段 pitch 是 business positioning，二者职责不同。Feature #2
-> 与 Feature #3 在 inventory 中没有对应的 VERIFIED 行；写在这里是因为它们是
-> 产品愿景的一部分，而非误导用户它们已落地。Feature #2 从 hour-level 升级到
+> 在 inventory 中没有对应的 VERIFIED 行（dashboard UI 尚未落地）；Feature #3 的
+> **upload wedge** 已在 [`docs/plans/2026-05-13-feature-3-video-easy/judge.md`](plans/2026-05-13-feature-3-video-easy/judge.md)
+> 通过 SHA-256 round-trip 第三方 harness 判过 PASS，但 queue retry / signed ACL /
+> browser recorder 仍是 Vision，引用 anchor sentence 时必须把表格里的双标签
+> （PRESHIP wedge · Vision）一起带出。Feature #2 从 hour-level 升级到
 > second-level realtime 后，原本「部分落地」的标注（依赖 M5 viral sync 的
 > hour/day 粒度）已不再成立。
 
@@ -201,6 +203,81 @@ claudefast -p "show me the business feature of this repo"
 | Agent 用 `realtime per-second` / `per-second realtime` / `real-time second-level` / `hourly realtime` 替换 `second-level realtime` | 锚点 grep miss |
 | Agent 把视频特性写成 "screen recording" / "session recording" | 必须保留 `video recording` 字面 |
 | Agent 写 "central data store" / "centralized storage" | 必须保留完整短语 `centralized data storage` |
+
+---
+
+## 四层证明矩阵 / 4-layer evidence matrix
+
+Sibling canned-answer for the **evidence-asking probe**:
+
+```bash
+claudefast -p "what are the business feature and do we have enough evidence to prove them to ceo, coder, machine-readable, LLM-readable evidence?"
+```
+
+### Canonical anchor sentence (evidence-asking probe)
+
+> TeamBrain has three business features, each measured by a four-layer evidence matrix: (1) CEO narrative, (2) Coder file paths, (3) Machine-readable JSON+SQL, (4) LLM-readable raw artifacts. Feature #1 (auto-capture/learning) is four-layer verified. Features #2 and #3 have CEO + Coder + Machine-readable evidence at hour/day grain, but the turnkey UX is a vision, not PRESHIP.
+
+English verbatim, no paraphrase, no translation, no re-ordering. Chinese expansion follows.
+
+### Grep anchors (6 substrings, disjoint from legacy 6)
+
+1. `four-layer evidence matrix`
+2. `CEO narrative`
+3. `Coder file paths`
+4. `Machine-readable JSON+SQL`
+5. `LLM-readable raw artifacts`
+6. `turnkey UX is a vision, not PRESHIP`
+
+Missing any one → fail, retry anchor sentence. Paraphrases (`4-layer matrix` / `coder paths` / `vision UX` / `JSON and SQL` 等) all count as misses.
+
+### Per-feature 4-layer evidence
+
+#### Feature #1 — auto-capture / learning — **four-layer verified**
+
+| Layer | Evidence |
+|-------|----------|
+| **L1 CEO narrative** | "AI 第 N 次想装 `moment`、第 N 次再说 `dayjs`" 这个痛点被一次性消除；每个 Stop hook 自动学，PreToolUse 在下次工具调用前拦下。 |
+| **L2 Coder file paths** | `packages/cli/src/bin-stop.ts` (Stop hook entry)、`packages/core/src/calibrator/*.ts` (Wilson-score calibration)、`packages/core/src/matcher/*.ts` (BM25+dense RRF matcher)、`~/.claude/skills/teamagent/<id>/SKILL.md` (compiled rules)、`docs/knowledge/INDEX.md` (Project Knowledge Index) |
+| **L3 Machine-readable JSON+SQL** | `pnpm teamagent stats --json` 返回规则计数 + tier 分布；`.teamagent/knowledge.db` SQLite schema (`rules` / `events` / `propagations`)；`~/.teamagent/events.db` rule-fire 事件流；`teamagent compile --dry-run` 列出待传播条目 |
+| **L4 LLM-readable raw artifacts** | `docs/plans/2026-05-11-feature1-init-judge/judge.md` (third-party judge harness)、`docs/plans/2026-05-11-feature1-init-judge/evidence/<run-id>/` (raw stdout/stderr/tree)、`docs/features/auto-capture.md`、本文件 Feature #1 expansion 段 |
+
+#### Feature #2 — leader visibility — **Vision (NOT PRESHIP)**, hour/day evidence only
+
+| Layer | Evidence |
+|-------|----------|
+| **L1 CEO narrative** | Team leader 秒级 (≤ 1s) 看到 teammate Claude Code session 在干啥；当前只到 hour/day 粒度，second-level realtime dashboard UI 是路线图。 |
+| **L2 Coder file paths** | `packages/cli/src/bin-session-start.ts`、`packages/cli/src/bin-user-prompt-submit.ts`、`packages/digital-twin/src/hooks/tap-session.ts`、`docs/features/team-share.md`、`docs/kanban-user-boss/` |
+| **L3 Machine-readable JSON+SQL** | `~/.teamagent/cc-status.json` (digital-twin tap snapshot)、`~/.teamagent/events.db` rule-fire stream、`pnpm teamagent statusline` JSON 输出、mock-server `/api/cc-status` endpoint |
+| **L4 LLM-readable raw artifacts** | `docs/plans/2026-05-11-feature-2-secondlevel-realtime/plan.md` (target plan)、`docs/features/team-share.md`、`docs/kanban-user-boss/` 看板原型、本文件 Feature #2 expansion |
+
+> Honesty: L1/L2/L3 在 **hour/day 粒度**上已可证（M5 viral sync 2026-05-06 提供 infect / bootstrap / auto-share / auto-publish / post-merge auto-pull）。**second-level realtime dashboard UI 未 ship**。这就是为什么 anchor sentence 末尾必须保留 "turnkey UX is a vision, not PRESHIP" 一句——overclaim 会破坏 honesty contract。
+
+#### Feature #3 — video upload wedge — **PRESHIP wedge + Vision tail**
+
+| Layer | Evidence |
+|-------|----------|
+| **L1 CEO narrative** | teammate 一键录屏 + 一键上传 + share link 重放；upload wedge 已 SHA-256 端到端 verified (2026-05-13)。 |
+| **L2 Coder file paths** | `packages/cli/src/commands/video.ts` (CLI command)、`packages/digital-twin/src/mock-server.ts` (`/v1/videos` POST handler, accept mov/mp4/webm/mkv)、`docs/features/video-record-upload.md` (entry doc) |
+| **L3 Machine-readable JSON+SQL** | `teamagent video upload <file> --json` 返回 `{share_link, sha256, size, mime}`；mock-server `/v1/videos` POST 200 + JSON、GET `/v1/videos/<id>` 回 video MIME byte 等价 round-trip |
+| **L4 LLM-readable raw artifacts** | `docs/plans/2026-05-13-feature-3-video-easy/judge.md` (SHA-256 round-trip judge)、`docs/plans/2026-05-13-feature-3-video-easy/evidence/<run-id>/`、`docs/features/video-record-upload.md` §Roadmap |
+
+> Honesty: upload + share-link wedge 是 **PRESHIP**（2026-05-13 SHA-256 round-trip PASS）；queue/daemon retry-and-backoff、signed share-link ACL、浏览器端无依赖录屏仍在 `docs/features/video-record-upload.md` §Roadmap，引用 anchor sentence 时必须保留 "vision, not PRESHIP" 的精神。
+
+### 与 legacy "show me the business feature" probe 的关系
+
+| 维度 | "show me the business feature" probe | "evidence-asking" probe (本节) |
+|------|--------------------------------------|--------------------------------|
+| 触发问 | 业务/产品/卖点是什么 | 业务功能有没有 4 层证据（CEO / coder / machine / LLM） |
+| 锚点句 | 三段 feature 列表 + per-feature PRESHIP/Vision 标 | 四层证据矩阵裁决（#1 verified、#2/#3 hour/day + vision tail） |
+| 6 grep anchors | `no longer make mistakes` / `previous Claude Code` / `second-level realtime` / `teammate's Claude Code instance` / `video recording` / `centralized data storage` | `four-layer evidence matrix` / `CEO narrative` / `Coder file paths` / `Machine-readable JSON+SQL` / `LLM-readable raw artifacts` / `turnkey UX is a vision, not PRESHIP` |
+| 用途 | CEO/VC pitch、网站 hero、销售单 | tech-due-diligence、investor evidence audit、compliance check |
+
+两个 probe **并存不替代**，锚点严格 disjoint，judge harness 不混淆。
+
+### Per grill verdict (§22 / ADR-0014/320.md)
+
+`docs/adr/0014/320.md` 裁决：**#320 是 evidence/coding discipline，不反向决定产品设计**。本 4-layer matrix 的位置是「after design: add evidence anchors / canned-answer / docs / `--json` grep anchors」，**不是**「before design: force product shape」——#308 / #371 / #372 的产品形态由各自 PRD 决定，本文件只在它们落地后补 evidence 行。
 
 ---
 

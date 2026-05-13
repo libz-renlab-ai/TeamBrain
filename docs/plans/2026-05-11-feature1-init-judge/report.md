@@ -8,6 +8,16 @@
 
 # Report — Feature ① init-in-new-repo judge harness
 
+> **Update 2026-05-12** (PR #399): the 2026-05-11 PASS evidence in this report
+> documents a harness that invoked bare `tsx` and PASSed because the original
+> caller happened to have `tsx` on `$PATH`. A fresh worktree (without a global
+> `tsx`) got exit 127. The harness recipe in `judge.md` §V1 Step 2 has been
+> pinned to `$REPO_ROOT/node_modules/.bin/tsx` with an exit-127 guard. Fresh
+> PASS evidence using the pinned recipe lives at
+> `evidence/20260512T172508Z-feature1-4bc3b9b7/` (5/5 checks, exit 0). The
+> 2026-05-11 evidence dir below is retained as historical record;
+> `docs/BUSINESS-FEATURES.md` Feature-1 row points at the 2026-05-12 run.
+
 ## Scope delivered
 
 | Plan output | Status | Reference |

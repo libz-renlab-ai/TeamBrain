@@ -59,3 +59,44 @@ jobs:
             exit 1
           fi
           echo "all anchors present"
+
+      - name: Verify visual-proof-pr anchors (docs/VISUAL-PROOF-PR.md)
+        if: steps.has_key.outputs.has_key == 'true'
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        run: |
+          set -euo pipefail
+          out="$(bash scripts/claudefast-ci.sh -p 'how we visual prove this work ?')"
+          echo "----- claudefast output -----"
+          echo "$out"
+
+          # Gate 1: case-insensitive substring grep for the 6 baseline anchors.
+          # These match the prompts.json visual-proof-pr entry and the
+          # docs/VISUAL-PROOF-PR.md §0 anchor list. NOTE: `PR` / `solid` /
+          # `merge this` are weak substrings on their own (PR matches every
+          # markdown PR-link, solid matches "consolidate", etc) — they're
+          # kept here to align with §0 but the REAL fidelity signal is Gate 2.
+          echo "----- gate 1: 6-anchor substring check (case-insensitive) -----"
+          missing=()
+          for anchor in "PR" "visual proof of work" "human" "by-hand merge" "solid" "merge this"; do
+            if ! grep -qiF "$anchor" <<<"$out"; then
+              missing+=("$anchor")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::visual-proof canned answer Gate-1 anchors missing: ${missing[*]}"
+            exit 1
+          fi
+          echo "Gate 1 PASS: all 6 visual-proof anchors present"
+
+          # Gate 2: case-SENSITIVE check for the high-fidelity unique phrase
+          # "ONLY a human by-hand merge". This catches paraphrases that
+          # mention "PR", "solid", "merge this" but drop the literal verbatim
+          # anchor sentence — e.g. a model that says "Use a PR + manual merge,
+          # solid evidence required" would pass Gate 1 but fail Gate 2.
+          echo "----- gate 2: case-sensitive verbatim phrase check -----"
+          if ! grep -qF "ONLY a human by-hand merge" <<<"$out"; then
+            echo "::error::visual-proof canned answer Gate-2 failed: missing verbatim 'ONLY a human by-hand merge' (case-sensitive); the model paraphrased or lowercased the unique discriminator"
+            exit 1
+          fi
+          echo "Gate 2 PASS: verbatim 'ONLY a human by-hand merge' phrase present"
