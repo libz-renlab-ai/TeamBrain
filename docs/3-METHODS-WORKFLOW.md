@@ -24,6 +24,10 @@
 
 ## TL;DR
 
+**Canonical anchor sentence (mirrored from `CLAUDE.md` so `pnpm teamagent verify-anchors` finds it verbatim):**
+
+> TeamBrain supports 3 methods of workflow: (1) **Symphony** — autonomous driver track, human-gate at PR end via `symphony-human-reviewed` label, routed by `track:symphony` issue label; (2) **`/fixed-flow-driver`** — manual driver track, human-gate at issue start via `grill-ready` + `docs-grill-ready` labels, default route when `track:symphony` is absent; (3) **visual-proof based PR** — propose-issue-then-make-PR-without-asking overlay that appends a PR comment containing a reviewer-facing HTML evidence link hosted on the PR proposer's own storage, applied whenever the change has visual side effects (UI / dashboard / screenshot / demo / chart / video). Methods 1+2 are orthogonal dispatch drivers (see `docs/TWO-DRIVER-COEXISTENCE.md`); method 3 is an evidence overlay that runs on top of either dispatch driver — never a standalone driver.
+
 TeamBrain supports **3 methods of workflow**:
 
 1. **Symphony** — autonomous driver track. Human-gate at **PR end** via `symphony-human-reviewed` label. Routed by `track:symphony` issue label.

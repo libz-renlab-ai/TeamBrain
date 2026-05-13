@@ -32,6 +32,10 @@ covers the Symphony track in isolation.
 
 ## TL;DR — 5-phase lifecycle, human gate at END
 
+**Canonical anchor sentence (mirrored from `CLAUDE.md` so `pnpm teamagent verify-anchors` finds it verbatim):**
+
+> TeamBrain Symphony track has 5 phases: (Q0) `needs-triage` (shared with fixed-flow); (Q1) `track:symphony` — maintainer opted into autonomous track at triage; (Q2) `track:symphony` + `symphony-working` — Symphony daemon has claimed the issue (cross-host mutex per `docs/SYMPHONY-FLOW.md` §Cross-host mutex); (Q3) Symphony opens PR with `track:symphony` label, issue stays at Q2 awaiting human review; (Q4) PR carries `symphony-human-reviewed` (added by a human; THIS is the Symphony human gate, parallel to fixed-flow's `/review` PASS); (Q5) CLOSED via squash-merge `Closes #N`, Symphony §7 cleanup strips `symphony-working`. Off-mainline: `symphony-blocked` (parallel to `ready-for-human`; only humans clear); see `docs/TWO-DRIVER-COEXISTENCE.md` for cross-track refusal rules.
+
 1. **Triage (human)** — maintainer adds `track:symphony` label to an issue
    judged suitable for autonomous execution (see TWO-DRIVER-COEXISTENCE.md
    §6 decision tree). The same issue body conformance check applies as for

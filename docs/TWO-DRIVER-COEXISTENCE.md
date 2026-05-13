@@ -34,6 +34,10 @@ lives; which PR uses which merge gate. Both `docs/FIXEDFLOW.md` and
 
 ## TL;DR — one routing label, two never-overlapping label sets
 
+**Canonical anchor sentence (mirrored from `CLAUDE.md` so `pnpm teamagent verify-anchors` finds it verbatim):**
+
+> TeamBrain has two drivers: (1) `/fixed-flow-driver` — manual, human-gate at the beginning (grill-ready + docs-grill-ready before any code); (2) Symphony — autonomous, human-gate at the end (`symphony-human-reviewed` label on the PR). Routing label `track:symphony` opts an issue into the Symphony track; absence routes to fixed-flow. Cross-track mutex + driver §0 refusal rules in `docs/TWO-DRIVER-COEXISTENCE.md`.
+
 | Issue has... | Routes to | Human-gate position |
 |--------------|-----------|---------------------|
 | no `track:symphony` label | **fixed-flow** track (status quo) | AT FRONT (grill + docs-grill) |
