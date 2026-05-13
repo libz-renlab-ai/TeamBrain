@@ -263,3 +263,37 @@ export {
   type BpPushResult,
   type InboxResult,
 } from './bpp/server-handlers.js';
+
+// BPP Phase 2-6 modules (added in PR #430 follow-up after parallel agent team).
+export { handleRevoke } from './bpp/revoke.js';
+export { handleForcePush } from './bpp/force-push.js';
+export { isLead, assertIsLead } from './bpp/lead-gate.js';
+export { requireBearerToken } from './bpp/auth-gate.js';
+export { purgeStaleTranscripts } from './bpp/transcript-purge.js';
+export { linkAuditEvent, verifyAuditChain } from './bpp/audit-hash-chain.js';
+export {
+  type CandidateBp,
+  type CorrectionMoment,
+  type SessionSummary,
+  type GitActivity,
+  type MiningInput,
+} from './bpp/mining/mining-types.js';
+export {
+  mineCorrectionCandidates,
+  type CorrectionAdapterInput,
+} from './bpp/mining/correction-adapter.js';
+export {
+  mineBehaviorCandidates,
+  type BehaviorMinerInput,
+} from './bpp/mining/behavior-miner.js';
+export {
+  mineContextPatternCandidates,
+  type ContextPatternMinerInput,
+} from './bpp/mining/context-pattern-miner.js';
+export {
+  wilsonLowerBound,
+  bppTierFromConfidence,
+  wilsonTierGate,
+  PUSHABLE_TIERS,
+  type WilsonTierGateOptions,
+} from './bpp/mining/wilson-tier-gate.js';

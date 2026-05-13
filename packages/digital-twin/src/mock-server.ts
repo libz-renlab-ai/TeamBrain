@@ -32,7 +32,10 @@ import {
 // /v1/bp-push (POST) and /v1/inbox (GET) onto the existing
 // digital-twin server so we get realtime fan-out + audit log for
 // free. See docs/superpowers/specs/2026-05-13-best-practice-push-design.md.
+// Phase 4 adds /v1/revoke + /v1/bp-push/force (lead-gated).
 import { handleBpPush, handleInbox } from './bpp/server-handlers.js';
+import { handleRevoke } from './bpp/revoke.js';
+import { handleForcePush } from './bpp/force-push.js';
 
 // Re-exported here for backwards compat — `safeUserId` / `dateStamp` were
 // originally defined in this module before `cc-status/path-safety.ts` split
@@ -71,6 +74,10 @@ const ROUTE_CC_STATUS = '/v1/cc-status';
 const ROUTE_VIDEOS = '/v1/videos';
 /** BPP — receive a BestPractice + fan out to inbox of N receivers. */
 const ROUTE_BP_PUSH = '/v1/bp-push';
+/** BPP Phase 4 — lead-only revoke. Body: { bp_id, lead_user_id, reason }. */
+const ROUTE_BP_REVOKE = '/v1/revoke';
+/** BPP Phase 4 — lead-only force push. Body: { bp_id, receiver_id, lead_user_id }. */
+const ROUTE_BP_FORCE_PUSH = '/v1/bp-push/force';
 const ALLOWED_VIDEO_CONTAINERS = new Set(['mov', 'mp4', 'webm', 'mkv']);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -641,7 +648,9 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       route !== ROUTE_RECORDINGS &&
       route !== ROUTE_CC_STATUS &&
       route !== ROUTE_VIDEOS &&
-      route !== ROUTE_BP_PUSH
+      route !== ROUTE_BP_PUSH &&
+      route !== ROUTE_BP_REVOKE &&
+      route !== ROUTE_BP_FORCE_PUSH
     ) {
       send(res, 404);
       return;
@@ -688,6 +697,35 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
             ok: false,
             error: err instanceof Error ? err.message : String(err),
           });
+        }
+        return;
+      }
+
+      // BPP Phase 4 — POST /v1/revoke. Body: { bp_id, lead_user_id, reason }.
+      // handleRevoke throws "not authorized: ..." if caller isn't a lead;
+      // we map that to 403, everything else to 400.
+      if (route === ROUTE_BP_REVOKE) {
+        try {
+          const result = handleRevoke(outputDir, json);
+          send(res, 200, result);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const status = /not authorized/i.test(msg) ? 403 : 400;
+          send(res, status, { ok: false, error: msg });
+        }
+        return;
+      }
+
+      // BPP Phase 4 — POST /v1/bp-push/force. Body: { bp_id, receiver_id, lead_user_id }.
+      // Same auth pattern as /v1/revoke.
+      if (route === ROUTE_BP_FORCE_PUSH) {
+        try {
+          const result = handleForcePush(outputDir, json);
+          send(res, 200, result);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const status = /not authorized/i.test(msg) ? 403 : 400;
+          send(res, status, { ok: false, error: msg });
         }
         return;
       }
