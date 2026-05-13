@@ -66,6 +66,23 @@ describe('parseRecordArgs', () => {
     });
   });
 
+  it('parses start with --device <value> and --device=value (#297)', () => {
+    expect(parseRecordArgs(['start', '--device', 'audio=Microphone'])).toEqual({
+      sub: 'start',
+      device: 'audio=Microphone',
+    });
+    expect(parseRecordArgs(['start', '--device=audio=Stereo Mix'])).toEqual({
+      sub: 'start',
+      device: 'audio=Stereo Mix',
+    });
+  });
+
+  it('parses start with --id and --device together (#297)', () => {
+    expect(
+      parseRecordArgs(['start', '--id', 'rec-1', '--device', 'audio=X']),
+    ).toEqual({ sub: 'start', id: 'rec-1', device: 'audio=X' });
+  });
+
   it('parses stop with --id', () => {
     expect(parseRecordArgs(['stop', '--id', 'rec-3'])).toEqual({
       sub: 'stop',
@@ -145,6 +162,44 @@ describe('executeRecordStart (wired to ffmpeg-wrapper)', () => {
       },
     );
     expect(receivedId).toBe('caller-id');
+  });
+
+  it('plumbs parsed.device through to ffmpegStart input.deviceArg (#297)', () => {
+    const c = captureOutput();
+    let receivedDeviceArg: string | undefined = undefined;
+    executeRecordStart(
+      { sub: 'start', device: 'audio=My Mic' },
+      {
+        homedir: () => home,
+        print: c.print,
+        printErr: c.printErr,
+        ulid: () => 'DEV1',
+        ffmpegStart: (input) => {
+          receivedDeviceArg = input.deviceArg;
+          return { id: input.id, pid: 1, output: `${input.output}.ogg` };
+        },
+      },
+    );
+    expect(receivedDeviceArg).toBe('audio=My Mic');
+  });
+
+  it('omits deviceArg when --device not provided (#297)', () => {
+    const c = captureOutput();
+    let receivedDeviceArg: string | undefined = 'should-be-overwritten';
+    executeRecordStart(
+      { sub: 'start' },
+      {
+        homedir: () => home,
+        print: c.print,
+        printErr: c.printErr,
+        ulid: () => 'DEV2',
+        ffmpegStart: (input) => {
+          receivedDeviceArg = input.deviceArg;
+          return { id: input.id, pid: 1, output: `${input.output}.ogg` };
+        },
+      },
+    );
+    expect(receivedDeviceArg).toBeUndefined();
   });
 
   it('returns exit 1 + stderr when ffmpegStart throws', () => {

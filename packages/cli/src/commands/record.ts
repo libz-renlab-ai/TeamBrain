@@ -35,6 +35,12 @@ export interface RecordParsedArgs {
   id?: string;
   filePath?: string;
   label?: string;
+  /**
+   * Override the platform-default audio device, e.g. `audio=Microphone` on
+   * Windows DirectShow or `:1` for the second avfoundation input on macOS.
+   * See `resolvePlatformInput` for the exact mapping. Issue #297.
+   */
+  device?: string;
 }
 
 export interface RecordDeps {
@@ -86,6 +92,10 @@ export function parseRecordArgs(rest: string[]): RecordParsedArgs {
           result.label = rest[++i];
         } else if (a.startsWith('--label=')) {
           result.label = a.slice('--label='.length);
+        } else if (a === '--device' && rest[i + 1]) {
+          result.device = rest[++i];
+        } else if (a.startsWith('--device=')) {
+          result.device = a.slice('--device='.length);
         }
       }
       return result;
@@ -171,7 +181,7 @@ export function executeRecordStart(
   const output = join(paths.recordingTempDir, id);
   try {
     const result: StartResult = r.ffmpegStart(
-      { id, output },
+      { id, output, deviceArg: parsed.device },
       { detectFfmpeg: r.detectFfmpeg, ...r.startDeps },
     );
     r.print(
