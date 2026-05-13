@@ -1,0 +1,269 @@
+{
+  "_schema": "Anchor-bearing rules extracted from CLAUDE.md 参考文档 section. Each rule lists the verbatim substring anchors that the judge harness uses to grep for the canonical answer. Cluster classifies the rule per issue #427 merge plan.",
+  "rules": [
+    {
+      "rule_id": "VISUAL-PROOF-FORMAT",
+      "cluster": "C2",
+      "source_doc": "docs/VISUAL-PROOF-FORMAT.md",
+      "substring_anchors": [
+        "Visual proof of work uses the",
+        "*.html",
+        "PR proposer",
+        "self-hosted GitHub Pages",
+        "<username>.github.io",
+        "links the URL",
+        "PR body or PR comments",
+        "auditable raw evidence"
+      ]
+    },
+    {
+      "rule_id": "COMMIT-FLOW",
+      "cluster": "singleton",
+      "source_doc": "docs/COMMIT-FLOW.md",
+      "substring_anchors": [
+        "make atomic commits everything make file edits",
+        "PR",
+        "merge"
+      ]
+    },
+    {
+      "rule_id": "HOW-TO-CLAIM-ISSUE",
+      "cluster": "C1",
+      "source_doc": "docs/HOW-TO-CLAIM-ISSUE.md",
+      "substring_anchors": [
+        "use an explore agent to understand what is going on in the issue",
+        "explore the comments and related PRs and issues"
+      ]
+    },
+    {
+      "rule_id": "INIT-PROPAGATION",
+      "cluster": "singleton",
+      "source_doc": "docs/INIT-PROPAGATION.md",
+      "substring_anchors": [
+        "install the skills/plugins/hooks/claude main settings via teamagent init to teamagent users"
+      ]
+    },
+    {
+      "rule_id": "TRIAGE-AND-SPLIT",
+      "cluster": "C1",
+      "source_doc": "docs/TRIAGE-AND-SPLIT.md",
+      "substring_anchors": [
+        "manual judgment",
+        "grill comment lands",
+        "/fixed-flow-driver",
+        "split it into",
+        "child issues",
+        "epic",
+        "tracking issue",
+        "named coordinator"
+      ]
+    },
+    {
+      "rule_id": "PRE-IMPLEMENT-CLAIM",
+      "cluster": "C1",
+      "source_doc": "docs/PRE-IMPLEMENT-CLAIM.md",
+      "substring_anchors": [
+        "make a comment",
+        "claiming we have started working on this issue",
+        "add tag",
+        "grill-working"
+      ]
+    },
+    {
+      "rule_id": "PRE-GRILL-CLAIM",
+      "cluster": "C1",
+      "source_doc": "docs/PRE-GRILL-CLAIM.md",
+      "substring_anchors": [
+        "make a comment",
+        "claiming we have started grilling this issue",
+        "add tag",
+        "grilling"
+      ]
+    },
+    {
+      "rule_id": "NOT-GRILL-READY",
+      "cluster": "C1",
+      "source_doc": "docs/NOT-GRILL-READY.md",
+      "substring_anchors": [
+        " please do not start post grill work. ",
+        "work only in github comments and no codes submitted or local worktrees"
+      ]
+    },
+    {
+      "rule_id": "ISSUE-LIFECYCLE",
+      "cluster": "C1",
+      "source_doc": "docs/ISSUE-LIFECYCLE.md",
+      "substring_anchors": [
+        "needs-triage",
+        "grilling",
+        "grill-ready",
+        "docs-grill-ready",
+        "grill-working",
+        "Closes #N",
+        "epic",
+        "ready-for-human",
+        "needs-info",
+        "non-conformant",
+        "bypass-fixed-flow",
+        "/grill-via-web",
+        "/grill-with-docs",
+        "/fixed-flow-driver",
+        "PRE-GRILL-CLAIM",
+        "PRE-IMPLEMENT-CLAIM",
+        "TRIAGE-AND-SPLIT"
+      ]
+    },
+    {
+      "rule_id": "TWO-DRIVER-COEXISTENCE",
+      "cluster": "C3",
+      "source_doc": "docs/TWO-DRIVER-COEXISTENCE.md",
+      "substring_anchors": [
+        "fixed-flow-driver",
+        "Symphony",
+        "human-gate at the beginning",
+        "human-gate at the end",
+        "track:symphony"
+      ]
+    },
+    {
+      "rule_id": "3-METHODS-WORKFLOW",
+      "cluster": "C3",
+      "source_doc": "docs/3-METHODS-WORKFLOW.md",
+      "substring_anchors": [
+        "Symphony",
+        "fixed-flow-driver",
+        "visual-proof based PR"
+      ]
+    },
+    {
+      "rule_id": "SYMPHONY-FLOW",
+      "cluster": "C3",
+      "source_doc": "docs/SYMPHONY-FLOW.md",
+      "substring_anchors": [
+        "track:symphony",
+        "symphony-working",
+        "symphony-human-reviewed",
+        "symphony-blocked",
+        "SYMPHONY-FLOW.md"
+      ]
+    },
+    {
+      "rule_id": "ADR-0014-SAVE-GRILLED",
+      "cluster": "C1",
+      "source_doc": "docs/adr/0014-save-grilled-comments-to-adr.md",
+      "substring_anchors": [
+        "/grill-with-docs",
+        "not grilling",
+        "saving grilled results from comments",
+        "grill-related ADR"
+      ]
+    },
+    {
+      "rule_id": "ISOLATED-WORKTREE",
+      "cluster": "singleton",
+      "source_doc": "docs/ISOLATED-WORKTREE.md",
+      "substring_anchors": [
+        ".codex/worktrees/issue-<N>/ 是 FIXEDFLOW driver / dogfood 的隔离工作区"
+      ]
+    },
+    {
+      "rule_id": "BUSINESS-FEATURES",
+      "cluster": "singleton",
+      "source_doc": "docs/BUSINESS-FEATURES.md",
+      "substring_anchors": [
+        "no longer make mistakes",
+        "previous Claude Code",
+        "second-level realtime",
+        "teammate's Claude Code instance",
+        "video recording",
+        "centralized data storage"
+      ]
+    },
+    {
+      "rule_id": "E2E-LEARNING",
+      "cluster": "singleton",
+      "source_doc": "docs/verify/E2E-LEARNING.md",
+      "substring_anchors": [
+        "Counterfactual Ablation",
+        "scipy.stats",
+        "Regression Replay",
+        "tests/fixtures/scenarios",
+        "byte-level",
+        "LLM"
+      ]
+    },
+    {
+      "rule_id": "BEFORE-MERGE",
+      "cluster": "singleton",
+      "source_doc": "docs/BEFORE-MERGE.md",
+      "substring_anchors": [
+        "下个代码 PR merge 前先 verify 一下分支保护规则"
+      ]
+    },
+    {
+      "rule_id": "ISSUE-TRACKING",
+      "cluster": "singleton",
+      "source_doc": "docs/ISSUE-TRACKING.md",
+      "substring_anchors": [
+        "create or update ~/.teamagent/{project_slug}/issue_tracking.html"
+      ]
+    },
+    {
+      "rule_id": "PR-ISSUE-COMMENT-LANGUAGES",
+      "cluster": "singleton",
+      "source_doc": "docs/PR-ISSUE-COMMENT-LANGUAGES.md",
+      "substring_anchors": [
+        "PRs (titles + bodies) MUST be English",
+        "Issues MAY be Chinese for the user-facing ≤50-word body",
+        "FIXEDFLOW takeover/claim comments are verbatim Chinese declarations",
+        "judge-harness machine-input comments are English",
+        "free-form human discussion is Chinese"
+      ]
+    },
+    {
+      "rule_id": "REVIEW-SUBAGENT-PERMISSION",
+      "cluster": "C4",
+      "source_doc": "docs/REVIEW-SUBAGENT-PERMISSION.md",
+      "substring_anchors": [
+        "no need",
+        "/review",
+        "subagent",
+        "ADR-0007"
+      ]
+    },
+    {
+      "rule_id": "CLAIMED-WORKTREE-NO-PERMISSION",
+      "cluster": "C4",
+      "source_doc": "docs/CLAIMED-WORKTREE-NO-PERMISSION.md",
+      "substring_anchors": [
+        "NO",
+        "claimed",
+        "worktree",
+        "FIXEDFLOW",
+        "standing approval"
+      ]
+    },
+    {
+      "rule_id": "VISUAL-PROOF-PR",
+      "cluster": "C2",
+      "source_doc": "docs/VISUAL-PROOF-PR.md",
+      "substring_anchors": [
+        "propose an issue",
+        "make the PR without asking",
+        "append the comment",
+        "PROPER visual proof of work",
+        "HTML",
+        "hosted on the PR proposer",
+        "public storage"
+      ]
+    },
+    {
+      "rule_id": "PUBLISHING",
+      "cluster": "singleton",
+      "source_doc": "docs/PUBLISHING.md",
+      "substring_anchors": [
+        "Publish per 10 PRs"
+      ]
+    }
+  ]
+}
