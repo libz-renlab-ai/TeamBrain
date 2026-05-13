@@ -163,9 +163,60 @@ describe("teamagent presence — CLI subcommand contract", () => {
     expect(result.state).toBe("active");
   });
 
+  it("unwraps the canonical {sessions: [...]} multi-session shape and picks freshest by ts", async () => {
+    // Receiver returns rows out-of-order; freshest must win regardless of
+    // array position. The stale row is 1h old (would be offline); the fresh
+    // row is 30s old (active). Order: stale-first to prove sort is by ts.
+    const fetchImpl = snapshotResponse({
+      sessions: [
+        {
+          event: "user_prompt_submit",
+          ts: new Date(ANCHOR_MS - 60 * 60_000).toISOString(),
+        },
+        {
+          event: "user_prompt_submit",
+          ts: new Date(ANCHOR_MS - 30_000).toISOString(),
+        },
+      ],
+    });
+    const result = await executePresence({
+      receiverUrl: "http://127.0.0.1:9787",
+      userId: "alice@example",
+      now: ANCHOR_MS,
+      fetchImpl,
+    });
+    expect(result.state).toBe("active");
+  });
+
+  it("targets the correct receiver route /api/cc-status?user=<user>", async () => {
+    // Regression for the pre-landing /review adversarial finding: earlier
+    // draft hit /api/cc-status/latest?user_id=... which doesn't exist on
+    // the real receiver (mock-server.ts:448). This test pins the URL shape.
+    let capturedUrl = "";
+    const fetchImpl = (async (input: string | URL) => {
+      capturedUrl = typeof input === "string" ? input : input.toString();
+      return new Response(JSON.stringify({ sessions: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+    await executePresence({
+      receiverUrl: "http://127.0.0.1:9787",
+      userId: "alice@example.com",
+      now: ANCHOR_MS,
+      fetchImpl,
+    });
+    // Must hit `/api/cc-status` (no `/latest` suffix) with `user=` param.
+    expect(capturedUrl).toBe(
+      `http://127.0.0.1:9787/api/cc-status?user=${encodeURIComponent("alice@example.com")}`,
+    );
+    expect(capturedUrl).not.toContain("/api/cc-status/latest");
+    expect(capturedUrl).not.toContain("user_id=");
+  });
+
   it("encodes the user_id parameter properly", async () => {
     let capturedUrl = "";
-    const fetchImpl = (async (input: RequestInfo | URL) => {
+    const fetchImpl = (async (input: string | URL) => {
       capturedUrl = typeof input === "string" ? input : input.toString();
       return new Response("null", {
         status: 200,
@@ -178,9 +229,10 @@ describe("teamagent presence — CLI subcommand contract", () => {
       now: ANCHOR_MS,
       fetchImpl,
     });
-    expect(capturedUrl).toContain("/api/cc-status/latest");
+    expect(capturedUrl).toContain("/api/cc-status?");
+    expect(capturedUrl).not.toContain("/api/cc-status/latest");
     expect(capturedUrl).toContain(
-      `user_id=${encodeURIComponent("alice+test@example.com")}`,
+      `user=${encodeURIComponent("alice+test@example.com")}`,
     );
   });
 
@@ -222,7 +274,7 @@ describe("teamagent presence — CLI subcommand contract", () => {
   it("attaches bearer token when configured", async () => {
     let capturedAuth: string | null = null;
     const fetchImpl = (async (
-      _input: RequestInfo | URL,
+      _input: string | URL,
       init?: RequestInit,
     ) => {
       const headers = new Headers(init?.headers);

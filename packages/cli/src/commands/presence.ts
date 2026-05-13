@@ -22,11 +22,12 @@
  *   TEAMAGENT_REALTIME_URL    — base URL (no trailing slash).
  *   TEAMAGENT_REALTIME_TOKEN  — optional bearer.
  *
- * GET path is `${url}/api/cc-status/latest?user_id=<self>` — the readback
- * endpoint defined in `packages/digital-twin/src/realtime-stream.ts`. When
- * the user_id is unset the receiver returns the most recent snapshot
- * across all users; we filter by our own `getUserId()` to avoid surfacing
- * a teammate's state on a shared host.
+ * GET path is `${url}/api/cc-status?user=<self>` — the per-user readback
+ * route defined in `packages/digital-twin/src/mock-server.ts` (issue #350).
+ * Without a `&session=` filter the server returns
+ * `{sessions: [<row-per-session>]}`; we pick the freshest by `ts` and run
+ * the state machine on it. `getUserId()` resolves the local git
+ * `user.email` so we never surface a teammate's state on a shared host.
  */
 import { hostname } from "node:os";
 
@@ -124,18 +125,51 @@ function asPresenceSnapshot(value: unknown): PresenceSnapshot | null {
 }
 
 /**
- * The receiver may return either a bare snapshot or a wrapper like
- * `{ snapshot: ..., stale_seconds: N }`. Tolerate both — falling back to
- * `null` means "no data", which the state machine renders as offline.
+ * The receiver (`packages/digital-twin/src/mock-server.ts`, issue #350)
+ * returns `{sessions: [<row-per-session>]}` for `/api/cc-status?user=X`
+ * (multi-session shape) and a bare `CcStatusQueryRow` for
+ * `/api/cc-status?user=X&session=Y` (single-row shape). Other deployments
+ * may wrap snapshots in `{snapshot, stale_seconds}`. Tolerate all three —
+ * pick the row with the freshest `ts` so the state machine sees the
+ * latest signal regardless of insertion order. Falling back to `null`
+ * means "no data", which the state machine renders as offline.
  */
 function extractSnapshot(payload: unknown): PresenceSnapshot | null {
   if (!payload || typeof payload !== "object") return null;
+  // Bare row first — single-session shape returns CcStatusQueryRow.
   const direct = asPresenceSnapshot(payload);
   if (direct) return direct;
   const wrapper = payload as Record<string, unknown>;
-  if (wrapper.snapshot) return asPresenceSnapshot(wrapper.snapshot);
-  if (Array.isArray(wrapper.rows) && wrapper.rows.length > 0) {
-    return asPresenceSnapshot(wrapper.rows[0]);
+  // `{snapshot, stale_seconds}` legacy wrapper (still in some deployments).
+  if (wrapper.snapshot) {
+    const s = asPresenceSnapshot(wrapper.snapshot);
+    if (s) return s;
+  }
+  // `{sessions: [...]}` is the canonical multi-session response from
+  // `/api/cc-status?user=...`. `{rows: [...]}` is the legacy alias we
+  // tolerate for older receivers. Pick freshest by ts.
+  const list = Array.isArray(wrapper.sessions)
+    ? wrapper.sessions
+    : Array.isArray(wrapper.rows)
+    ? wrapper.rows
+    : null;
+  if (list && list.length > 0) {
+    let freshest: PresenceSnapshot | null = null;
+    let freshestMs = -Infinity;
+    for (const raw of list) {
+      const snap = asPresenceSnapshot(raw);
+      if (!snap) continue;
+      const ms = Date.parse(snap.ts);
+      if (Number.isFinite(ms) && ms > freshestMs) {
+        freshest = snap;
+        freshestMs = ms;
+      } else if (freshest === null) {
+        // Even an unparseable ts is better than nothing — state machine
+        // will downgrade it to offline via its own ts guard.
+        freshest = snap;
+      }
+    }
+    return freshest;
   }
   return null;
 }
@@ -182,9 +216,14 @@ export async function executePresence(
     }
   }
 
+  // Real receiver route (mock-server.ts:448) is `/api/cc-status?user=<user>`
+  // — NOT `/api/cc-status/latest` and NOT `?user_id=`. Earlier draft of this
+  // file shipped the wrong path/param and silently returned offline against
+  // every real receiver; finding caught in pre-landing /review adversarial
+  // pass.
   const url =
-    `${baseUrl.replace(/\/$/, "")}/api/cc-status/latest` +
-    `?user_id=${encodeURIComponent(userId)}`;
+    `${baseUrl.replace(/\/$/, "")}/api/cc-status` +
+    `?user=${encodeURIComponent(userId)}`;
 
   const headers: Record<string, string> = { Accept: "application/json" };
   const token = opts.bearerToken ?? process.env.TEAMAGENT_REALTIME_TOKEN;
