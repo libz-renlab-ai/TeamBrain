@@ -37,18 +37,18 @@
 | | 唯一允许 ✅ | 不允许 ❌ |
 |---|---|---|
 | 文件格式 | `*.html`（`<!DOCTYPE html>` 起头、self-contained、无 third-party CDN） | `*.txt` / `*.json` / `*.log` / 截图 raw png 单独（这些是 auditable raw evidence，不是 visual proof）|
-| 托管 | PR proposer 的 **self-hosted GitHub Pages**：`https://<username>.github.io/<artifact-repo>/<pr-or-feature>/<name>-<ts>.html`（**单一 canonical 形态、无 alternative**） | TeamBrain repo 的 GH Pages / S3 / R2 / Vercel / Netlify / Cloudflare Pages / imgur / cloudinary / GitHub user-images CDN / pastebin / `/tmp` / `localhost` / 仓库内 |
+| 托管 | **推荐默认**：GitHub Gist + `https://htmlpreview.github.io`（零额外基础设施）。**Fallback**：self-hosted GitHub Pages（`https://<username>.github.io/<artifact-repo>/<pr-or-feature>/<name>-<ts>.html`）。**其它接受**：proposer 完全自有的 S3 / R2 / Vercel / Netlify / Cloudflare Pages / 个人域名 | TeamBrain repo 的 GH Pages / 仓库内 / `/tmp` / `localhost` / 团队共享 CI bucket / GitHub user-images CDN / pastebin / imgur / cloudinary / 任何 proposer 不能 own 的 endpoint |
 | URL pasting | PR body 顶部 `## Visual proof` section 链接 + PR comment append 链接（reviewer-visible first comment） | 私 DM / 仅口头 / commit message only |
 | 辅助 PNG/JPG | 允许，但**必须**与 HTML artifact 托管在同一 GH Pages site，且 HTML 是 mandatory primary evidence | GitHub user-images CDN 上传 / 嵌入 raw blob URL |
 
-**底线**：reviewer 在任何一台机器上点开 PR comment 里的 GH Pages URL 都能看到完整 HTML 渲染；PR branch 被 delete、worktree 被回收、构建机被销毁后，链接仍然能打开（GH Pages 保留 commit 历史，proposer 自己可 revert）。本规则**不引入**其它 storage 类别——任何 S3 / R2 / Vercel / personal domain 都被 `docs/VISUAL-PROOF-FORMAT.md` 显式排除。
+**底线**：reviewer 在任何一台机器上点开 PR comment 里的 URL 都能看到完整 HTML 渲染；PR branch 被 delete、worktree 被回收、构建机被销毁后，链接仍然能打开。所有接受的 endpoint 必须由 proposer 完全 own——这样 proposer 可以 unilaterally revert / delete / update 自己的 artifact 而不需要 admin 介入。详细 hosting 选项 + 反例见 `docs/VISUAL-PROOF-FORMAT.md § Hosting`。
 
 ## Why / 为什么这么设计
 
 - **Propose issue first**：与 `docs/FIXEDFLOW.md` 的 issue→PR→merge 主线对齐，保留 audit trail。视觉证据型工作不像普通 fix 可以反推 `git log`，issue + visual proof 是唯一能让团队事后还原「当时看到了什么」的载体。
 - **Make PR without asking**：proposer 已经把视觉产物烤好、要拿给 reviewer 看，再问一遍许可只是 lazy signal（user-level `lazy-signals.md`）。`docs/CLAIMED-WORKTREE-NO-PERMISSION.md` 已经明确 claim 落地后 driver / proposer 不需要二次审批，本规则延伸到「带视觉产物的 PR」场景。
 - **Visual proof in HTML (not PNG, not video)**：HTML 可以承载结构化数据 + 交互 + 多 viewport 截图 + diff side-by-side + canonical metadata（commit SHA / branch / 时间戳 / probe 输出 JSON），单一文件即可成为 reviewable artifact；纯 PNG / mp4 不携带 reviewable 元信息，且无法 ctrl-F。Reviewer 在 PR 上点链接就能在浏览器里看，**不需要** clone branch / 启动 dev server / 跑 `pnpm frontend:dev`。
-- **Hosted on proposer's own self-hosted GitHub Pages**：per `docs/VISUAL-PROOF-FORMAT.md`，唯一 canonical hosting 是 PR proposer 的 `https://<username>.github.io/<artifact-repo>/...`。理由（详见 VISUAL-PROOF-FORMAT.md `### Why self-hosted not centralized`）：(1) cost & rate-limit isolation；(2) provenance（URL 里 `<username>` 直接担保 PR author 身份）；(3) permanence with rollback（GH Pages 保留 commit 历史，proposer 可 revert 而不需 admin）；(4) no special secrets（GH Pages 默认 public，零授权门槛）。
+- **Hosted on proposer's own public storage** (推荐默认 GitHub Gist + htmlpreview.github.io，fallback self-hosted GitHub Pages，其它 proposer-owned endpoint 也接受)：per `docs/VISUAL-PROOF-FORMAT.md § Hosting`。理由：(1) **zero extra infra**（Gist + htmlpreview 路径无须 bootstrap repo / enable Pages / 配 deploy workflow）；(2) **cost & rate-limit isolation**（每个 proposer own 自己的 endpoint）；(3) **provenance**（URL 含 `<username>` 段直接担保 PR author 身份）；(4) **permanence with proposer-side rollback**（不需 TeamBrain admin 介入即可 revert / delete / update）；(5) **no special secrets**（Gist 与 GH Pages 默认 public，零授权门槛）。
 
 ## How to make the proof / 操作骨架
 
