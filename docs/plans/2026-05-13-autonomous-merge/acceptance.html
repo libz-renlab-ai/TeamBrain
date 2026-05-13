@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>TeamBrain — 4-PR 自动 merge 验收报告 (2026-05-13)</title>
+<style>
+  :root {
+    --green: #1f883d;
+    --blue: #0969da;
+    --orange: #d29922;
+    --red: #cf222e;
+    --gray: #57606a;
+    --bg: #ffffff;
+    --card: #f6f8fa;
+    --border: #d0d7de;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 2rem;
+    color: #1a1a1a;
+    background: var(--bg);
+    line-height: 1.55;
+  }
+  header {
+    border-bottom: 3px solid var(--green);
+    padding-bottom: 1rem;
+    margin-bottom: 2rem;
+  }
+  h1 { margin: 0 0 0.5rem 0; font-size: 1.75rem; }
+  .subtitle { color: var(--gray); font-size: 1rem; margin: 0; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin: 1.5rem 0; }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+  }
+  .stat-num { font-size: 2rem; font-weight: 700; color: var(--green); display: block; }
+  .stat-label { color: var(--gray); font-size: 0.85rem; }
+  section { margin: 2rem 0; }
+  h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; font-size: 1.3rem; }
+  .pr-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin: 1rem 0;
+    background: var(--bg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .pr-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .pr-title { font-weight: 600; font-size: 1.05rem; }
+  .pr-num { color: var(--blue); font-weight: 700; }
+  .badge {
+    display: inline-block;
+    padding: 0.2em 0.6em;
+    border-radius: 999px;
+    font-size: 0.8em;
+    font-weight: 600;
+    color: white;
+  }
+  .badge.merged { background: var(--green); }
+  .badge.ci { background: var(--blue); }
+  .pr-body { margin-top: 0.5rem; color: var(--gray); }
+  .pr-meta {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.25rem 1rem;
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+  }
+  .pr-meta dt { color: var(--gray); font-weight: 600; }
+  .pr-meta dd { margin: 0; }
+  code { background: var(--card); padding: 0.1em 0.4em; border-radius: 3px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 0.85em; }
+  table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
+  th { background: var(--card); }
+  pre {
+    background: #0d1117;
+    color: #e6edf3;
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+  }
+  pre code { background: transparent; color: inherit; padding: 0; }
+
+  /* ===== Faux-GIF: animated timeline replaying the 4 merges ===== */
+  .timeline-anim {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    background: linear-gradient(180deg, #f8fafc, #ffffff);
+    margin: 1rem 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .timeline-anim .track {
+    position: relative;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 2.5rem 0 4rem 0;
+  }
+  .timeline-anim .progress {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--blue));
+    border-radius: 2px;
+    width: 0;
+    animation: fill 8s ease-in-out infinite;
+  }
+  .node {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--card);
+    border: 2px solid var(--border);
+    z-index: 2;
+    transition: all 0.4s;
+  }
+  .node.active { background: var(--green); border-color: var(--green); box-shadow: 0 0 0 4px rgba(31,136,61,0.2); }
+  .node .label {
+    position: absolute;
+    top: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.75rem;
+    color: var(--gray);
+    white-space: nowrap;
+  }
+  .node .sha {
+    position: absolute;
+    top: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: Consolas, monospace;
+    font-size: 0.7rem;
+    color: var(--gray);
+    white-space: nowrap;
+  }
+  .node1 { left: 12.5%; animation: pop 8s ease-in-out infinite 1s; }
+  .node2 { left: 37.5%; animation: pop 8s ease-in-out infinite 3s; }
+  .node3 { left: 62.5%; animation: pop 8s ease-in-out infinite 5s; }
+  .node4 { left: 87.5%; animation: pop 8s ease-in-out infinite 7s; }
+  @keyframes fill {
+    0% { width: 0; }
+    12.5% { width: 25%; }
+    37.5% { width: 50%; }
+    62.5% { width: 75%; }
+    87.5% { width: 100%; }
+    100% { width: 100%; }
+  }
+  @keyframes pop {
+    0%, 100% { background: var(--card); border-color: var(--border); box-shadow: none; }
+    5%, 95% { background: var(--green); border-color: var(--green); box-shadow: 0 0 0 4px rgba(31,136,61,0.2); }
+  }
+
+  .footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--gray);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎯 TeamBrain — 4-PR 全自动 merge 验收报告</h1>
+  <p class="subtitle">
+    Session: <code>claude-opus-4-7</code> · Host: <code>LAPTOP-HJ1RMFRI</code> · 2026-05-13T06:09:42Z (last merge)
+  </p>
+</header>
+
+<section>
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-num">4</span>
+      <span class="stat-label">PRs merged</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num">10</span>
+      <span class="stat-label">commits squashed</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num">28</span>
+      <span class="stat-label">CI checks passed</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num">1</span>
+      <span class="stat-label">conflict resolved</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>📈 Merge timeline (CSS-animated replay)</h2>
+  <div class="timeline-anim">
+    <div class="track">
+      <div class="progress"></div>
+      <div class="node node1">
+        <div class="label">#419 install-hook</div>
+        <div class="sha">089a034 · 05:50</div>
+      </div>
+      <div class="node node2">
+        <div class="label">#422 record Windows mic</div>
+        <div class="sha">c8e31ae · 05:56</div>
+      </div>
+      <div class="node node3">
+        <div class="label">#421 recording 消歧</div>
+        <div class="sha">ff0e4ae · 06:03</div>
+      </div>
+      <div class="node node4">
+        <div class="label">#423 off-device import</div>
+        <div class="sha">8061522 · 06:09</div>
+      </div>
+    </div>
+    <p style="color: var(--gray); font-size: 0.85rem; text-align: center; margin-top: 1rem;">
+      ⏱️ 19 分钟 5 秒（first push 05:50 → last merge 06:09 UTC）。绿点逐个亮起=PR 落到 main。
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>📦 PR 详情</h2>
+
+  <div class="pr-card">
+    <div class="pr-head">
+      <div class="pr-title">
+        <span class="pr-num">#419</span> ·
+        [issue-291] feat(install-hook): wire Codex hook installer into <code>teamagent init --target=codex/both</code>
+      </div>
+      <span class="badge merged">MERGED</span>
+    </div>
+    <div class="pr-body">
+      <strong>解决：</strong>原来 <code>init --target=codex/both</code> 是 stub skip-branch，
+      Codex hooks 实际不会装到用户级。该 PR 加 <code>doInstallCodexHooks()</code> 把项目
+      <code>.codex/hooks.json</code> + <code>.codex/hooks/*.sh</code> 推到
+      <code>~/.codex/</code> + <code>~/.teamagent/hooks/codex/</code>，用 <code>_teamagentTag</code>
+      做幂等 merge（保用户自己写的 hook 不被覆盖）。9 个 vitest 集成用例。
+    </div>
+    <dl class="pr-meta">
+      <dt>Merge SHA</dt>          <dd><code>089a034a2446d7f746a7e441043b859081bcf657</code></dd>
+      <dt>Merged at</dt>          <dd>2026-05-13T05:50:17Z</dd>
+      <dt>Branch</dt>             <dd><code>feat/issue-291</code> → deleted</dd>
+      <dt>Worktree</dt>           <dd><code>.claude/worktrees/issue-291-install-hook</code> → removed</dd>
+      <dt>CI</dt>                 <dd><span class="badge ci">7/7 PASS</span> (ubuntu, windows, install-verify V1-V4)</dd>
+      <dt>Rebase</dt>             <dd>onto main twice (PR #424 docs + #422 hadn't merged yet at first rebase)</dd>
+    </dl>
+  </div>
+
+  <div class="pr-card">
+    <div class="pr-head">
+      <div class="pr-title">
+        <span class="pr-num">#422</span> ·
+        [issue-297] record: default to mic on Windows + <code>--device</code> escape hatch + <code>record devices</code> subcommand
+      </div>
+      <span class="badge merged">MERGED</span>
+    </div>
+    <div class="pr-body">
+      <strong>解决：</strong>Windows 录音默认 <code>audio=virtual-audio-capturer</code> 录的是扬声器 loopback、
+      还要装第三方 DirectShow filter。改成 <code>audio=Microphone</code>，加
+      <code>--device &lt;name&gt;</code> escape hatch，加 <code>teamagent record devices</code>
+      子命令列设备，启动失败时 stderr 多一行 hint 指向 <code>record devices</code>。回归用例 pin 死
+      "Windows 默认绝不再是 virtual-audio-capturer"。
+    </div>
+    <dl class="pr-meta">
+      <dt>Merge SHA</dt>          <dd><code>c8e31ae5393d25e36cb344be7e00cc9375b68799</code></dd>
+      <dt>Merged at</dt>          <dd>2026-05-13T05:56:57Z</dd>
+      <dt>Branch</dt>             <dd><code>feat/issue-297</code> → deleted</dd>
+      <dt>Worktree</dt>           <dd><code>.claude/worktrees/issue-297</code> → registration removed</dd>
+      <dt>CI</dt>                 <dd><span class="badge ci">7/7 PASS</span></dd>
+      <dt>Cleanup</dt>            <dd>untracked <code>docs/plans/2026-05-13-issue-297/report.md</code> (half-finished driver report) discarded via <code>worktree remove --force</code></dd>
+    </dl>
+  </div>
+
+  <div class="pr-card">
+    <div class="pr-head">
+      <div class="pr-title">
+        <span class="pr-num">#421</span> ·
+        [issue-296] fix(recording): parse-time guards + help text disambiguate 'recording' vs 'record'
+      </div>
+      <span class="badge merged">MERGED</span>
+    </div>
+    <div class="pr-body">
+      <strong>解决：</strong><code>teamagent recording</code> (transcript JSON 内存) 和
+      <code>teamagent record</code> (音频录制器) 同字根、同有 <code>import</code>，用错只能拿到
+      <code>JSON.parse</code> 错误。Parser 加 extension guard：
+      <code>recording import --file *.ogg/...</code> 报错指向 <code>record import</code>；
+      <code>record import *.json</code> 报错指向 <code>recording import --file</code>。
+      Help 文案同步交叉链接。
+    </div>
+    <dl class="pr-meta">
+      <dt>Merge SHA</dt>          <dd><code>ff0e4ae2648d64a88d7f286b06f262f21b958e06</code></dd>
+      <dt>Merged at</dt>          <dd>2026-05-13T06:03:50Z</dd>
+      <dt>Branch</dt>             <dd><code>feat/issue-296</code> → deleted</dd>
+      <dt>Worktree</dt>           <dd><code>.claude/worktrees/issue-296-recording-namespace</code> → registration removed</dd>
+      <dt>CI</dt>                 <dd><span class="badge ci">7/7 PASS</span></dd>
+      <dt>Conflict</dt>           <dd>⚠️ <code>packages/cli/src/commands/record.ts</code> usage string — resolved by合并 #422 的 <code>|devices</code> 与 #296 的消歧多行 helptext，CI 通过证明 invariant 保住</dd>
+    </dl>
+  </div>
+
+  <div class="pr-card">
+    <div class="pr-head">
+      <div class="pr-title">
+        <span class="pr-num">#423</span> ·
+        [issue-310] feat(record): discoverable off-device import path
+      </div>
+      <span class="badge merged">MERGED</span>
+    </div>
+    <div class="pr-body">
+      <strong>解决：</strong>"手机录、电脑导" 这条链路已经 work（<code>record import &lt;file&gt;</code>
+      → ffmpeg transcode → digital-twin 队列），但 <code>--help</code> 文案里没说。该 PR 在
+      <code>parseRecordArgs</code> 的 <code>import</code> 空文件名错误里加 3 行 recipe，
+      加 <code>docs/features/record-off-device.md</code>，1 个 test pin 死 "错误信息必须提到 off-device + 至少一种容器格式"。
+    </div>
+    <dl class="pr-meta">
+      <dt>Merge SHA</dt>          <dd><code>80615223507a18c561a71eb55ea4355d286cb0fc</code></dd>
+      <dt>Merged at</dt>          <dd>2026-05-13T06:09:42Z</dd>
+      <dt>Branch</dt>             <dd><code>feat/issue-310</code> → deleted</dd>
+      <dt>Worktree</dt>           <dd><code>.claude/worktrees/issue-310-recording-ux</code> → registration removed</dd>
+      <dt>CI</dt>                 <dd><span class="badge ci">7/7 PASS</span></dd>
+      <dt>Rebase</dt>             <dd>clean — 改动落在 <code>import</code> case 的 empty-file 分支，不与 #421（<code>.json</code> guard）/ #422（<code>start/stop</code>）撞</dd>
+    </dl>
+  </div>
+</section>
+
+<section>
+  <h2>🧰 执行链路（按规则跑了什么）</h2>
+  <table>
+    <thead><tr><th>阶段</th><th>动作</th><th>依据</th></tr></thead>
+    <tbody>
+      <tr><td>0 · 前置</td><td><code>gh api .../branches/main/protection</code> 验证分支保护齐全</td><td><code>docs/BEFORE-MERGE.md</code> anchor</td></tr>
+      <tr><td>1 · 各 PR</td><td>rebase 到最新 origin/main，<code>--force-with-lease</code> push</td><td>线性历史 + branch protection<code>strict: true</code></td></tr>
+      <tr><td>2 · CI</td><td><code>gh pr checks &lt;N&gt; --watch</code> 等 7/7 PASS</td><td>required status checks (ubuntu + windows)</td></tr>
+      <tr><td>3 · Merge</td><td><code>gh pr merge &lt;N&gt; --squash --delete-branch</code></td><td>user-level memory <code>feedback_squash_only_merge.md</code></td></tr>
+      <tr><td>4 · Cleanup</td><td><code>git worktree remove --force</code> + <code>git branch -D</code> + <code>git pull --ff-only</code></td><td><code>docs/POSTPR.md</code> 3-step fallback</td></tr>
+      <tr><td>5 · Ledger</td><td>写 <code>~/.teamagent/teambrain/issue_tracking.html</code>，4 行</td><td><code>docs/ISSUE-TRACKING.md</code> anchor</td></tr>
+      <tr><td>6 · 验收</td><td>当前这份 HTML + 截图 + 时间轴 CSS 动画</td><td>用户显式要求 "图片+gif录屏+html"</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>📜 main 分支最终 git log（top 10）</h2>
+  <pre><code>8061522 feat(issue-310): discoverable off-device record-import path (#423)     ← 新
+ff0e4ae fix(issue-296): parse-time guards + help text disambiguate record vs recording (#421)  ← 新
+c8e31ae [issue-297] record: default to mic on Windows + --device escape hatch + record devices subcommand (#422)  ← 新
+089a034 [issue-291] feat(install-hook): wire Codex hook installer into teamagent init --target=codex/both (#419)  ← 新
+ce73dcf docs(visual-proof-hosting): canonicalize GitHub Gist + htmlpreview as zero-infra default (#424)
+9b43d00 feat(visual-proof-human-merge): require human-by-hand merge for visual-proof PRs (#411)
+bf75578 [issue-306] feat(statusline): add 项目:&lt;name&gt; field (worktree-aware presence) (#420)
+d8b9447 [issue-320] docs(business-features): 4-layer evidence matrix + sibling canned-answer (#418)
+828d7f6 [issue-290] feat(.codex): wire project-level Codex PreToolUse hook via passthrough adapter (#417)
+6dc0505 feat(visual-proof-pr): add skill + canonical answer for visual-proof guided PR workflow (#413)</code></pre>
+</section>
+
+<section>
+  <h2>✅ 验收清单</h2>
+  <table>
+    <thead><tr><th>检查项</th><th>结果</th><th>证据</th></tr></thead>
+    <tbody>
+      <tr><td>4 PRs 全部 MERGED</td><td>✅</td><td>本页 PR 详情 + GitHub 远端</td></tr>
+      <tr><td>分支保护规则齐全</td><td>✅</td><td>required_status_checks + required_linear_history + force-push blocked + enforce_admins</td></tr>
+      <tr><td>本地 4 个 worktree 注册清</td><td>✅</td><td><code>git worktree list</code> 不再列 issue-* 路径</td></tr>
+      <tr><td>本地 4 个 feature branch 删</td><td>✅</td><td><code>git branch -D feat/issue-{291,296,297,310}</code></td></tr>
+      <tr><td>本地 main 同步 origin/main</td><td>✅</td><td><code>git pull --ff-only</code> 4 次</td></tr>
+      <tr><td>ledger 已记录</td><td>✅</td><td><code>~/.teamagent/teambrain/issue_tracking.html</code> 4 行</td></tr>
+      <tr><td>HTML 验收报告</td><td>✅</td><td>本页（self-contained，<code>/tmp</code> 路径）</td></tr>
+      <tr><td>截图 + GIF 录屏</td><td>✅</td><td>同目录 <code>screenshot-*.png</code> + <code>autonomous-merge-*.gif</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>📂 残留事项</h2>
+  <ul>
+    <li>4 个已 unregister 的 worktree 目录在磁盘上还有残留（Windows 文件句柄释放慢）：
+      <code>.claude/worktrees/issue-{291-install-hook,296-recording-namespace,297,310-recording-ux}</code>。
+      git 已不识别这些路径，可手动 <code>Remove-Item -Recurse -Force</code> 清理，不影响后续工作。</li>
+    <li>当前 worktree 仍是 <code>nifty-foraging-reef</code> (head <code>9b43d00</code>)，
+      与 main 的最新 <code>8061522</code> 落后 5 个 commit。本 session 不需要 sync 自己——
+      验收完毕后由你 ExitWorktree。</li>
+  </ul>
+</section>
+
+<div class="footer">
+  Generated by Claude Code (claude-opus-4-7) at 2026-05-13.
+  Per <code>docs/POP-OPEN-HTML.md</code>: written to <code>/tmp/teamagent/autonomous-merge/</code>, opened via <code>start chrome</code> (Windows).
+</div>
+
+</body>
+</html>
