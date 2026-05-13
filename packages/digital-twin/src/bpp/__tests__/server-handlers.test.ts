@@ -54,9 +54,10 @@ describe('BPP server handlers', () => {
     handleBpPush(dir, { bp: makeBp('bp-x'), receivers: ['bob@team.com'] });
     const got = handleInbox(dir, 'bob@team.com');
     expect(got.items).toHaveLength(1);
-    expect(got.items[0].bp_id).toBe('bp-x');
-    expect(got.items[0].status).toBe('pending');
-    expect(got.items[0].forced_by_lead).toBe(false);
+    const first = got.items[0]!;
+    expect(first.bp_id).toBe('bp-x');
+    expect(first.status).toBe('pending');
+    expect(first.forced_by_lead).toBe(false);
   });
 
   it('handleInbox returns [] for unknown receiver', () => {

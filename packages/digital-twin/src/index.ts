@@ -228,3 +228,38 @@ export {
   type ImportStatus,
   type FfmpegProbe,
 } from './recorder/ffmpeg-wrapper.js';
+
+// BPP (Best-Practice Push) — spec 2026-05-13. Server-side fan-out of
+// AI-mined best practices to team inboxes. Phase 1 (this PR): types,
+// store, HTTP handlers, route wiring. Phase 2-6: AI mining pipeline,
+// receiver UX, lead console, privacy, verify harness.
+export type {
+  BestPractice,
+  InboxItem,
+  TeamMember,
+  PushEvent,
+  BpType,
+  BpTier,
+  BpTopic,
+  InboxStatus,
+  DeliveryChannel,
+  PushEventType,
+  MiningEvidence,
+} from './bpp/types.js';
+export {
+  writeBp,
+  readBp,
+  listBpIds,
+  appendInbox,
+  listInbox,
+  appendAudit,
+  writeMember,
+  readMembers,
+} from './bpp/store.js';
+export {
+  handleBpPush,
+  handleInbox,
+  type BpPushBody,
+  type BpPushResult,
+  type InboxResult,
+} from './bpp/server-handlers.js';
