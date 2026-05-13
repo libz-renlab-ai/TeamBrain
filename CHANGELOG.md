@@ -43,6 +43,24 @@ artifacts the user sees) do NOT need an entry.
 
 ### Added
 
+- **`teamagent daily` 日报总结 hook + CLI** (issue #371). Says "总结一下今天的日报"
+  / `/daily` to your Claude Code window and the UserPromptSubmit hook
+  intercepts the prompt, LLM-free-scans `~/.claude/projects/<encoded-cwd>/*.jsonl`
+  for today's local-time activity across all your Claude projects, merges
+  `.codex/worktrees/<task>` and `.claude/worktrees/<task>` sessions back to
+  their host repo, and injects a per-project digest (session count / turn
+  count / tools used / first&last user excerpts) as `additionalContext` so
+  your own Claude window writes the one-line-per-project summary itself.
+  Same path also archives the raw activity dump to
+  `${TEAMAGENT_HOME-~/.teamagent}/daily/<YYYY-MM-DD>.md`. CLI side: new
+  `teamagent daily [--projects-root=PATH] [--archive] [--format=json|context]
+  [--help]` subcommand (`--help` emits canonical JSON for snapshot tests per
+  `docs/feature-verification.md`). Three-layer matcher (strict whitelist +
+  `/daily` slash; `日报`/`daily summary` keyword + injectable LLM intent seam;
+  passthrough); LLM seam ships as a stub — graceful degrade to whitelist +
+  slash per grill §4 default. Env knobs: `TEAMAGENT_DAILY_DISABLED=1` to
+  bypass; `TEAMAGENT_DAILY_TRIGGERS=phrase1,phrase2` to extend the whitelist.
+  Verification playbook: `docs/plans/2026-05-13-issue-371-daily-summary/judge.md`.
 - **`项目:<name>` field in statusline** (issue #306). The Claude Code status row
   now surfaces the current repo name between the existing `拦过:T今` field and
   the CC runtime fields (`模型` / `上下文` / `用量` / `5h` / `7d` / `会话`).

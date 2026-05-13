@@ -128,6 +128,12 @@ import {
   renderCompileCursorResult,
 } from "./commands/compile-cursor.js";
 import {
+  executeDaily,
+  parseDailyArgs,
+  renderDailyHelp,
+  renderDailyStdout,
+} from "./commands/daily.js";
+import {
   executeDocsPropagate,
   parseDocsPropagateArgs,
   renderDocsPropagationResult,
@@ -1074,6 +1080,22 @@ async function main(): Promise<void> {
       process.stdout.write(renderCompileCursorResult(result));
       return;
     }
+    case "daily": {
+      let opts;
+      try {
+        opts = parseDailyArgs(rest);
+      } catch (err) {
+        process.stderr.write(`${(err as Error).message}\n`);
+        process.exit(2);
+      }
+      if (opts.help) {
+        process.stdout.write(renderDailyHelp());
+        return;
+      }
+      const out = executeDaily(opts);
+      process.stdout.write(renderDailyStdout(out, opts));
+      return;
+    }
     case "docs-propagate": {
       const opts = parseDocsPropagateArgs(rest);
       const result = await executeDocsPropagate(opts);
@@ -1488,6 +1510,8 @@ async function main(): Promise<void> {
           "                                   真实 SQLite + analyze + compile + PreToolUse 测评学习、触发、误触发和新成员可见性",
           "  teamagent recording --help",
           "                                   Recording Memory 导入、检索、注入、指标和 golden benchmark",
+          "  teamagent daily [--projects-root=PATH] [--archive] [--format=json|context] [--help]",
+          "                                   [issue-371] 跨项目扫 ~/.claude/projects 今天活动，输出 member×project 一句话日报骨架",
           "  teamagent dogfood-report [--output=path]",
           "                                   扫 events.jsonl + knowledge.jsonl + git log，自动生成自举报告",
           "  teamagent bug-report [--out=path] [--stdout]",
