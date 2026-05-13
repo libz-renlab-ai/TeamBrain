@@ -75,31 +75,38 @@ https://<username>.github.io/<artifact-repo>/<pr-or-feature>/<name>-<ts>.html
 
 ### Bootstrap — first-time setup
 
-PR proposer 第一次需要：
+PR proposer 第一次需要（**单 canonical project-pages 模式**，对应 §Hosting URL 三段 path 形态）：
 
 ```bash
-# 1. 在 GitHub 上 create repo: <username>.github.io  (or any public repo with Pages enabled)
-gh repo create <username>.github.io --public
+# 1. 在 GitHub 上 create a SEPARATE artifact-repo with Pages enabled.
+#    名字建议 `teambrain-proof`；禁止 reuse `<username>.github.io`（user-pages root），
+#    会与 §Hosting "<artifact-repo>" 三段 path 形态冲突。
+gh repo create <username>/teambrain-proof --public
 
-# 2. 本地 clone
-git clone git@github.com:<username>/<username>.github.io.git
-cd <username>.github.io
+# 2. 本地 clone artifact-repo（不是 <username>.github.io 那个 repo）
+git clone git@github.com:<username>/teambrain-proof.git
+cd teambrain-proof
 
-# 3. mkdir per-PR
+# 3. （首次）在 GitHub repo settings 里启用 Pages（branch=main, folder=/root）。
+#    或用 gh CLI：
+gh api -X POST repos/<username>/teambrain-proof/pages \
+  -f source.branch=main -f source.path=/
+
+# 4. mkdir per-PR
 mkdir -p pr-<N>/
 
-# 4. 写 HTML artifact 到该目录，commit + push
+# 5. 写 HTML artifact 到该目录，commit + push
 cp /tmp/teamagent/<feature>/<name>.html ./pr-<N>/<name>.html
 git add pr-<N>/<name>.html
 git commit -m "visual proof: PR #<N>"
 git push origin main
 
-# 5. 等 1-3 min GH Pages CDN propagate，curl 验证
-curl -I https://<username>.github.io/pr-<N>/<name>.html
+# 6. 等 1-3 min GH Pages CDN propagate，curl 验证（注意是 3 段 path：<artifact-repo>/<pr>/<name>.html）
+curl -I https://<username>.github.io/teambrain-proof/pr-<N>/<name>.html
 # expect: HTTP/2 200
 ```
 
-URL 200 之后才把链接贴到 PR body / PR comments。
+URL 200 之后才把链接贴到 PR body / PR comments。后续 PR 直接复用同一个 `teambrain-proof` repo，只新增 `pr-<N>/` 目录即可，**不要**每个 PR 开新 GH Pages repo。
 
 ## What MUST appear in PR body or comments
 
@@ -142,7 +149,7 @@ PR body（或 reviewer-visible first comment）必须含至少一行 `https://<u
 
 ## Relationship to existing rules
 
-- **`docs/POP-OPEN-HTML.md`** 管的是 **agent 在本地生成 HTML 然后 `open -a "Google Chrome"` 弹给当前用户看** 的场景。它的三条铁律（open in Chrome / write to `/tmp` / pop open immediately）只适用于 **agent-spawned local artifacts on the proposer's machine**——artifact 落 `/tmp/teamagent/<feature>/<name>-<ts>.html`，**不进 repo**，pop open 给当前坐在电脑前的 user 看。本规则（VISUAL-PROOF-FORMAT）管的是 **PR-shipped remote artifacts on a public GH Pages site**——artifact 由 proposer 手动 `cp` 一份到自己的 `<artifact-repo>` 目录、`git push` 上线、URL 贴 PR body 给**远端的** reviewer 在 Chrome 里 click 打开。两条规则**正交且互补**：POP-OPEN-HTML 的 `open -a "Google Chrome"` spawn 调用、`/tmp` 路径约束、`--no-pop` flag 等具体机制**不**适用于远端 GH Pages URL（reviewer 在自己的浏览器里手动 click，没有 spawn `open` 这个动作）；反过来，VISUAL-PROOF-FORMAT 的 GH Pages 托管 / URL 在 PR body 等机制**不**适用于 agent 给当前 user 弹页面（agent 不需要也不应该 push 到 GH Pages 才给 user 看东西）。任何 PR 同时触发两条规则时（agent 先在本地 `/tmp` 生成 HTML、再 `cp` 到 GH Pages repo push 上线），**两套机制各自独立 verify、不相互替代**；judge harness 也不要把一条规则的 probe 当成另一条的证据。
+- **`docs/POP-OPEN-HTML.md`** = local `/tmp` artifact + agent `open -a "Google Chrome"` for the proposer's own machine. **VISUAL-PROOF-FORMAT (本规则)** = remote GH Pages artifact + reviewer manually clicks URL. The two rules are orthogonal: POP-OPEN-HTML's three mechanics (Chrome spawn / `/tmp` path / `--no-pop` flag) apply only to local agent artifacts; VISUAL-PROOF-FORMAT's mechanics (GH Pages hosting / URL in PR body / `curl -I 200`) apply only to PR-shipped remote artifacts. PRs that trigger both rules (agent first generates HTML in `/tmp`, then proposer `cp` to their `<artifact-repo>` and pushes) must satisfy each rule independently — neither rule's probe substitutes for the other's.
 - **`docs/BUSINESS-FEATURES.md`** Feature 1/2/3 row 里如果声称 "visual proof of work"，必须满足本规则，否则改写成 "auditable raw evidence" 或 "PRESHIP / Vision"。
 - **第三方 judge harness 三段铁律**（user-level CLAUDE.md / project AGENTS.md）不变：raw judge JSON + raw stdout/stderr 仍然是必需的；本规则只在 judge JSON 之上**再加**一层 HTML render，不替代 raw evidence。
 - **`docs/PR-ISSUE-COMMENT-LANGUAGES.md`**：PR body 的 visual-proof section 仍然 MUST be English；URL 自然语言段保持英文，URL 本身路径可含 kebab-case slug。
@@ -172,12 +179,13 @@ For PR-time enforcement, a per-PR probe should:
 
 1. `curl -I` each `<username>.github.io/...` URL in the PR body; expect `200`.
 2. `curl <url> | grep -F '<!DOCTYPE html>'` to confirm HTML payload.
-3. **Third-party CDN block** — catch CSS-via-`href`, JS-via-`src`, and `@import url()` in one pass:
+3. **Third-party CDN block** — extract every `src=` / `href=` URL host (anchored suffix `.github.io$`), separately block `@import url(http...)`. URL-extraction avoids two false-negatives of naive `grep -v 'github.io'`：(a) same-line multi-URL filtering swallows the bad URL; (b) typosquat `attacker.github.io.evil.com` substring-matches and slips through.
    ```bash
-   ! curl -s <url> | grep -iE '(src|href)="https?://[^/"]+' | grep -v 'github\.io'
-   ! curl -s <url> | grep -iE '@import +url\(https?://'
+   extracted=$(curl -s <url> | grep -oiE '(src|href)="https?://[^/"]+' | sed -E 's|.*"https?://||')
+   echo "$extracted" | grep -vqE '^[a-zA-Z0-9.-]+\.github\.io$' && { echo "FAIL: external host in src/href" >&2; exit 1; }
+   curl -s <url> | grep -iqE "@import +url\\([\"\\047]?https?://" && { echo "FAIL: CSS @import external" >&2; exit 1; }
    ```
-   These two greps together block third-party CDN URLs in `<script>`, `<link>`, and CSS `@import`. Same-repo relative paths (`./vendored.js`, `../shared/lib.css`, `/styles.css`) pass both because they have no `https?://` prefix.
+   Same-repo relative paths (`./vendored.js`, `/styles.css`) produce zero hits → pass. **Out of probe scope** (escalate to manual review)：runtime-assembled CDN URLs via JS string concat — grep can't catch them.
 
 Failed probes block merge (per `docs/COMMIT-FLOW.md` `/review` PASS gate).
 
