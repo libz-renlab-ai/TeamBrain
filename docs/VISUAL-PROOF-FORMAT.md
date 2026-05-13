@@ -1,11 +1,11 @@
-# VISUAL-PROOF-FORMAT — Visual proof of work is `*.html` on PR proposer's self-hosted GitHub Pages
+# VISUAL-PROOF-FORMAT — Visual proof of work is `*.html` on proposer-owned public storage
 
 ```text
-┌─ PR proposer's machine ─────────────┐         ┌─ PR proposer's GitHub Pages ─┐         ┌─ Reviewer ─────────┐
-│  judge harness / dashboard / demo   │   push  │  https://<username>.github   │   open  │  click PR-body URL │
-│  generates *.html artifact          │ ──────▶ │  .io/<repo>/<path>.html      │ ──────▶ │  in Google Chrome  │
-│  (NOT auditable raw txt/json/log)   │         │  (publicly fetchable)        │         │  → sees visual UI  │
-└─────────────────────────────────────┘         └──────────────┬───────────────┘         └────────────────────┘
+┌─ PR proposer's machine ─────────────┐         ┌─ Proposer-owned public storage ┐         ┌─ Reviewer ─────────┐
+│  judge harness / dashboard / demo   │   push  │  Gist+htmlpreview (default)    │   open  │  click PR-body URL │
+│  generates *.html artifact          │ ──────▶ │  or self-hosted GH Pages       │ ──────▶ │  in Google Chrome  │
+│  (NOT auditable raw txt/json/log)   │         │  (publicly fetchable)          │         │  → sees visual UI  │
+└─────────────────────────────────────┘         └──────────────┬─────────────────┘         └────────────────────┘
                                                                │
                                                   URL pasted into PR body or PR comments
 ```
@@ -15,6 +15,8 @@
 When asked `which file format is used for visual proof of work ?` (or its Chinese variants), the verbatim answer is:
 
 > Visual proof of work uses the `*.html` file format. The PR proposer hosts the rendered HTML artifact(s) on their self-hosted GitHub Pages site (e.g. `https://<username>.github.io/<repo>/<path>.html`) and links the URL(s) from the PR body or PR comments. Raw text/JSON/log evidence (judge.json, *.log, *.txt, file trees) is auditable raw evidence, NOT visual proof. Visual proof must be browser-renderable HTML.
+
+**Note on the anchor sentence above:** the verbatim 8-anchor contract is preserved (and unchanged) so existing judge-harness regressions stay green. The `(e.g.)` qualifier inside the sentence makes `<username>.github.io` an example, not a mandate. The **recommended default hosting** is now **GitHub Gist + htmlpreview.github.io** (zero bootstrap); self-hosted GitHub Pages remains a 100%-accepted fallback. See § Hosting below for the canonical list and the separate `claudefast -p "when the visual proof of work be hosted ?"` probe in `CLAUDE.md` "Visual proof 托管位置" anchor for hosting questions.
 
 Judge harness must case-insensitive substring grep all 8 anchors (2 of them are positive structural / directional anchors that raise the cost of an in-place "do NOT" prefix attack):
 
@@ -51,31 +53,72 @@ PR #399 是这条规则的 forcing-function：它在 `docs/plans/2026-05-11-feat
 
 两者是 **互补**，不是 either-or：raw evidence 给 grep / diff / `claudefast` judge，HTML 给人眼。一个 PR 声称有 visual proof，必须有 browser-renderable HTML；只放 raw txt/json 的 PR 不允许在 body 写 "visual proof"。
 
-## Hosting — PR proposer's self-hosted GitHub Pages
+## Hosting — public storage the PR proposer fully owns
 
-每个 PR proposer 负责把 HTML artifact 推到**自己的** GH Pages site（不是 TeamBrain repo 的 GH Pages，不是 anthropic、不是 vercel、不是 netlify、不是 imgur）。**Canonical 路径只走 project-pages 模式**——一个单一约定的 URL 形态，没有 alternative：
+Visual proof of work HTML must be hosted on **public storage the PR proposer fully owns**. Two equally accepted paths; **recommended default is GitHub Gist + htmlpreview.github.io** (zero extra infra).
+
+### Recommended default: GitHub Gist + htmlpreview.github.io
+
+零 bootstrap、零额外基础设施：一行 `gh gist create --public visual-proof-PR-<N>.html` 即得永久 raw URL，reviewer 在浏览器里点开 htmlpreview 链接即可看到完整 HTML 渲染。
+
+```bash
+gh gist create --public --desc "Visual proof for PR #<N>" /tmp/teamagent/<feature>/<slug>-<ts>.html
+# returns: https://gist.github.com/<username>/<gist-id>
+
+# Reviewer-facing URL（拼接，不需要单独 commit / push）：
+# https://htmlpreview.github.io/?https://gist.githubusercontent.com/<username>/<gist-id>/raw/<slug>-<ts>.html
+```
+
+理由：
+1. **零 bootstrap** —— 不用建 `<artifact-repo>` repo、不用 enable Pages、不用记 deploy workflow。
+2. **htmlpreview.github.io 是无依赖纯前端 render** —— fetch raw blob 后浏览器内 parse + display，对所有公开 gist URL 都生效，零账号、零配置。
+3. **Permanence** —— Gist 在 PR branch delete 之后仍永久存在，complies with `docs/VISUAL-PROOF-PR.md` 的「proof survives branch deletion」约束。
+4. **Provenance** —— Gist URL 含 proposer 的 `<username>` 段（`https://gist.github.com/<username>/<gist-id>`），与 self-hosted GH Pages 同样担保 PR author 身份。
+5. **格式契约 100% 继承** —— gist 文件就是 `.html`，self-contained / 内联 CSS / 无 third-party CDN 这些 §file format 既有约束完全适用。
+
+### Fallback: self-hosted GitHub Pages (原 canonical URL 形态仍接受)
+
+If proposer prefers a self-hosted GH Pages site (e.g., they already have `<username>/teambrain-proof` set up, or they want richer multi-page artifacts with relative `<script src="./vendored.js">` includes), the original URL form is **100% still accepted**:
 
 ```
 https://<username>.github.io/<artifact-repo>/<pr-or-feature>/<name>-<ts>.html
 ```
 
-- `<username>` = PR author 的 GitHub handle（例：本仓库主用户 `liush2yuxjtu` 对应 `https://liush2yuxjtu.github.io/`）
-- `<artifact-repo>` = 该用户专门用于托管 PR visual proof 的 separate public repo（推荐 `teambrain-proof` 这种独立 sub-repo；**禁止**把 `<username>.github.io` 这种 user-pages root 同时当 `<artifact-repo>` 用——会导致 URL 自指 `<username>.github.io/<username>.github.io/...` 与 anchor URL 例子的 3-segment path 不一致，且 reviewer 没法靠 URL 形态区分 visual proof artifact vs 其它 user-pages root 内容）
-- `<pr-or-feature>` = PR 编号或 feature slug（例：`pr-399/` / `feature-1-init/`）
+- `<username>` = PR author 的 GitHub handle
+- `<artifact-repo>` = 该用户专门用于托管 PR visual proof 的 separate public repo（推荐 `teambrain-proof`；禁止 reuse `<username>.github.io` user-pages root 见下方 §Bootstrap 说明）
+- `<pr-or-feature>` = PR 编号或 feature slug
 - `<name>-<ts>.html` = artifact 文件名 + unix 时间戳避免覆盖
 
-理由：单一 canonical 形态把 anchor URL 例子（`https://<username>.github.io/<repo>/<path>.html`，3 段 path）与实际 PR body URL 形态绑死，reviewer 一眼能验证 URL 结构 ；user-pages root 模式（少一层 `<artifact-repo>`）虽然技术上也满足 8 个 substring 锚点，但会引入"URL 形态不匹配 anchor URL 例子"的 reviewer 困惑，本规则不接受这种 ambiguity，强制 sub-repo 模式。
+This path requires one-time bootstrap (see §Bootstrap below). After bootstrap, every PR reuses the same `teambrain-proof` repo + a new `pr-<N>/` subdir.
 
-### Why self-hosted not centralized
+### Other accepted endpoints
+
+Anything else the PR proposer **fully owns** is also accepted: S3 bucket on the proposer's own AWS account, R2 on their own Cloudflare, Vercel / Netlify / Cloudflare Pages under their account, or a personal domain.
+
+### Forbidden
+
+无论选哪条 hosting 路径，下列 endpoint 一律**禁止**——任一命中即 reject：
+
+- 仓库内（TeamBrain repo 自身 / 子目录）
+- `/tmp` / `/var` / `~/Downloads` / 任何本地路径
+- `localhost` / `127.0.0.1` / `0.0.0.0`
+- 团队共享 CI artifact bucket（任何 proposer 不能 unilaterally rotate / delete 的 endpoint）
+- GitHub user-images CDN（`user-images.githubusercontent.com`，rate-limited、author 不能 own）
+- pastebin / imgur / cloudinary / Google Drive / Dropbox shared link
+- TeamBrain repo 自己的 GH Pages（与 `landing-deploy.yml` 冲突，且不是 proposer-owned）
+
+底线：reviewer 在任何一台机器上点开 PR comment / body 里的 URL 都能看到完整 HTML 渲染；PR branch 被 delete、worktree 被回收、构建机被销毁后，链接仍然能打开；proposer 在不需要任何外部 admin 介入的情况下，可以 revert / delete / update 自己的 artifact。
+
+### Why proposer-owned public storage, not centralized
 
 1. **Cost & rate limit isolation** —— 中心化（如 TeamBrain repo 自己的 GH Pages）会被所有人写、被 reviewer 删除工具误清理、被 `landing-deploy.yml` 覆盖。每个 proposer 自己的 GH Pages site 是 zero-cost、零冲突、git push 即上线。
 2. **Provenance** —— `https://<username>.github.io/...` URL 里 `<username>` 就是 PR author 本人；reviewer 看到 URL 一眼知道是谁担保的 visual proof，不会与第三方混淆。
 3. **Permanence with rollback** —— GH Pages 保留 commit 历史；如果 visual proof 被发现造假 / 数据过期，proposer 可以 commit revert 而不需要 admin 介入 TeamBrain repo。
 4. **No special secrets** —— GH Pages 默认 public，不需要 PR proposer 申请 TeamBrain repo 的 push 权限，不需要 OAuth token、不需要 S3 bucket、不需要 CDN 账户。
 
-### Bootstrap — first-time setup
+### Bootstrap — first-time setup for the GH Pages fallback path
 
-PR proposer 第一次需要（**单 canonical project-pages 模式**，对应 §Hosting URL 三段 path 形态）：
+Only needed if the proposer chooses the **fallback** path (self-hosted GitHub Pages) instead of the **recommended default** (GitHub Gist + htmlpreview.github.io, which has zero bootstrap). For the GH Pages fallback, the proposer 第一次需要（project-pages 模式，对应 §Hosting fallback URL 三段 path 形态）：
 
 ```bash
 # 1. 在 GitHub 上 create a SEPARATE artifact-repo with Pages enabled.
@@ -143,13 +186,13 @@ PR body（或 reviewer-visible first comment）必须含至少一行 `https://<u
 | 提交一坨 `*.txt` / `*.log` / `*.json` 到 `docs/plans/...` 然后说 "visual proof in the evidence dir" | 这是 auditable raw evidence，不是 visual proof —— 见上面那张表 |
 | 贴一张 ASCII art / mermaid 图 到 PR body | 文字、不是 browser-renderable HTML |
 | HTML artifact 写在 TeamBrain repo 内（如 `docs/plans/.../visual-proof.html`） | 与 `docs/POP-OPEN-HTML.md` 冲突（pop-open HTML artifact 不允许写进 repo）；且每个 PR 写 HTML 进 repo 会污染 docs 树 |
-| HTML hosted 在 vercel / netlify / imgur / s3 / pastebin / `transfer.sh` | 不是 self-hosted GitHub Pages，provenance 不直接挂在 PR author 名下 |
+| HTML hosted 在 imgur / cloudinary / pastebin / `transfer.sh` / Google Drive / Dropbox shared link | 这些 endpoint 不归 PR proposer own —— provenance 不挂在 PR author 名下、且 proposer 不能 unilaterally rotate / delete artifact。proposer 完全自有的 vercel / netlify / s3 / cloudflare pages 见 § Hosting `### Other accepted endpoints`。|
 | 私有 / 需要登录的链接（Notion、Confluence、private GH Pages） | reviewer 打不开 = 没证据 |
 | PNG / JPG drag-dropped into PR body via GitHub native attach (`user-images.githubusercontent.com` CDN) | provenance 是 GitHub-CDN-hosted 不是 PR author 的 GH Pages site；与 `§PNG / JPG screenshot carve-out` 不同——carve-out 要求图片 URL host 在 `<username>.github.io/...`，不是 GitHub 的 user-images CDN |
 
 ## Relationship to existing rules
 
-- **`docs/POP-OPEN-HTML.md`** = local `/tmp` artifact + agent `open -a "Google Chrome"` for the proposer's own machine. **VISUAL-PROOF-FORMAT (本规则)** = remote GH Pages artifact + reviewer manually clicks URL. The two rules are orthogonal: POP-OPEN-HTML's three mechanics (Chrome spawn / `/tmp` path / `--no-pop` flag) apply only to local agent artifacts; VISUAL-PROOF-FORMAT's mechanics (GH Pages hosting / URL in PR body / `curl -I 200`) apply only to PR-shipped remote artifacts. PRs that trigger both rules (agent first generates HTML in `/tmp`, then proposer `cp` to their `<artifact-repo>` and pushes) must satisfy each rule independently — neither rule's probe substitutes for the other's.
+- **`docs/POP-OPEN-HTML.md`** = local `/tmp` artifact + agent `open -a "Google Chrome"` for the proposer's own machine. **VISUAL-PROOF-FORMAT (本规则)** = remote public-storage HTML artifact (Gist+htmlpreview default, GH Pages fallback, plus other proposer-owned endpoints per § Hosting) + reviewer manually clicks URL. The two rules are orthogonal: POP-OPEN-HTML's three mechanics (Chrome spawn / `/tmp` path / `--no-pop` flag) apply only to local agent artifacts; VISUAL-PROOF-FORMAT's mechanics (proposer-owned public hosting / URL in PR body / `curl -I 200`) apply only to PR-shipped remote artifacts. PRs that trigger both rules (agent first generates HTML in `/tmp`, then proposer uploads to their public endpoint) must satisfy each rule independently — neither rule's probe substitutes for the other's.
 - **`docs/BUSINESS-FEATURES.md`** Feature 1/2/3 row 里如果声称 "visual proof of work"，必须满足本规则，否则改写成 "auditable raw evidence" 或 "PRESHIP / Vision"。
 - **第三方 judge harness 三段铁律**（user-level CLAUDE.md / project AGENTS.md）不变：raw judge JSON + raw stdout/stderr 仍然是必需的；本规则只在 judge JSON 之上**再加**一层 HTML render，不替代 raw evidence。
 - **`docs/PR-ISSUE-COMMENT-LANGUAGES.md`**：PR body 的 visual-proof section 仍然 MUST be English；URL 自然语言段保持英文，URL 本身路径可含 kebab-case slug。
