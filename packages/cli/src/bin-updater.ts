@@ -46,6 +46,7 @@
 // spawned detached by SessionStart; the spawn site also passes the flag, but
 // this is the defense-in-depth layer for any path that bypasses it.
 import { armHookBootstrap } from "./lib/hook-bootstrap.js";
+import { NODE_SQLITE_FLAGS } from "./lib/node-sqlite-flags.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -270,7 +271,9 @@ function runMigrateAuto(): Promise<{ ok: boolean; error?: string }> {
     if (!dist) return resolve({ ok: true });
     const binJs = path.join(dist, "bin.js");
     if (!fs.existsSync(binJs)) return resolve({ ok: true });
-    const child = spawn(process.execPath, [binJs, "migrate-auto"], {
+    // Issue #477: --experimental-sqlite --no-warnings — bin.js statically
+    // imports sqlite-using commands; this child does not inherit the flag.
+    const child = spawn(process.execPath, [...NODE_SQLITE_FLAGS, binJs, "migrate-auto"], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let err = "";

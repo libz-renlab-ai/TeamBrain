@@ -17,6 +17,7 @@ import {
   emitUpgradeEvent,
   type EmitUpgradeOptions,
 } from "../lib/upgrade-event-emitter.js";
+import { NODE_SQLITE_FLAGS } from "../lib/node-sqlite-flags.js";
 
 /**
  * Resolve a GitHub token for authenticated API calls.
@@ -350,7 +351,10 @@ async function nowCmd(): Promise<UpdateRunResult> {
       resolve({ ok: false, output: "bin-updater.cjs not found; run pnpm --filter @teamagent/cli build:hook first\n" });
       return;
     }
-    const child = spawn(process.execPath, [updaterBin], { stdio: "inherit" });
+    // Issue #477: --experimental-sqlite --no-warnings — bin-updater.cjs bundles
+    // @teamagent/adapters (→ node:sqlite at module-init); this child does not
+    // inherit the flag from a NODE_OPTIONS-less environment.
+    const child = spawn(process.execPath, [...NODE_SQLITE_FLAGS, updaterBin], { stdio: "inherit" });
     child.on("exit", (code) => resolve({
       ok: code === 0,
       output: code === 0

@@ -14,7 +14,9 @@ describe("probeNodeSqlite (#477)", () => {
   it("returns ok on the test runner's Node (>= 22.5, the supported floor) — P4", () => {
     const r = probeNodeSqlite();
     expect(r.ok).toBe(true);
-    expect(r.nodeVersion).toBe(process.version);
+    // nodeVersion is the *spawned* PATH node's version (may differ from the
+    // vitest runtime under nvm/Volta) — just assert it looks like a version.
+    expect(r.nodeVersion).toMatch(/^v\d+\./);
     expect(r.detail).toContain("node:sqlite");
   });
 
@@ -28,6 +30,7 @@ describe("probeNodeSqlite (#477)", () => {
     const r = probeNodeSqlite("/nonexistent/teamagent/no-such-node-binary");
     expect(r.ok).toBe(false);
     expect(r.detail).toContain("node:sqlite");
-    expect(r.nodeVersion).toBe(process.version);
+    // Spawned node never started → version is unknown, not a crash.
+    expect(r.nodeVersion).toBe("unknown");
   });
 });

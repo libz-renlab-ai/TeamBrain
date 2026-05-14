@@ -38,6 +38,22 @@ describe("isSqliteLoadError (#477)", () => {
     expect(isSqliteLoadError(wrapped)).toBe(true);
   });
 
+  it("matches MODULE_NOT_FOUND for node:sqlite (defensive hedge for older Node)", () => {
+    const e = new Error("Cannot find module 'node:sqlite'") as Error & {
+      code: string;
+    };
+    e.code = "MODULE_NOT_FOUND";
+    expect(isSqliteLoadError(e)).toBe(true);
+  });
+
+  it("does NOT match a generic MODULE_NOT_FOUND for some other module", () => {
+    const e = new Error("Cannot find module 'lodash'") as Error & {
+      code: string;
+    };
+    e.code = "MODULE_NOT_FOUND";
+    expect(isSqliteLoadError(e)).toBe(false);
+  });
+
   it("does NOT match a different unknown builtin (tight predicate)", () => {
     const e = new Error("No such built-in module: node:foobar") as Error & {
       code: string;

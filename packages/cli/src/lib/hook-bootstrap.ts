@@ -2,12 +2,13 @@
  * Issue #477: last-resort guard for hook bundles that fail to load `node:sqlite`.
  *
  * Every hook bundle transitively `require("node:sqlite")` at module-init time
- * (via `@teamagent/adapters` → `storage/sqlite/schema.ts`). On a Node runtime
- * where that builtin can't load — too old (< 22.5), or 22.5–23.3 spawned
- * without `--experimental-sqlite` — the require throws `ERR_UNKNOWN_BUILTIN_MODULE`
- * *before* the hook's own `main()` (and the hook-shell try/finally) ever runs.
- * Without this guard the user sees a 30-line raw Node stack dump on every
- * single Claude Code event.
+ * (primarily via `@teamagent/adapters` → `storage/sqlite/schema.ts`; a few bins
+ * have additional lazy `node:sqlite` loads, but those are self-guarded with
+ * try/catch). On a Node runtime where that builtin can't load — too old
+ * (< 22.5), or 22.5–23.3 spawned without `--experimental-sqlite` — the require
+ * throws `ERR_UNKNOWN_BUILTIN_MODULE` *before* the hook's own `main()` (and the
+ * hook-shell try/finally) ever runs. Without this guard the user sees a 30-line
+ * raw Node stack dump on every single Claude Code event.
  *
  * This module installs a `process.on("uncaughtException")` handler **at module
  * load time** (the top-level `arm()` call below) that catches exactly that
@@ -27,9 +28,16 @@
 
 /**
  * True when `err` (or its one-level `cause`) is the `node:sqlite` builtin-load
- * failure. Tight predicate: requires BOTH `code === "ERR_UNKNOWN_BUILTIN_MODULE"`
- * AND a `node:sqlite` mention in the message, so unrelated unknown-builtin
- * errors and unrelated errors that merely mention sqlite are NOT swallowed.
+ * failure. Tight predicate: requires BOTH a load-failure error code AND a
+ * `node:sqlite` mention in the message, so unrelated errors are NOT swallowed.
+ *
+ * Accepted codes: `ERR_UNKNOWN_BUILTIN_MODULE` (the code Node throws for a
+ * `node:`-prefixed-but-unknown builtin — the shape #477's reporter hit) and
+ * `MODULE_NOT_FOUND` (a defensive hedge in case an older / differently-built
+ * Node surfaces the missing builtin under the generic loader code). Both are
+ * still gated on the message naming `node:sqlite`, which keeps the predicate
+ * tight — a generic `MODULE_NOT_FOUND` for some other module is not matched.
+ *
  * Walks one level of `err.cause` because `createRequire` / loader paths can
  * wrap the original throw.
  */
@@ -42,8 +50,10 @@ export function isSqliteLoadError(err: unknown): boolean {
     if (!e || typeof e !== "object") continue;
     const code = (e as { code?: unknown }).code;
     const message = (e as { message?: unknown }).message;
+    const isLoadFailureCode =
+      code === "ERR_UNKNOWN_BUILTIN_MODULE" || code === "MODULE_NOT_FOUND";
     if (
-      code === "ERR_UNKNOWN_BUILTIN_MODULE" &&
+      isLoadFailureCode &&
       /node:sqlite/i.test(typeof message === "string" ? message : "")
     ) {
       return true;

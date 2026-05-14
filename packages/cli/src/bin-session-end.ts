@@ -29,6 +29,7 @@
 // before ./bin-stop / ./hook-shell (→ @teamagent/adapters → schema.ts, which
 // throws at module-init on a Node without node:sqlite) is evaluated.
 import { armHookBootstrap } from "./lib/hook-bootstrap.js";
+import { NODE_SQLITE_FLAGS } from "./lib/node-sqlite-flags.js";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -138,7 +139,10 @@ async function main(): Promise<void> {
         return;
       }
 
-      const child = spawn(process.execPath, [selfPath, tmpFile], {
+      // Issue #477: --experimental-sqlite --no-warnings — the detached child
+      // re-enters this same sqlite-bundling .cjs and node argv flags do NOT
+      // pass to children, so they must be re-supplied here.
+      const child = spawn(process.execPath, [...NODE_SQLITE_FLAGS, selfPath, tmpFile], {
         detached: true,
         stdio: "ignore",
         cwd: ctx.cwd,
