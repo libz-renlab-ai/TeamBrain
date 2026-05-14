@@ -3,6 +3,8 @@ import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { startMockServer, type MockServerHandle } from '../../mock-server.js';
+import { appendAudit, writeMember } from '../store.js';
+import { writeRoleMetadata } from '../role-hierarchy.js';
 
 describe('BPP e2e via live mock-server', () => {
   let server: MockServerHandle;
@@ -90,5 +92,107 @@ describe('BPP e2e via live mock-server', () => {
       headers: { 'content-type': 'application/json' },
     });
     expect(res.status).toBe(404);
+  });
+
+  it('GET /v1/audit returns the audit event log, --since filters it', async () => {
+    appendAudit(dir, {
+      schema_version: 1,
+      id: 'ev-audit-old',
+      event_type: 'pushed',
+      bp_id: 'bp-e2e-001',
+      actor: 'alice@team.com',
+      timestamp: '2026-05-13T10:00:00Z',
+      metadata: {},
+    });
+    appendAudit(dir, {
+      schema_version: 1,
+      id: 'ev-audit-new',
+      event_type: 'revoked',
+      bp_id: 'bp-e2e-001',
+      actor: 'alice@team.com',
+      timestamp: '2026-05-15T10:00:00Z',
+      metadata: {},
+    });
+    const allRes = await fetch(`${server.url}/v1/audit`);
+    expect(allRes.status).toBe(200);
+    const allBody = (await allRes.json()) as {
+      ok: boolean;
+      events: Array<{ id: string }>;
+    };
+    expect(allBody.ok).toBe(true);
+    expect(allBody.events.map((e) => e.id)).toContain('ev-audit-old');
+    expect(allBody.events.map((e) => e.id)).toContain('ev-audit-new');
+
+    const sinceRes = await fetch(
+      `${server.url}/v1/audit?since=2026-05-14T00:00:00Z`,
+    );
+    expect(sinceRes.status).toBe(200);
+    const sinceBody = (await sinceRes.json()) as {
+      ok: boolean;
+      events: Array<{ id: string }>;
+    };
+    const sinceIds = sinceBody.events.map((e) => e.id);
+    // The describe block shares one outputDir, so other tests' events may
+    // also be in the log — assert the cutoff boundary, not an exact list.
+    expect(sinceIds).toContain('ev-audit-new');
+    expect(sinceIds).not.toContain('ev-audit-old');
+  });
+
+  it('GET /v1/role returns the effective role tier for a user', async () => {
+    writeMember(dir, {
+      schema_version: 1,
+      user_id: 'lead@team.com',
+      display_name: 'Lead',
+      role: 'lead',
+      joined_at: '2026-05-13T09:00:00Z',
+      notification_prefs: {},
+    });
+    writeMember(dir, {
+      schema_version: 1,
+      user_id: 'colead@team.com',
+      display_name: 'Co Lead',
+      role: 'lead',
+      joined_at: '2026-05-13T09:00:00Z',
+      notification_prefs: {},
+    });
+    writeRoleMetadata(dir, {
+      schema_version: 1,
+      leads: { 'colead@team.com': 'co_lead' },
+    });
+
+    const leadRes = await fetch(
+      `${server.url}/v1/role?user=lead%40team.com`,
+    );
+    expect(leadRes.status).toBe(200);
+    const leadBody = (await leadRes.json()) as {
+      ok: boolean;
+      user_id: string;
+      tier: string;
+    };
+    expect(leadBody).toEqual({
+      ok: true,
+      user_id: 'lead@team.com',
+      tier: 'main_lead',
+    });
+
+    const coLeadRes = await fetch(
+      `${server.url}/v1/role?user=colead%40team.com`,
+    );
+    const coLeadBody = (await coLeadRes.json()) as { tier: string };
+    expect(coLeadBody.tier).toBe('co_lead');
+
+    const memberRes = await fetch(
+      `${server.url}/v1/role?user=nobody%40team.com`,
+    );
+    const memberBody = (await memberRes.json()) as { tier: string };
+    expect(memberBody.tier).toBe('member');
+  });
+
+  it('GET /v1/role without user query param returns 400', async () => {
+    const res = await fetch(`${server.url}/v1/role`);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/user/);
   });
 });

@@ -9,10 +9,16 @@ import {
   appendInbox,
   listInbox,
   appendAudit,
+  listAuditEvents,
   writeMember,
   readMembers,
 } from '../store.js';
-import type { BestPractice, InboxItem, TeamMember } from '../types.js';
+import type {
+  BestPractice,
+  InboxItem,
+  PushEvent,
+  TeamMember,
+} from '../types.js';
 
 function makeBp(id: string): BestPractice {
   return {
@@ -106,6 +112,49 @@ describe('BPP store', () => {
     expect(existsSync(auditFile)).toBe(true);
     const content = readFileSync(auditFile, 'utf8');
     expect(content).toContain('"event_type":"mined"');
+  });
+
+  it('listAuditEvents reads _audit/*.jsonl across dates in timestamp order', () => {
+    const evA: PushEvent = {
+      schema_version: 1,
+      id: 'ev-a',
+      event_type: 'pushed',
+      bp_id: 'bp-1',
+      actor: 'alice@team.com',
+      timestamp: '2026-05-13T10:00:00Z',
+      metadata: {},
+    };
+    const evB: PushEvent = {
+      ...evA,
+      id: 'ev-b',
+      event_type: 'accepted',
+      timestamp: '2026-05-14T09:00:00Z',
+    };
+    // Append out of order — listAuditEvents must still return date-sorted.
+    appendAudit(tmpDir, evB);
+    appendAudit(tmpDir, evA);
+    const events = listAuditEvents(tmpDir);
+    expect(events.map((e) => e.id)).toEqual(['ev-a', 'ev-b']);
+  });
+
+  it('listAuditEvents returns [] when no audit log exists', () => {
+    expect(listAuditEvents(tmpDir)).toEqual([]);
+  });
+
+  it('listAuditEvents --since filters events at or after the ISO cutoff', () => {
+    const base: PushEvent = {
+      schema_version: 1,
+      id: 'ev-old',
+      event_type: 'pushed',
+      bp_id: 'bp-1',
+      actor: 'alice@team.com',
+      timestamp: '2026-05-13T10:00:00Z',
+      metadata: {},
+    };
+    appendAudit(tmpDir, base);
+    appendAudit(tmpDir, { ...base, id: 'ev-new', timestamp: '2026-05-15T10:00:00Z' });
+    const events = listAuditEvents(tmpDir, '2026-05-14T00:00:00Z');
+    expect(events.map((e) => e.id)).toEqual(['ev-new']);
   });
 
   it('writeBp rejects path-traversal in id', () => {

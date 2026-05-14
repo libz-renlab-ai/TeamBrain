@@ -83,6 +83,30 @@ export function appendAudit(rootDir: string, ev: PushEvent): void {
   appendFileSync(file, JSON.stringify(ev) + '\n', 'utf8');
 }
 
+/**
+ * Read every audit event across all `_audit/<date>.jsonl` files. Files are
+ * date-stamped (`ev.timestamp.slice(0, 10)`) so sorting filenames yields
+ * chronological order; intra-file order is append order. When `sinceIso` is
+ * given, only events with `timestamp >= sinceIso` are returned.
+ */
+export function listAuditEvents(
+  rootDir: string,
+  sinceIso?: string,
+): PushEvent[] {
+  const dir = resolvePath(rootDir, '_audit');
+  if (!existsSync(dir)) return [];
+  const out: PushEvent[] = [];
+  for (const fname of readdirSync(dir).filter((f) => f.endsWith('.jsonl')).sort()) {
+    const file = resolvePath(dir, fname);
+    const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
+    for (const ln of lines) out.push(JSON.parse(ln) as PushEvent);
+  }
+  if (sinceIso !== undefined) {
+    return out.filter((ev) => ev.timestamp >= sinceIso);
+  }
+  return out;
+}
+
 export function writeMember(rootDir: string, m: TeamMember): void {
   const dir = resolvePath(rootDir, '_team');
   ensureDir(dir);

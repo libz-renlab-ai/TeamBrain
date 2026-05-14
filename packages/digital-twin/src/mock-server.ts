@@ -36,6 +36,8 @@ import {
 import { handleBpPush, handleInbox } from './bpp/server-handlers.js';
 import { handleRevoke } from './bpp/revoke.js';
 import { handleForcePush } from './bpp/force-push.js';
+import { listAuditEvents } from './bpp/store.js';
+import { getRoleTier } from './bpp/role-hierarchy.js';
 // Gap 2 (production gap close): SSE realtime broadcaster + accept handler.
 // Each startMockServer instance gets its own broadcaster so cross-instance
 // subscriptions stay isolated (tests run many parallel servers).
@@ -451,6 +453,31 @@ function handleGet(
     }
     const result = handleInbox(outputDir, receiver);
     send(res, 200, result);
+    return;
+  }
+
+  // BPP — GET /v1/audit[?since=<iso>]. Returns the append-only audit event
+  // log (push / accept / revoke / force-push). `since` filters to events at
+  // or after the ISO cutoff. Same LAN-readability caveat as /v1/inbox.
+  if (path === '/v1/audit') {
+    const since = q.get('since');
+    const events = listAuditEvents(
+      outputDir,
+      typeof since === 'string' && since.length > 0 ? since : undefined,
+    );
+    send(res, 200, { ok: true, events });
+    return;
+  }
+
+  // BPP — GET /v1/role?user=<id>. Returns the effective role tier
+  // (main_lead / co_lead / member) for a single user.
+  if (path === '/v1/role') {
+    const user = q.get('user');
+    if (typeof user !== 'string' || user.length === 0) {
+      send(res, 400, { ok: false, error: 'user query param required' });
+      return;
+    }
+    send(res, 200, { ok: true, user_id: user, tier: getRoleTier(outputDir, user) });
     return;
   }
 
