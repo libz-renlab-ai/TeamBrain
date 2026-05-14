@@ -6,9 +6,10 @@
 // production server and hits it over HTTP — same code path a user runs.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { startMockServer, type MockServerHandle } from "@teamagent/digital-twin";
 import {
   parseBppServeArgs,
   renderBppHelp,
@@ -16,6 +17,15 @@ import {
   runBppServe,
   runBpp,
   BppArgError,
+  parseBppPushArgs,
+  runBppPush,
+  renderBppPushHelp,
+  parseBppInboxArgs,
+  runBppInbox,
+  renderBppInboxHelp,
+  parseBppActArgs,
+  runBppAct,
+  renderBppActHelp,
   type RunBppServeDeps,
 } from "../commands/bpp.js";
 
@@ -169,5 +179,230 @@ describe("runBpp dispatcher", () => {
 
   it("throws BppArgError on an unknown subcommand", async () => {
     await expect(runBpp(["bogus-subcommand"])).rejects.toThrow(BppArgError);
+  });
+});
+
+// ── PR-B — push / inbox / accept / reject HTTP clients ────────────────────
+//
+// Acceptance contract §2 里程碑一 验证方法 steps 4-6: external command sends
+// a BestPractice to the push endpoint → it fans out to receiver inboxes →
+// a receiver accepts and a SKILL.md lands in their local skill library.
+// Every test here drives the CLI run-functions against a REAL ephemeral
+// startMockServer over HTTP — the same code path a user runs.
+
+describe("bpp push / inbox / accept against a real server", () => {
+  let server: MockServerHandle;
+  let dataDir: string;
+  let homeDir: string;
+  let origHome: string | undefined;
+  let origUserProfile: string | undefined;
+
+  beforeEach(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "bpp-pb-data-"));
+    homeDir = mkdtempSync(join(tmpdir(), "bpp-pb-home-"));
+    server = await startMockServer({
+      port: 0,
+      host: "127.0.0.1",
+      outputDir: dataDir,
+    });
+    // accept-handler compiles SKILL.md under process.env.HOME/USERPROFILE;
+    // point it at a temp dir so the test never touches the real ~/.claude.
+    origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
+    process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+  });
+  afterEach(async () => {
+    await server.close();
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    if (origUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = origUserProfile;
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it("push fans out to receiver inboxes; inbox lists the pending item", async () => {
+    const pushRes = await runBppPush(
+      parseBppPushArgs([
+        `--server=${server.url}`,
+        "--id=bp-001",
+        "--title=任何数据库结构修改前必须先备份",
+        "--body=改 schema 前先 dump 一份",
+        "--receivers=xiaoli,xiaowang",
+      ]),
+    );
+    expect(pushRes.exitCode).toBe(0);
+    expect(pushRes.stdout).toContain("bp-001");
+    expect(pushRes.stdout).toContain("xiaoli");
+    expect(pushRes.stdout).toContain("xiaowang");
+
+    const inboxRes = await runBppInbox(
+      parseBppInboxArgs([`--server=${server.url}`, "--receiver=xiaoli"]),
+    );
+    expect(inboxRes.exitCode).toBe(0);
+    expect(inboxRes.stdout).toContain("bp=bp-001");
+    expect(inboxRes.stdout).toContain("status=pending");
+  });
+
+  it("accept compiles a real SKILL.md and reports compiled_path", async () => {
+    await runBppPush(
+      parseBppPushArgs([
+        `--server=${server.url}`,
+        "--id=bp-002",
+        "--title=T",
+        "--body=B",
+        "--receivers=xiaoli",
+      ]),
+    );
+    const inboxJson = await runBppInbox(
+      parseBppInboxArgs([
+        `--server=${server.url}`,
+        "--receiver=xiaoli",
+        "--json",
+      ]),
+    );
+    const items = JSON.parse(inboxJson.stdout) as Array<{ id: string }>;
+    expect(items).toHaveLength(1);
+    const inboxId = items[0]!.id;
+
+    const acceptRes = await runBppAct(
+      parseBppActArgs(
+        [
+          `--server=${server.url}`,
+          `--inbox-id=${inboxId}`,
+          "--receiver=xiaoli",
+        ],
+        "accept",
+      ),
+      "accept",
+    );
+    expect(acceptRes.exitCode).toBe(0);
+    expect(acceptRes.stdout).toContain("accepted");
+    expect(acceptRes.stdout).toContain("已编译技能文件");
+
+    // The SKILL.md really lands in the (temp) local skill library.
+    const skillPath = join(
+      homeDir,
+      ".claude",
+      "skills",
+      "teamagent",
+      "bp-002",
+      "SKILL.md",
+    );
+    expect(existsSync(skillPath)).toBe(true);
+
+    // ...and the inbox row flips to accepted.
+    const after = await runBppInbox(
+      parseBppInboxArgs([
+        `--server=${server.url}`,
+        "--receiver=xiaoli",
+        "--json",
+      ]),
+    );
+    const afterItems = JSON.parse(after.stdout) as Array<{ status: string }>;
+    expect(afterItems[0]!.status).toBe("accepted");
+  });
+
+  it("reject flips status without compiling a skill file", async () => {
+    await runBppPush(
+      parseBppPushArgs([
+        `--server=${server.url}`,
+        "--id=bp-003",
+        "--title=T",
+        "--body=B",
+        "--receivers=xiaowang",
+      ]),
+    );
+    const items = JSON.parse(
+      (
+        await runBppInbox(
+          parseBppInboxArgs([
+            `--server=${server.url}`,
+            "--receiver=xiaowang",
+            "--json",
+          ]),
+        )
+      ).stdout,
+    ) as Array<{ id: string }>;
+    const rejectRes = await runBppAct(
+      parseBppActArgs(
+        [
+          `--server=${server.url}`,
+          `--inbox-id=${items[0]!.id}`,
+          "--receiver=xiaowang",
+        ],
+        "reject",
+      ),
+      "reject",
+    );
+    expect(rejectRes.exitCode).toBe(0);
+    expect(rejectRes.stdout).toContain("rejected");
+    expect(rejectRes.stdout).not.toContain("已编译");
+  });
+
+  it("inbox for an unknown receiver is empty, not an error", async () => {
+    const res = await runBppInbox(
+      parseBppInboxArgs([`--server=${server.url}`, "--receiver=nobody"]),
+    );
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("收件箱为空");
+  });
+});
+
+describe("bpp push / inbox / accept — arg + error handling", () => {
+  it("push without required flags exits 2", async () => {
+    const res = await runBppPush(parseBppPushArgs(["--id=x"]));
+    expect(res.exitCode).toBe(2);
+    expect(res.stderr).toContain("--id / --title / --body / --receivers");
+  });
+
+  it("push rejects an invalid --type / --topic / --tier / --score", () => {
+    expect(() => parseBppPushArgs(["--type=bogus"])).toThrow(BppArgError);
+    expect(() => parseBppPushArgs(["--topic=bogus"])).toThrow(BppArgError);
+    expect(() => parseBppPushArgs(["--tier=bogus"])).toThrow(BppArgError);
+    expect(() => parseBppPushArgs(["--score=2"])).toThrow(BppArgError);
+  });
+
+  it("inbox without --receiver exits 2", async () => {
+    const res = await runBppInbox(parseBppInboxArgs([]));
+    expect(res.exitCode).toBe(2);
+  });
+
+  it("accept without --inbox-id exits 2", async () => {
+    const res = await runBppAct(
+      parseBppActArgs(["--receiver=x"], "accept"),
+      "accept",
+    );
+    expect(res.exitCode).toBe(2);
+  });
+
+  it("push against a down server exits 1 with a connect hint", async () => {
+    const res = await runBppPush(
+      parseBppPushArgs([
+        "--server=http://127.0.0.1:1",
+        "--id=x",
+        "--title=t",
+        "--body=b",
+        "--receivers=a",
+      ]),
+    );
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain("无法连接");
+  });
+
+  it("help renderers mention the key flags", () => {
+    expect(renderBppPushHelp()).toContain("--receivers=");
+    expect(renderBppInboxHelp()).toContain("--receiver=");
+    expect(renderBppActHelp("accept")).toContain("--inbox-id=");
+    expect(renderBppActHelp("reject")).toContain("拒绝");
+  });
+
+  it("namespace help now lists push / inbox / accept / reject", () => {
+    const help = renderBppHelp();
+    expect(help).toContain("teamagent bpp push");
+    expect(help).toContain("teamagent bpp inbox");
+    expect(help).toContain("teamagent bpp accept");
+    expect(help).toContain("teamagent bpp reject");
   });
 });

@@ -96,8 +96,11 @@ Each slice maps to numbered steps of §2 里程碑一 验证方法.
 ### §V1.C — Accept → skill compile → real trigger (验证方法 steps 6, 7)
 
 ```
-1.  # step 6 — 小李 accepts; verify a skill file lands in the local skill library
-    grep -nE 'inbox|accept' evidence_dir/cli-help.txt \
+1.  # step 6 — 小李 accepts; verify a skill file lands in the local skill library.
+    #   Real probe = bpp-help.txt, anchored on the literal `teamagent bpp accept`
+    #   command line (the inbox→accept→compile path is reachable only if the
+    #   accept command exists). bpp-help.txt is captured in §V1.A step 1.
+    grep -nE 'teamagent bpp accept\b' evidence_dir/bpp-help.txt \
       > evidence_dir/C-accept-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/C-accept-cmd.txt
 2.  # compile-to-skill target dir per PR #430 claims
     grep -rnE 'skills/teamagent|\.claude/skills' \
