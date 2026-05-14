@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -77,4 +79,80 @@ describe("#477: hook-bootstrap import order in bin entries", () => {
       );
     }
   });
+});
+
+/**
+ * #477 P3, end-to-end: this is the real judge harness — it runs the actual
+ * BUILT bundle with a preload shim that forces `require("node:sqlite")` to
+ * throw `ERR_UNKNOWN_BUILTIN_MODULE`, and asserts the guard catches it
+ * (fallback line on stderr, exit 0) instead of leaking a raw stack.
+ *
+ * Source-level reasoning (the suite above) can't prove esbuild/tsup preserved
+ * the import order in the emitted bundle — only running the bundle can. This
+ * block is skipped when `dist/` isn't built (fresh checkout / CI test job that
+ * doesn't run `pnpm build:hook` first); run `pnpm -F @teamagent/cli build:hook`
+ * locally to exercise it.
+ */
+const DIST_DIR = path.resolve(SRC_DIR, "../dist");
+const BUILT_BINS = SQLITE_BUNDLING_BINS.map((f) => f.replace(/\.ts$/, ".cjs"));
+const distBuilt =
+  fs.existsSync(DIST_DIR) &&
+  BUILT_BINS.every((b) => fs.existsSync(path.join(DIST_DIR, b)));
+
+const describeIfBuilt = distBuilt ? describe : describe.skip;
+
+describeIfBuilt("#477 P3: built bundles catch the node:sqlite load failure", () => {
+  // Preload shim: makes require("node:sqlite") throw the way a flag-less
+  // Node 22.5–23.3 runtime does.
+  const shimPath = path.join(os.tmpdir(), `teamagent-477-shim-${process.pid}.cjs`);
+  const shimSrc =
+    'const Module = require("module");\n' +
+    "const orig = Module._load;\n" +
+    "Module._load = function (request) {\n" +
+    '  if (request === "node:sqlite") {\n' +
+    '    const e = new Error("No such built-in module: node:sqlite");\n' +
+    '    e.code = "ERR_UNKNOWN_BUILTIN_MODULE";\n' +
+    "    throw e;\n" +
+    "  }\n" +
+    "  return orig.apply(this, arguments);\n" +
+    "};\n";
+
+  // The spawned bundle must run as a real production hook would — NOT under
+  // the test runner. `arm()` deliberately no-ops when `process.env.VITEST` is
+  // set (so importing a bin from its own suite doesn't hijack the worker's
+  // crash reporting), so strip VITEST from the child env or the guard would
+  // suppress itself and this test would never exercise the real path.
+  const prodEnv = { ...process.env };
+  delete prodEnv.VITEST;
+
+  for (const built of BUILT_BINS) {
+    it(`${built} prints the fallback line, not a raw stack, on a sqlite-less Node`, () => {
+      fs.writeFileSync(shimPath, shimSrc, "utf-8");
+      try {
+        const r = spawnSync(
+          process.execPath,
+          ["--require", shimPath, path.join(DIST_DIR, built)],
+          {
+            encoding: "utf-8",
+            input: "{}",
+            timeout: 20_000,
+            windowsHide: true,
+            env: prodEnv,
+          },
+        );
+        const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+        expect(out, `${built} must surface the actionable one-liner`).toContain(
+          "node:sqlite unavailable on this Node runtime",
+        );
+        // The whole point of P3: NOT a raw V8 stack dump.
+        expect(out, `${built} must NOT leak a raw stack`).not.toMatch(
+          /\n\s+at\s+\S+/,
+        );
+        // Guard exits 0 so the hook fails open (never blocks Claude Code).
+        expect(r.status, `${built} must exit 0 (fail open)`).toBe(0);
+      } finally {
+        try { fs.unlinkSync(shimPath); } catch { /* ignore */ }
+      }
+    });
+  }
 });
