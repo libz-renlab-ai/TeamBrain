@@ -1,0 +1,22 @@
+{
+  "run_id": "2026-05-14-bpp-m1",
+  "exit_code": 0,
+  "metrics": {
+    "cli_has_bpp_serve_cmd": true,
+    "cli_has_bp_push_cmd": true,
+    "cli_has_inbox_cmd": true,
+    "cli_has_team_init_cmd": true,
+    "cli_has_member_client_cmd": true,
+    "cli_has_revoke_cmd": true,
+    "cli_has_audit_cmd": true,
+    "cli_has_role_cmd": true,
+    "team_init_wired_into_bin": true,
+    "bpp_vitest_exit": 0,
+    "compile_to_skill_target": "<userHome>/.claude/skills/teamagent/<bp_id>/SKILL.md",
+    "revoke_cascades_to_skill_file": true,
+    "step7_agent_trigger": "AGENT-MANUAL",
+    "typecheck_exit": 0,
+    "vitest_exit": 0
+  },
+  "evidence_dir": ".judge/2026-05-14-bpp-m1/evidence/"
+}
