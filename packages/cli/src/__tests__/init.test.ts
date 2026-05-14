@@ -326,6 +326,7 @@ describe("executeInit", () => {
     const r = await executeInit({
       ...commonOpts(),
       target: "codex",
+      structure: true,
       llmClient: stubLLM(OK_LLM_RESPONSE),
     });
 
@@ -336,6 +337,24 @@ describe("executeInit", () => {
       status: "failed",
       detail: "CLAUDE.md 文件无读取权限，请运行: chmod 644 CLAUDE.md",
     });
+  });
+
+  it("default init (no --structure) succeeds even with an unreadable CLAUDE.md (#445)", async () => {
+    const claudePath = path.join(tmp.cwd, "CLAUDE.md");
+    nodeFs.writeFileSync(claudePath, "# locked\n");
+    const accessSpy = vi.spyOn(nodeFs, "accessSync").mockImplementation((p) => {
+      if (p === claudePath) throw new Error("EACCES");
+      return undefined as unknown as void;
+    });
+    const r = await executeInit({
+      ...commonOpts(),
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    accessSpy.mockRestore();
+    // #445: default init does not read CLAUDE.md, so an unreadable one must not block it.
+    expect(r.ok).toBe(true);
+    expect(r.steps[0]).toMatchObject({ step: "pre-check", status: "ok" });
+    expect(accessSpy).not.toHaveBeenCalledWith(claudePath, nodeFs.constants.R_OK);
   });
 
   it("target=codex pre-check only requires read access for existing AGENTS.md", async () => {
@@ -352,6 +371,7 @@ describe("executeInit", () => {
     const r = await executeInit({
       ...commonOpts(),
       target: "codex",
+      structure: true,
       llmClient: stubLLM(OK_LLM_RESPONSE),
     });
 

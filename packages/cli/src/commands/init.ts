@@ -252,7 +252,7 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
   }
 
   // ---------- Phase A: Pre-check ----------
-  const preCheck = runPreChecks(paths, target);
+  const preCheck = runPreChecks(paths, target, opts.structure ?? false);
   steps.push(preCheck);
   if (preCheck.status === "failed") {
     return finalize(false, dryRun, steps, emptySummary());
@@ -632,6 +632,7 @@ function collectInstalledPackNames(
 function runPreChecks(
   paths: ReturnType<typeof resolvePaths>,
   target: NonNullable<InitOptions["target"]>,
+  checkRuleFiles: boolean,
 ): InitStepResult {
   if (!fs.existsSync(paths.cwd)) {
     return failStep("pre-check", `项目目录不存在: ${paths.cwd}`);
@@ -645,19 +646,24 @@ function runPreChecks(
   } catch {
     return failStep("pre-check", "无法创建 ~/.teamagent 目录，请检查磁盘权限");
   }
-  const mdPaths: Array<{ path: string; label: string }> = [];
-  if (targetIncludesClaude(target) || targetIncludesCodex(target)) {
-    mdPaths.push({ path: paths.claudeMdPath, label: "CLAUDE.md" });
-  }
-  if (targetIncludesCodex(target)) {
-    mdPaths.push({ path: paths.agentsMdPath, label: "AGENTS.md" });
-  }
-  for (const item of mdPaths) {
-    if (!fs.existsSync(item.path)) continue;
-    try {
-      fs.accessSync(item.path, fs.constants.R_OK);
-    } catch {
-      return failStep("pre-check", `${item.label} 文件无读取权限，请运行: chmod 644 ${item.label}`);
+  // #445: only probe CLAUDE.md / AGENTS.md readability when --structure opts in
+  // to LLM rule import. Default init does not read those files, so an unreadable
+  // CLAUDE.md must not block a default install.
+  if (checkRuleFiles) {
+    const mdPaths: Array<{ path: string; label: string }> = [];
+    if (targetIncludesClaude(target) || targetIncludesCodex(target)) {
+      mdPaths.push({ path: paths.claudeMdPath, label: "CLAUDE.md" });
+    }
+    if (targetIncludesCodex(target)) {
+      mdPaths.push({ path: paths.agentsMdPath, label: "AGENTS.md" });
+    }
+    for (const item of mdPaths) {
+      if (!fs.existsSync(item.path)) continue;
+      try {
+        fs.accessSync(item.path, fs.constants.R_OK);
+      } catch {
+        return failStep("pre-check", `${item.label} 文件无读取权限，请运行: chmod 644 ${item.label}`);
+      }
     }
   }
   return okStep("pre-check", "所有前置检查通过");
