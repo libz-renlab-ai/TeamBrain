@@ -28,8 +28,12 @@ describe("static-user-skills inline content freshness", () => {
     test(`inline ${name} matches .claude/skills/${name}/SKILL.md`, () => {
       const filePath = path.join(REPO_ROOT, ".claude", "skills", name, "SKILL.md");
       expect(fs.existsSync(filePath)).toBe(true);
-      const fileContent = fs.readFileSync(filePath, "utf8");
-      const inlineContent = STATIC_USER_SKILL_CONTENT[name];
+      // Normalize CRLF→LF so the test is platform-agnostic: Windows git
+      // autocrlf=true checks files out as CRLF on disk, but the inline TS
+      // string literals are always LF. Both are semantically equivalent;
+      // we only care about the byte-equal up-to-line-endings invariant.
+      const fileContent = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+      const inlineContent = (STATIC_USER_SKILL_CONTENT[name] ?? "").replace(/\r\n/g, "\n");
       expect(inlineContent).toBe(fileContent);
     });
   }
