@@ -582,3 +582,139 @@ describe('issue-283 quota', () => {
   });
 });
 
+// M2 (对话上传通道) — transport security on the conversation-upload path:
+// token auth (BPP_AUTH_TOKEN) + TLS (opts.tls). See judge.md §V1.B.
+describe('mock-server — M2 transport security', () => {
+  const FIXTURE_DIR = join(__dirname, '..', 'bpp', '__tests__', 'fixtures');
+  const KEY_PATH = join(FIXTURE_DIR, 'test-https-key.pem');
+  const CERT_PATH = join(FIXTURE_DIR, 'test-https-cert.pem');
+
+  function ccSessionBody(sessionId: string, userId: string): string {
+    const compressed = gzipSync(Buffer.from('{"role":"user","content":"hi"}\n'));
+    return JSON.stringify({
+      schema_version: 1,
+      envelope: {
+        session_id: sessionId,
+        user_id: userId,
+        captured_at: '2026-05-14T09:00:00.000Z',
+      },
+      transcript: { compression: 'gzip+base64', content: compressed.toString('base64') },
+    });
+  }
+
+  describe('token auth', () => {
+    let server: MockServerHandle;
+    let outputDir: string;
+
+    afterEach(async () => {
+      await server.close();
+    });
+
+    it('rejects POST /v1/cc-sessions with no Authorization when authToken is set', async () => {
+      outputDir = mkdtempSync(join(tmpdir(), 'dt-m2auth-'));
+      server = await startMockServer({ port: 0, outputDir, authToken: 'sekret' });
+      const res = await fetch(`${server.url}/v1/cc-sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: ccSessionBody('noauth-1', 'zhang@libz.ai'),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects POST /v1/cc-sessions with the wrong Bearer token', async () => {
+      outputDir = mkdtempSync(join(tmpdir(), 'dt-m2auth-'));
+      server = await startMockServer({ port: 0, outputDir, authToken: 'sekret' });
+      const res = await fetch(`${server.url}/v1/cc-sessions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer wrong-token',
+        },
+        body: ccSessionBody('wrongtok-1', 'zhang@libz.ai'),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('accepts POST /v1/cc-sessions with the correct Bearer token', async () => {
+      outputDir = mkdtempSync(join(tmpdir(), 'dt-m2auth-'));
+      server = await startMockServer({ port: 0, outputDir, authToken: 'sekret' });
+      const res = await fetch(`${server.url}/v1/cc-sessions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer sekret',
+        },
+        body: ccSessionBody('goodtok-1', 'zhang@libz.ai'),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it('leaves POST /v1/cc-sessions open when authToken is empty (dev/test default)', async () => {
+      outputDir = mkdtempSync(join(tmpdir(), 'dt-m2auth-'));
+      server = await startMockServer({ port: 0, outputDir });
+      const res = await fetch(`${server.url}/v1/cc-sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: ccSessionBody('noauth-open-1', 'zhang@libz.ai'),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it('does not gate the M1 bpp routes — POST /v1/bp-push stays open with authToken set', async () => {
+      outputDir = mkdtempSync(join(tmpdir(), 'dt-m2auth-'));
+      server = await startMockServer({ port: 0, outputDir, authToken: 'sekret' });
+      // Malformed body → handler returns 400, NOT 401: proves the auth gate
+      // did not fire on a non-cc-sessions route.
+      const res = await fetch(`${server.url}/v1/bp-push`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).not.toBe(401);
+    });
+  });
+
+  describe('TLS', () => {
+    let server: MockServerHandle;
+
+    afterEach(async () => {
+      await server.close();
+    });
+
+    it('serves over https when tls opts are passed', async () => {
+      const outputDir = mkdtempSync(join(tmpdir(), 'dt-m2tls-'));
+      server = await startMockServer({
+        port: 0,
+        outputDir,
+        tls: { keyPath: KEY_PATH, certPath: CERT_PATH },
+      });
+      expect(server.url).toMatch(/^https:\/\/127\.0\.0\.1:\d+$/);
+    });
+
+    it('accepts a real cc-session upload over TLS', async () => {
+      const outputDir = mkdtempSync(join(tmpdir(), 'dt-m2tls-'));
+      server = await startMockServer({
+        port: 0,
+        outputDir,
+        tls: { keyPath: KEY_PATH, certPath: CERT_PATH },
+      });
+      // Self-signed test cert — disable verification for this test only.
+      const prev = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+      try {
+        const res = await fetch(`${server.url}/v1/cc-sessions`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: ccSessionBody('tls-upload-1', 'zhang@libz.ai'),
+        });
+        expect(res.status).toBe(200);
+        const file = join(outputDir, 'zhang@libz.ai', '2026-05-14', 'tls-upload-1.jsonl');
+        expect(existsSync(file)).toBe(true);
+      } finally {
+        if (prev === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+        else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev;
+      }
+    });
+  });
+});
+

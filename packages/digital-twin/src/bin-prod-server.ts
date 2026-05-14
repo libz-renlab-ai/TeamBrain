@@ -12,6 +12,11 @@
  *   PORT                       (default 8080)
  *   HOST                       (default 0.0.0.0)
  *   TEAMAGENT_COLLECTOR_DIR    (default $HOME/teamagent-collector)
+ *   BPP_AUTH_TOKEN             (optional — when set, POST /v1/cc-sessions
+ *                               requires `Authorization: Bearer <token>`)
+ *   HTTPS_KEY_PATH / HTTPS_CERT_PATH
+ *                              (optional — when BOTH are set, serve over TLS
+ *                               instead of plain HTTP)
  */
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -40,9 +45,31 @@ export async function runProdServer(deps: RunProdServerDeps = {}): Promise<() =>
   const host = env.HOST ?? '0.0.0.0';
   const outputDir = env.TEAMAGENT_COLLECTOR_DIR ?? join(home, 'teamagent-collector');
 
-  const handle = await startMockServer({ port, host, outputDir });
+  // M2 — optional token auth on the conversation-upload endpoint. Passed
+  // explicitly (rather than relying on startMockServer's process.env default)
+  // so an injected `deps.env` is honoured in tests.
+  const authToken = env.BPP_AUTH_TOKEN ?? '';
+  // M2 — optional TLS. Both key + cert paths must be set to serve over HTTPS;
+  // a partial config is treated as plain HTTP so a half-finished deploy fails
+  // loud (no cert) rather than silently downgrading.
+  const httpsKeyPath = env.HTTPS_KEY_PATH;
+  const httpsCertPath = env.HTTPS_CERT_PATH;
+  const tls =
+    httpsKeyPath && httpsCertPath
+      ? { keyPath: httpsKeyPath, certPath: httpsCertPath }
+      : undefined;
+
+  const handle = await startMockServer({
+    port,
+    host,
+    outputDir,
+    authToken,
+    tls,
+  });
   log(`[teamagent-collector] listening on ${handle.url}`);
   log(`[teamagent-collector] outputDir = ${handle.outputDir}`);
+  if (authToken) log(`[teamagent-collector] token auth ENABLED on POST /v1/cc-sessions`);
+  if (tls) log(`[teamagent-collector] TLS ENABLED (key=${tls.keyPath})`);
   deps.onReady?.({ url: handle.url, outputDir: handle.outputDir });
 
   return handle.close;
