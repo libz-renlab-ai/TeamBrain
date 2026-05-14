@@ -216,6 +216,7 @@ import {
   VideoArgError,
   VIDEO_HELP,
 } from "./commands/video.js";
+import { runBpp, BppArgError } from "./commands/bpp.js";
 import {
   executeFixtureReplay,
   parseFixtureReplayArgs,
@@ -1042,6 +1043,18 @@ async function main(): Promise<void> {
       if (result.exitCode !== 0) process.exit(result.exitCode);
       return;
     }
+    case "bpp": {
+      try {
+        await runBpp(rest);
+      } catch (err) {
+        if (err instanceof BppArgError) {
+          process.stderr.write(`[bpp] ${err.message}\n`);
+          process.exit(2);
+        }
+        throw err;
+      }
+      return;
+    }
     case "fixture": {
       try {
         if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
@@ -1591,6 +1604,8 @@ async function main(): Promise<void> {
           "                   | --from-git [--since=30d] | --from-ci [--since=30d] | --from-candidates <path>",
           "                                   多源摄入：Claude /insights / npm audit / PR review / git hotspot / CI failure",
           "                                   半自动源加 --dry-run 只产出候选 md 供人工勾选",
+          "  teamagent bpp serve [--port=<n>] [--host=<host>] [--dir=<path>]",
+          "                                   启动 BPP（团队最佳实践推送）中心服务；子命令见 `teamagent bpp --help`",
           "",
           "环境变量:",
           "  TEAMAGENT_VISIBILITY=silent|smart|verbose    归因渲染模式（默认 verbose）",
