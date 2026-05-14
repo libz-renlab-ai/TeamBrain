@@ -233,3 +233,140 @@ export {
   type ImportStatus,
   type FfmpegProbe,
 } from './recorder/ffmpeg-wrapper.js';
+
+// BPP (Best-Practice Push) — spec 2026-05-13. Server-side fan-out of
+// AI-mined best practices to team inboxes. Phase 1 (this PR): types,
+// store, HTTP handlers, route wiring. Phase 2-6: AI mining pipeline,
+// receiver UX, lead console, privacy, verify harness.
+export type {
+  BestPractice,
+  InboxItem,
+  TeamMember,
+  PushEvent,
+  BpType,
+  BpTier,
+  BpTopic,
+  InboxStatus,
+  DeliveryChannel,
+  PushEventType,
+  MiningEvidence,
+} from './bpp/types.js';
+export {
+  writeBp,
+  readBp,
+  listBpIds,
+  appendInbox,
+  listInbox,
+  appendAudit,
+  writeMember,
+  readMembers,
+} from './bpp/store.js';
+export {
+  handleBpPush,
+  handleInbox,
+  type BpPushBody,
+  type BpPushResult,
+  type InboxResult,
+} from './bpp/server-handlers.js';
+
+// BPP Phase 2-6 modules (added in PR #430 follow-up after parallel agent team).
+export { handleRevoke } from './bpp/revoke.js';
+export { handleForcePush } from './bpp/force-push.js';
+export { isLead, assertIsLead } from './bpp/lead-gate.js';
+export {
+  type RoleTier,
+  type RoleMetadataFile,
+  getRoleTier,
+  readRoleMetadata,
+  writeRoleMetadata,
+  assertCanTransferLead,
+  assertCanElevate,
+  assertCanRevoke,
+  assertCanForcePush,
+  assertCanDeleteAudit,
+} from './bpp/role-hierarchy.js';
+export {
+  MAX_CO_LEADS,
+  transferLead,
+  elevateToCoLead,
+  demoteCoLead,
+  type TransferLeadResult,
+  type ElevateResult,
+  type DemoteResult,
+} from './bpp/role-transitions.js';
+export { requireBearerToken } from './bpp/auth-gate.js';
+export { purgeStaleTranscripts } from './bpp/transcript-purge.js';
+export { linkAuditEvent, verifyAuditChain } from './bpp/audit-hash-chain.js';
+export {
+  type CandidateBp,
+  type CorrectionMoment,
+  type SessionSummary,
+  type GitActivity,
+  type MiningInput,
+} from './bpp/mining/mining-types.js';
+export {
+  mineCorrectionCandidates,
+  type CorrectionAdapterInput,
+} from './bpp/mining/correction-adapter.js';
+export {
+  mineBehaviorCandidates,
+  type BehaviorMinerInput,
+} from './bpp/mining/behavior-miner.js';
+export {
+  mineContextPatternCandidates,
+  type ContextPatternMinerInput,
+} from './bpp/mining/context-pattern-miner.js';
+export {
+  wilsonLowerBound,
+  bppTierFromConfidence,
+  wilsonTierGate,
+  PUSHABLE_TIERS,
+  type WilsonTierGateOptions,
+} from './bpp/mining/wilson-tier-gate.js';
+
+// BPP Gap 1 — real LLM mining (claudefast / Anthropic SDK / mock).
+export {
+  extractCandidates,
+  parseModelJson,
+  type LlmProvider,
+  type LlmClientConfig,
+  type LlmExtractType,
+  type LlmExtractRequest,
+  type LlmCandidate,
+  type LlmExtractResponse,
+} from './bpp/mining/llm-client.js';
+export {
+  promptForRule,
+  promptForHabit,
+  promptForContextMgmt,
+  type SessionExcerpt,
+} from './bpp/mining/llm-prompt-templates.js';
+export {
+  BudgetTracker,
+  BudgetExhaustedError,
+  DEFAULT_BUDGET_USD,
+} from './bpp/mining/budget-tracker.js';
+
+// BPP Gap 2 — SSE realtime + accept→compile path.
+export {
+  BppSseBroadcaster,
+  wireBroadcasterToHandlers,
+  type BppEvent,
+  type BppEventType,
+  type SseSink,
+} from './bpp/sse-broadcast.js';
+export {
+  compileBpToSkill,
+  type CompileBpToSkillResult,
+} from './bpp/compile-to-skill.js';
+export {
+  handleInboxAct,
+  type InboxActBody,
+  type InboxActResult,
+} from './bpp/accept-handler.js';
+
+// BPP Gap 4 — HTTPS wrapper + transcript-purge cron.
+export {
+  wrapServerWithHttps,
+  type WrapServerWithHttpsOptions,
+} from './bpp/https-server.js';

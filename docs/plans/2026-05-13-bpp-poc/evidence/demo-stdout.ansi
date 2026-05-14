@@ -1,0 +1,100 @@
+
+[36m━━━ Step 0 · spin up mock-server ━━━[0m
+outputDir = C:\Users\tianhaoxuan\AppData\Local\Temp\bpp-demo-N2Ryvd
+[32mserver URL: http://127.0.0.1:63002[0m
+
+[36m━━━ Step 1 · Alice 自动推送一条 BestPractice (推送方完全隐形) ━━━[0m
+{
+  "schema_version": 1,
+  "id": "bp-demo-2026-05-13-mock-db",
+  "type": "rule",
+  "title": "测试时不要 mock 数据库",
+  "body": "Mocking the database hides migration bugs. Use a real local DB (sqlite/duckdb) in tests; the speed difference is < 50ms per test and the integration-bug coverage is huge.",
+  "example": "PR #200: alice mocked the user_session table; tests passed; the prod migration that renamed the column shipped; broke for 4 hours.",
+  "pushed_by": "alice@team.com",
+  "pushed_by_display": "Alice",
+  "topic": "testing",
+  "confidence_score": 0.87,
+  "confidence_tier": "canonical",
+  "conflict_with": [],
+  "mining_evidence": {
+    "sessions_observed": 12,
+    "pattern_count": 9,
+    "reject_count": 0,
+    "extraction_method": "behavior-mining-v1"
+  },
+  "revoked_at": null,
+  "revoked_by": null,
+  "revoke_reason": null,
+  "created_at": "2026-05-13T05:49:37.628Z"
+}
+
+[36m━━━ Step 2 · server response (HTTP 200) ━━━[0m
+{
+  "ok": true,
+  "bp_id": "bp-demo-2026-05-13-mock-db",
+  "delivered_to": [
+    "bob@team.com",
+    "charlie@team.com"
+  ]
+}
+
+[36m━━━ Step 3 · Bob 查 inbox (HTTP 200) ━━━[0m
+{
+  "ok": true,
+  "items": [
+    {
+      "schema_version": 1,
+      "id": "inbox-bob_team_com-aff91b14",
+      "receiver_id": "bob@team.com",
+      "bp_id": "bp-demo-2026-05-13-mock-db",
+      "status": "pending",
+      "delivered_at": "2026-05-13T05:49:37.677Z",
+      "acted_at": null,
+      "forced_by_lead": false,
+      "delivery_channels": [
+        "statusline",
+        "dashboard"
+      ]
+    }
+  ]
+}
+
+[36m━━━ Step 4 · Charlie 查 inbox (HTTP 200) ━━━[0m
+{
+  "ok": true,
+  "items": [
+    {
+      "schema_version": 1,
+      "id": "inbox-charlie_team_com-862b35b7",
+      "receiver_id": "charlie@team.com",
+      "bp_id": "bp-demo-2026-05-13-mock-db",
+      "status": "pending",
+      "delivered_at": "2026-05-13T05:49:37.677Z",
+      "acted_at": null,
+      "forced_by_lead": false,
+      "delivery_channels": [
+        "statusline",
+        "dashboard"
+      ]
+    }
+  ]
+}
+
+[36m━━━ Step 5 · 审计日志 (PushEvent JSONL) ━━━[0m
+{"schema_version":1,"id":"ev-4faf9e90","event_type":"pushed","bp_id":"bp-demo-2026-05-13-mock-db","actor":"system","timestamp":"2026-05-13T05:49:37.677Z","metadata":{"receivers":["bob@team.com","charlie@team.com"]}}
+
+[36m━━━ Step 6 · _bp 存储目录 ━━━[0m
+1 个文件: bp-demo-2026-05-13-mock-db.json
+
+[36m━━━ Step 7 · malformed body → HTTP 400 ━━━[0m
+{
+  "ok": false,
+  "error": "malformed body: bp.id + bp.title required"
+}
+
+[32m━━━ DEMO COMPLETE ━━━[0m
+[2mServer stays up so you can hit /dashboard manually:[0m
+  http://127.0.0.1:63002/
+[2mPress Ctrl+C to stop, or auto-shutdown in 2s for CI.[0m
+[32mserver closed.[0m

@@ -1,0 +1,19 @@
+# BPP transcript purge — systemd timer (daily 03:00)
+# Spec: docs/superpowers/specs/2026-05-13-best-practice-push-design.md §6.1
+
+[Unit]
+Description=Daily TeamAgent BPP transcript purge
+Documentation=file:///opt/teamagent/docs/bpp/cron-deploy.md
+Requires=systemd-bpp-purge.service
+
+[Timer]
+# Fire daily at 03:00 local time. AccuracySec=15min lets systemd batch with
+# other timers; tighten to 1s if you need exact 03:00 firing.
+OnCalendar=*-*-* 03:00:00
+AccuracySec=15min
+# If the machine was off at 03:00, run on next boot.
+Persistent=true
+Unit=systemd-bpp-purge.service
+
+[Install]
+WantedBy=timers.target

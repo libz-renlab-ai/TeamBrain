@@ -1,0 +1,40 @@
+# BPP transcript purge — systemd service unit
+# Spec: docs/superpowers/specs/2026-05-13-best-practice-push-design.md §6.1
+#
+# Install:
+#   sudo cp scripts/bpp-cron/systemd-bpp-purge.service /etc/systemd/system/
+#   sudo cp scripts/bpp-cron/systemd-bpp-purge.timer   /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now systemd-bpp-purge.timer
+#
+# Adjust User= / Environment= / ExecStart= to match your deploy. ExecStart
+# assumes you've already built the package; for dev/tsx the call shape is
+# /usr/bin/env tsx packages/digital-twin/src/bin-purge-cron.ts.
+
+[Unit]
+Description=TeamAgent BPP transcript purge (30-day retention)
+Documentation=file:///opt/teamagent/docs/bpp/cron-deploy.md
+After=network.target
+
+[Service]
+Type=oneshot
+User=teamagent
+Group=teamagent
+WorkingDirectory=/opt/teamagent
+Environment=BPP_OUTPUT_DIR=/var/lib/teamagent-bpp
+Environment=BPP_RETAIN_DAYS=30
+# Compiled-JS form (preferred for prod):
+ExecStart=/usr/bin/node /opt/teamagent/packages/digital-twin/dist/bin-purge-cron.js
+# Dev / tsx alternative (uncomment instead):
+# ExecStart=/usr/bin/env pnpm --filter @teamagent/digital-twin exec tsx src/bin-purge-cron.ts
+StandardOutput=journal
+StandardError=journal
+# Lock down filesystem: only the BPP root needs write access.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/teamagent-bpp
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

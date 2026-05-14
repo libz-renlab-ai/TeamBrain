@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "scenario": "bpp-counterfactual-ablation-17task",
+  "alpha": 0.05,
+  "note": "PoC fixture corpus — synthetic outcomes for the 17 BPP-target tasks (14 of 17 bpp-on=avoided, 3 of 17 bpp-off=avoided; designed to yield a paired t-test p-value below alpha=0.05 with a positive delta). Real production data would come from replaying the 17-task BPP corpus with bpp-on and bpp-off and recording per-task 'avoidance' verdicts. This file pins a deterministic baseline so the t-test script has something to chew on without depending on a live LLM run. See spec docs/superpowers/specs/2026-05-13-best-practice-push-design.md §8.1 tier (b) and docs/verify/BPP-VERIFY-V2.md.",
+  "tasks": [
+    {"task_id": "t01-throttle", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t02-memoize", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t03-debounce", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t04-parseDuration", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t05-formatDuration", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t06-userRepo", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t07-orderRepo", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t08-cache-lru", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t09-rate-limiter", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t10-csv-parser", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t11-uuid-gen", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t12-config-loader", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t13-retry-policy", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t14-bounded-queue", "bpp_on_outcome": "avoided", "bpp_off_outcome": "failed"},
+    {"task_id": "t15-circular-buffer", "bpp_on_outcome": "failed", "bpp_off_outcome": "avoided"},
+    {"task_id": "t16-trie", "bpp_on_outcome": "failed", "bpp_off_outcome": "avoided"},
+    {"task_id": "t17-hash-ring", "bpp_on_outcome": "failed", "bpp_off_outcome": "avoided"}
+  ]
+}

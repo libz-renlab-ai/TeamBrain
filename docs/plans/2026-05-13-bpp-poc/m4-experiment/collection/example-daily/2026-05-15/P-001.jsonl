@@ -1,0 +1,7 @@
+{"type":"task-start","ts":"2026-05-15T09:23:11.412Z","member_id":"P-001","task_slug":"01-parse-duration","group":"mining-enabled"}
+{"type":"ai-correction","ts":"2026-05-15T09:37:22.123Z","member_id":"P-001","task_slug":"01-parse-duration","transcript_snippet_hash":"sha256:abc","matched_keyword":"不对"}
+{"type":"ai-correction","ts":"2026-05-15T09:51:08.523Z","member_id":"P-001","task_slug":"01-parse-duration","transcript_snippet_hash":"sha256:def","matched_keyword":"再来"}
+{"type":"task-end","ts":"2026-05-15T10:18:54.992Z","member_id":"P-001","task_slug":"01-parse-duration","group":"mining-enabled","result":"pass","duration_ms":3343580,"subjective_rating":4,"code_quality_score":0.87}
+{"type":"bp-inbox-action","ts":"2026-05-15T11:00:00.000Z","member_id":"P-001","bp_id":"bp-2026-05-15-mock-db","action":"accept","during_task":null}
+{"type":"task-start","ts":"2026-05-15T14:00:11.000Z","member_id":"P-001","task_slug":"02-fix-stale-pr-detection","group":"mining-enabled"}
+{"type":"task-end","ts":"2026-05-15T15:30:11.000Z","member_id":"P-001","task_slug":"02-fix-stale-pr-detection","group":"mining-enabled","result":"pass","duration_ms":5400000,"subjective_rating":5,"code_quality_score":0.92}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "bp-2026-05-13-atomic-commit-per-edit",
+  "type": "context-mgmt",
+  "title": "Atomic git commit after every file edit",
+  "body": "After every Write or Edit tool call that modifies a file, immediately run a Bash 'git add <file> && git commit' covering only that file before moving to the next edit.",
+  "example": "Edit(src/a.ts) → Bash(git add src/a.ts && git commit) → Edit(src/b.ts) → Bash(git add src/b.ts && git commit).",
+  "pushed_by": "dave@team.com",
+  "pushed_by_display": "Dave",
+  "topic": "git-flow",
+  "confidence_score": 0.7961,
+  "confidence_tier": "canonical",
+  "conflict_with": [],
+  "mining_evidence": {
+    "sessions_observed": 7,
+    "pattern_count": 15,
+    "reject_count": 0,
+    "extraction_method": "behavior-mining-v0-fixture"
+  },
+  "revoked_at": null,
+  "revoked_by": null,
+  "revoke_reason": null,
+  "created_at": "2026-05-13T13:01:30Z"
+}

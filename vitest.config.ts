@@ -19,7 +19,15 @@ const enableParallel = isCI && !isWindows;
 export default defineConfig({
   test: {
     globals: false,
-    include: ["packages/*/src/**/__tests__/**/*.test.ts"],
+    include: [
+      "packages/*/src/**/__tests__/**/*.test.ts",
+      // BPP Phase 3: P3 agent placed statusline shim + inbox SEED tests
+      // outside the packages/ tree (statusline is a .cjs script under scripts/;
+      // the inbox UI lives under landing/overlay/). Include those test dirs so
+      // `pnpm test` discovers them with the rest of the suite.
+      "scripts/**/__tests__/**/*.test.ts",
+      "landing/overlay/src/app/**/__tests__/**/*.test.ts",
+    ],
     environment: "node",
     fileParallelism: enableParallel,
     pool: "threads",

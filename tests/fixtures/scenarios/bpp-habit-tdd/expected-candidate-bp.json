@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "bp-candidate-2026-05-13-tdd-red-first",
+  "type": "habit",
+  "title": "Write failing test before implementation (TDD red-first)",
+  "body": "Before any Write/Edit of a new source file, first Write a vitest test file and run it expecting failure (the red step), then Write the implementation.",
+  "example": "User: '加一个 parseDuration' → Assistant: Write(parseDuration.test.ts) → Bash(vitest run, see red) → Write(parseDuration.ts).",
+  "pushed_by": "carol@team.com",
+  "pushed_by_display": "Carol",
+  "topic": "testing",
+  "confidence_score": 0,
+  "confidence_tier": "low",
+  "conflict_with": [],
+  "mining_evidence": {
+    "sessions_observed": 1,
+    "pattern_count": 2,
+    "reject_count": 0,
+    "extraction_method": "behavior-mining-v0-fixture"
+  },
+  "revoked_at": null,
+  "revoked_by": null,
+  "revoke_reason": null,
+  "created_at": "2026-05-13T12:11:30Z"
+}
