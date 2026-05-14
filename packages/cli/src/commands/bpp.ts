@@ -1046,11 +1046,12 @@ export function renderBppMineHelp(): string {
     "  --state <path>    挖矿状态目录（pool/ audit/ budget-*.json mined-cursor.json）",
     "  --seed-sample     先把内置的设计样本语料铺进 --repo 再挖矿",
     "  --mock            强制使用确定性的 mock 大模型 provider（花费 0）",
-    "  --budget-usd <n>  每团队每天的预算上限（默认 5）",
+    "  --budget-usd <n>  每团队每天的预算上限（默认 5，挖矿调用前按估算扣减并强制执行）",
     "  --team <name>     预算账本的团队键（默认 default）",
     "",
     "  从中心对话仓库拉取还没挖过的对话 → 三个 miner 扇出 → 大模型规范化 →",
     "  Wilson 分级：高分候选自动推送进成员收件箱，低分候选留在挖矿池等下一轮。",
+    "  非 --mock 时优先用真实 provider；调用失败自动降级到 mock 继续；预算超限干净停批。",
     "  --repo / --state 同时支持 `--repo=<路径>` 和 `--repo <路径>` 两种写法。",
   ].join("\n");
 }
@@ -1073,13 +1074,19 @@ export async function runBppMine(args: BppMineArgs): Promise<BppCmdResult> {
       team: args.team,
       log: (m: string) => process.stderr.write(m + "\n"),
     });
-    return {
-      exitCode: result.exit_code,
-      stdout:
-        `挖矿完成 ${result.run_id}：${result.candidates_total} 条候选，` +
+    const base = result.budget_exhausted
+      ? `挖矿提前停止 ${result.run_id}：预算耗尽（budget exhausted），本批未产出候选，` +
+        `${result.llm_calls} 次大模型调用\n`
+      : `挖矿完成 ${result.run_id}：${result.candidates_total} 条候选，` +
         `${result.auto_pushed} 条自动推送进收件箱，` +
         `${result.pool_retained} 条留在挖矿池，` +
-        `${result.llm_calls} 次大模型调用，花费 $${result.spent_usd.toFixed(4)}\n`,
+        `${result.llm_calls} 次大模型调用，花费 $${result.spent_usd.toFixed(4)}\n`;
+    const note = result.degraded
+      ? "（注意：真实大模型 provider 调用失败，已降级到 mock provider 继续 / degraded fallback）\n"
+      : "";
+    return {
+      exitCode: result.exit_code,
+      stdout: base + note,
       stderr: "",
     };
   } catch (err) {
