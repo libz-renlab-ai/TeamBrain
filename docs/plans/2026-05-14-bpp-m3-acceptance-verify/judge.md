@@ -387,3 +387,52 @@ hand-evaluation".
 Every FAIL row is then a tracked TODO flipped by the M3 PR series; no future
 PR can re-declare M3 "done" by prose alone — it must flip these rows by
 re-running the matching §V1 slice.
+
+## Completion run — 2026-05-14 against `main` @ 4980e76
+
+Recorded in `.judge/2026-05-14-bpp-m3/` (gitignored transient evidence);
+`judge.json` copied into this plan dir as `m3-pass-judge.json`, the §V3
+verdict as `m3-pass-judge-v3.json`.
+
+**Actual verdict: PASS — 14 PASS / 0 FAIL.**
+
+Independently re-graded by a process-isolated `claude -p` judge that saw
+ONLY `judge.json` + `evidence/**` (no source, no conversation context):
+verdict **PASS**, every one of the 14 rows PASS — recorded in
+`m3-pass-judge-v3.json`.
+
+| Row | Verdict | Finding |
+|-----|---------|---------|
+| A1 mine cmd | PASS | `teamagent bpp mine` is a real subcommand; help renders with `help_exit=0` |
+| A2 reads convo repo | PASS | orchestrator `readdirSync`-walks the M2 repo tree + `filterUnmined` cursor; run logs `18 session(s) in repo, 18 un-mined` |
+| A3 ≥5 candidates | PASS | seeded sample mines 6 candidates into the pool (`mining_seeded_candidates=6`) |
+| B1 ≥3 auto-push | PASS | 3 high-tier candidates fan out to member inboxes (`auto_pushed_high_tier=3`) |
+| B2 low-tier to pool | PASS | pool count (6) > auto-push count (3) — sub-threshold candidates retained |
+| C1 mining log traces sessions | PASS | each audit-log line maps `candidate_id` → `source_sessions[]` + `miner` + `llm_calls` + `cost_usd` |
+| C2 budget log recorded | PASS | budget ledger records `spent_usd: 0` explicitly (mock run) |
+| D1 determinism | PASS | two clean runs over the same sample produce byte-identical sorted pools (`diff_exit=0`) |
+| E1 mock fallback on bad key | PASS | non-`--mock` run with an unreachable real provider degrades to mock, logs a clear downgrade note, `mine_exit=0` |
+| F1 budget cap stops batch | PASS | `--budget-usd 0.01` run stops the batch cleanly before the first call, `mine_exit=0` (a budget stop is a clean outcome) |
+| F2 budget ledger persisted | PASS | per-team per-UTC-date JSON ledger on disk carries `team` / `date` / `spent_usd` / `reset_at` |
+| G1 no LLM key leak | PASS | no key literal in `mining/` source; no key value in any run log (both greps `grep_exit=1`) |
+| G2 perf within budget | PASS | 1500-conversation mock run mines in `mined_1500_wall_ms=2441`, perf test passes |
+| H1 repo green | PASS | `--pretty false` typecheck `exit=0`; digital-twin vitest 633 pass / 4 skip / 0 fail |
+
+Every baseline FAIL row was flipped by the M3 PR series — by re-running the
+matching §V1 slice, never by editing this playbook:
+
+| PR | What it shipped | Rows flipped |
+|----|-----------------|--------------|
+| #487 PR-M3A | transcript→`MiningInput` extractor + un-mined cursor | A2 |
+| #489 PR-M3B | mining orchestrator + `bpp mine` CLI + miners fan-out + Wilson gate + auto-push + pool retention + audit log + budget ledger | A1, A2, A3, B1, B2, C1, C2, D1 |
+| #490 PR-M3C | provider selection + bad-key fallback + enforced budget cap + persistent budget ledger + 1500-conversation perf gate | E1, F1, F2, G2 |
+
+The 2 baseline PASS rows (**G1** secret hygiene, **H1** repo green) stayed
+PASS — and **H1** is no longer carried by a hardened-but-flaky `throughput-1500.test.ts`:
+the §V1.H completion run was clean (`vitest_exit=0`, 633 pass / 4 skip) with
+no `ECONNRESET` recurrence, and the same suite passed on CI ubuntu for the
+PR-M3C merge commit.
+
+里程碑三 · 挖矿管线接通 is **closed**: the orchestrator that ties the built
+pieces together exists, is reachable from the CLI, and every acceptance row
+passes a process-isolated re-grade.
