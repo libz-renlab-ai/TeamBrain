@@ -33,7 +33,7 @@ import {
 // digital-twin server so we get realtime fan-out + audit log for
 // free. See docs/superpowers/specs/2026-05-13-best-practice-push-design.md.
 // Phase 4 adds /v1/revoke + /v1/bp-push/force (lead-gated).
-import { handleBpPush, handleInbox } from './bpp/server-handlers.js';
+import { handleBpPush, handleInbox, handleMemberJoin } from './bpp/server-handlers.js';
 import { handleRevoke } from './bpp/revoke.js';
 import { handleForcePush } from './bpp/force-push.js';
 import { listAuditEvents } from './bpp/store.js';
@@ -87,6 +87,8 @@ const ROUTE_BP_REVOKE = '/v1/revoke';
 const ROUTE_BP_FORCE_PUSH = '/v1/bp-push/force';
 /** BPP Gap 2 — accept/reject an inbox item. Body: { inbox_id, receiver_id, action }. */
 const ROUTE_INBOX_ACT = '/v1/inbox/act';
+/** BPP — member self-registration. Body: { user_id, display_name }. */
+const ROUTE_BP_MEMBERS = '/v1/members';
 const ALLOWED_VIDEO_CONTAINERS = new Set(['mov', 'mp4', 'webm', 'mkv']);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -717,7 +719,8 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
       route !== ROUTE_BP_PUSH &&
       route !== ROUTE_BP_REVOKE &&
       route !== ROUTE_BP_FORCE_PUSH &&
-      route !== ROUTE_INBOX_ACT
+      route !== ROUTE_INBOX_ACT &&
+      route !== ROUTE_BP_MEMBERS
     ) {
       send(res, 404);
       return;
@@ -832,6 +835,23 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
           const userHome =
             process.env.HOME ?? process.env.USERPROFILE ?? process.cwd();
           const result = handleInboxAct(outputDir, userHome, json);
+          send(res, 200, result);
+        } catch (err) {
+          send(res, 400, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        return;
+      }
+
+      // BPP — POST /v1/members. Body: { user_id, display_name }. The member
+      // client (`bpp join`) posts here from a clean dev machine to auto-join
+      // the central service. Unauthenticated (members self-register) — same
+      // LAN-readability caveat as the other /v1/* routes.
+      if (route === ROUTE_BP_MEMBERS) {
+        try {
+          const result = handleMemberJoin(outputDir, json);
           send(res, 200, result);
         } catch (err) {
           send(res, 400, {

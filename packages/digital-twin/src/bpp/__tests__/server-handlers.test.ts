@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { handleBpPush, handleInbox } from '../server-handlers.js';
-import { listInbox, readBp } from '../store.js';
+import { handleBpPush, handleInbox, handleMemberJoin } from '../server-handlers.js';
+import { listInbox, readBp, readMembers } from '../store.js';
 import type { BestPractice } from '../types.js';
 
 function makeBp(id: string): BestPractice {
@@ -88,5 +88,37 @@ describe('BPP server handlers', () => {
     expect(() =>
       handleBpPush(dir, { bp: makeBp('bp-y'), receivers: 'not-an-array' } as unknown),
     ).toThrow(/array/);
+  });
+
+  it('handleMemberJoin self-registers a user as role: member', () => {
+    const res = handleMemberJoin(dir, {
+      user_id: 'xiaoli@team.com',
+      display_name: 'Xiao Li',
+    });
+    expect(res).toEqual({ ok: true, user_id: 'xiaoli@team.com' });
+    const members = readMembers(dir);
+    expect(members).toHaveLength(1);
+    expect(members[0]!.user_id).toBe('xiaoli@team.com');
+    expect(members[0]!.display_name).toBe('Xiao Li');
+    expect(members[0]!.role).toBe('member');
+  });
+
+  it('handleMemberJoin does not clobber an existing lead role', () => {
+    handleMemberJoin(dir, { user_id: 'laozhang', display_name: 'Lao Zhang' });
+    handleMemberJoin(dir, { user_id: 'laozhang', display_name: 'Lao Zhang' });
+    // Idempotent upsert by user_id — still one row, still a member.
+    expect(readMembers(dir)).toHaveLength(1);
+  });
+
+  it('handleMemberJoin rejects a body without user_id', () => {
+    expect(() =>
+      handleMemberJoin(dir, { display_name: 'No Id' } as unknown),
+    ).toThrow(/user_id/);
+  });
+
+  it('handleMemberJoin rejects a body without display_name', () => {
+    expect(() =>
+      handleMemberJoin(dir, { user_id: 'x' } as unknown),
+    ).toThrow(/display_name/);
   });
 });

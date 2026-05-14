@@ -195,4 +195,36 @@ describe('BPP e2e via live mock-server', () => {
     expect(body.ok).toBe(false);
     expect(body.error).toMatch(/user/);
   });
+
+  it('POST /v1/members self-registers a member, GET /v1/role confirms member tier', async () => {
+    const joinRes = await fetch(`${server.url}/v1/members`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        user_id: 'xiaowang@team.com',
+        display_name: 'Xiao Wang',
+      }),
+    });
+    expect(joinRes.status).toBe(200);
+    const joinBody = (await joinRes.json()) as { ok: boolean; user_id: string };
+    expect(joinBody).toEqual({ ok: true, user_id: 'xiaowang@team.com' });
+
+    const roleRes = await fetch(
+      `${server.url}/v1/role?user=xiaowang%40team.com`,
+    );
+    const roleBody = (await roleRes.json()) as { tier: string };
+    expect(roleBody.tier).toBe('member');
+  });
+
+  it('POST /v1/members with a malformed body returns 400', async () => {
+    const res = await fetch(`${server.url}/v1/members`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ display_name: 'No Id' }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/user_id/);
+  });
 });
