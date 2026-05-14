@@ -12,14 +12,17 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   mkdtempSync,
+  mkdirSync,
   rmSync,
   existsSync,
   readFileSync,
   readdirSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runMining } from '../orchestrator.js';
+import { extractCandidates } from '../llm-client.js';
 
 const FIXED_NOW = new Date('2026-05-14T12:00:00.000Z');
 
@@ -154,5 +157,169 @@ describe('mining orchestrator — seeded sample run', () => {
     const second = await runMining({ repoDir, stateDir, seedSample: true, mock: true, now: FIXED_NOW });
     expect(second.candidates_total).toBe(0);
     expect(second.auto_pushed).toBe(0);
+  });
+});
+
+// PR-M3C — provider selection + bad-key fallback + budget cap + persistent
+// ledger. Flips the M3 judge harness rows E1 / F1 / F2.
+describe('mining orchestrator — PR-M3C provider fallback + budget', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  function freshDirs(): { repoDir: string; stateDir: string } {
+    const repoDir = join(mkdtempSync(join(tmpdir(), 'm3c-')), 'conv-repo');
+    const stateDir = join(mkdtempSync(join(tmpdir(), 'm3c-')), 'mining-state');
+    dirs.push(join(repoDir, '..'), join(stateDir, '..'));
+    return { repoDir, stateDir };
+  }
+
+  // E1 — a real provider that fails (bad key / unreachable) must degrade to the
+  // deterministic mock provider, log a clear downgrade note, and finish exit 0.
+  it('E1 — degrades to the mock provider when the real provider fails', async () => {
+    const { repoDir, stateDir } = freshDirs();
+    const logs: string[] = [];
+    // Inject a real-provider failure; the mock provider still works.
+    const failingExtract: typeof extractCandidates = async (req, config) => {
+      if (config.provider !== 'mock') throw new Error('simulated bad ANTHROPIC_API_KEY');
+      return extractCandidates(req, config);
+    };
+
+    const result = await runMining({
+      repoDir,
+      stateDir,
+      seedSample: true,
+      mock: false,
+      now: FIXED_NOW,
+      extractCandidatesFn: failingExtract,
+      log: (m) => logs.push(m),
+    });
+
+    expect(result.exit_code).toBe(0);
+    expect(result.degraded).toBe(true);
+    expect(result.budget_exhausted).toBe(false);
+    // the miners still ran — the degraded LLM pass only affects call metrics
+    expect(result.candidates_total).toBe(6);
+    expect(logs.some((l) => /降级|fallback|degrad/i.test(l))).toBe(true);
+  });
+
+  // F1 — a $0.01 cap with a real provider requested must stop the batch before
+  // the first call (per-call estimate 0.02 > 0.01), cleanly, exit 0.
+  it('F1 — a budget cap stops the batch cleanly before the first LLM call', async () => {
+    const { repoDir, stateDir } = freshDirs();
+    const logs: string[] = [];
+    const failingExtract: typeof extractCandidates = async (req, config) => {
+      if (config.provider !== 'mock') throw new Error('real provider must not be reached — budget trips first');
+      return extractCandidates(req, config);
+    };
+
+    const result = await runMining({
+      repoDir,
+      stateDir,
+      seedSample: true,
+      mock: false,
+      budgetUsd: 0.01,
+      now: FIXED_NOW,
+      extractCandidatesFn: failingExtract,
+      log: (m) => logs.push(m),
+    });
+
+    expect(result.exit_code).toBe(0);
+    expect(result.budget_exhausted).toBe(true);
+    expect(result.candidates_total).toBe(0);
+    expect(logs.some((l) => /预算|exhausted|stopped/i.test(l))).toBe(true);
+
+    const ledger = JSON.parse(
+      readFileSync(join(stateDir, 'budget-default-2026-05-14.json'), 'utf8'),
+    ) as { budget_exhausted: boolean };
+    expect(ledger.budget_exhausted).toBe(true);
+  });
+
+  // F1 control — an explicit --mock run never trips the cap (estimate is 0).
+  it('F1 — an explicit --mock run never trips the budget cap', async () => {
+    const { repoDir, stateDir } = freshDirs();
+    const result = await runMining({
+      repoDir,
+      stateDir,
+      seedSample: true,
+      mock: true,
+      budgetUsd: 0.01,
+      now: FIXED_NOW,
+    });
+    expect(result.exit_code).toBe(0);
+    expect(result.budget_exhausted).toBe(false);
+    expect(result.candidates_total).toBe(6);
+  });
+
+  // F2 — the budget ledger persists: a second same-day run accumulates onto
+  // the first instead of overwriting it.
+  it('F2 — a same-day re-run accumulates onto the prior budget ledger', async () => {
+    const { repoDir, stateDir } = freshDirs();
+    mkdirSync(stateDir, { recursive: true });
+    // simulate an earlier same-day run's ledger
+    writeFileSync(
+      join(stateDir, 'budget-default-2026-05-14.json'),
+      JSON.stringify({
+        team: 'default',
+        date: '2026-05-14',
+        spent_usd: 1.5,
+        estimated_consumed_usd: 0.06,
+        llm_calls: 7,
+        limit_usd: 5,
+        reset_at: '2026-05-15T00:00:00.000Z',
+        budget_exhausted: false,
+      }) + '\n',
+      'utf8',
+    );
+
+    const result = await runMining({
+      repoDir,
+      stateDir,
+      seedSample: true,
+      mock: true,
+      now: FIXED_NOW,
+    });
+
+    const ledger = JSON.parse(
+      readFileSync(join(stateDir, 'budget-default-2026-05-14.json'), 'utf8'),
+    ) as { spent_usd: number; llm_calls: number };
+    // mock run adds 0 spend; the seeded sample is all 'rule' candidates → 1 call
+    expect(ledger.spent_usd).toBe(1.5);
+    expect(ledger.llm_calls).toBe(7 + result.llm_calls);
+    expect(result.llm_calls).toBeGreaterThanOrEqual(1);
+  });
+
+  // F2 — daily reset: a prior-day ledger is never loaded; today starts fresh.
+  it('F2 — a new UTC date starts a fresh ledger (daily reset)', async () => {
+    const { repoDir, stateDir } = freshDirs();
+    mkdirSync(stateDir, { recursive: true });
+    // yesterday's ledger — must NOT bleed into today's run
+    writeFileSync(
+      join(stateDir, 'budget-default-2026-05-13.json'),
+      JSON.stringify({
+        team: 'default',
+        date: '2026-05-13',
+        spent_usd: 99,
+        estimated_consumed_usd: 99,
+        llm_calls: 999,
+        limit_usd: 5,
+        reset_at: '2026-05-14T00:00:00.000Z',
+        budget_exhausted: true,
+      }) + '\n',
+      'utf8',
+    );
+
+    await runMining({ repoDir, stateDir, seedSample: true, mock: true, now: FIXED_NOW });
+
+    const today = JSON.parse(
+      readFileSync(join(stateDir, 'budget-default-2026-05-14.json'), 'utf8'),
+    ) as { spent_usd: number };
+    expect(today.spent_usd).toBe(0);
+    // yesterday's file is left untouched
+    const yesterday = JSON.parse(
+      readFileSync(join(stateDir, 'budget-default-2026-05-13.json'), 'utf8'),
+    ) as { spent_usd: number };
+    expect(yesterday.spent_usd).toBe(99);
   });
 });
