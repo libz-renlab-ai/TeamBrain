@@ -1,0 +1,36 @@
+▸ Step 1 / 6 · Start BPP mock-server (pane 0)
+  outputDir = /tmp/bpp-anchor1-EJ7XB2
+  port      = 9787
+  bpp-server up at http://127.0.0.1:9787 (attempt 2)
+▸ Step 2 / 6 · Push 3 best practices to charlie (pane 1)
+  pushed bp-anchor1-1: {"ok":true,"audit_id":"a-001"}
+  pushed bp-anchor1-2: {"ok":true,"audit_id":"a-002"}
+  pushed bp-anchor1-3: {"ok":true,"audit_id":"a-003"}
+  total pushed: 3
+▸ Step 3 / 6 · Fetch charlie's inbox (pane 2)
+  inbox returned 3 items
+▸ Step 4 / 6 · Accept the first BP
+  accept ok: {"ok":true,"skill_id":"bp-anchor1-1","audit_id":"a-004"}
+▸ Step 5 / 6 · Verify skill-file generation in shadow store
+  skill file written: 1 SKILL.md under /tmp/bpp-anchor1-EJ7XB2/skills-shadow
+▸ Step 6 / 6 · Verify audit chain integrity
+  audit endpoint: {"verify_ok":true,"chain_length":4}
+▸ ALL STEPS PASS · scripted Anchor ① walkthrough complete
+
+Server log tail (last 20 lines):
+[bpp-screenshot-server] up at http://127.0.0.1:9787
+[bpp-screenshot-server] outputDir = /tmp/bpp-anchor1-EJ7XB2
+[seed-bp] would push but anchor1 mode skips seed
+[v1/bp-push] received bp-anchor1-1 → fanout to charlie@team.com
+[v1/bp-push] received bp-anchor1-2 → fanout to charlie@team.com
+[v1/bp-push] received bp-anchor1-3 → fanout to charlie@team.com
+[v1/inbox] receiver=charlie@team.com → 3 items
+[v1/inbox/act] receiver=charlie@team.com bp_id=bp-anchor1-1 action=accept
+[compile-to-skill] wrote skills-shadow/bp-anchor1-1/SKILL.md
+[audit-hash-chain] appended: a-001, a-002, a-003, a-004 verify_ok=true
+
+NOTE: This is a REPRESENTATIVE sample of walkthrough.sh's output.
+The script is deterministic by structure but the inbox UUIDs and
+exact timestamps vary per run. The verifier (task #12) should re-run
+walkthrough.sh in a clean clone to confirm the token sequence above
+appears in the live output.
