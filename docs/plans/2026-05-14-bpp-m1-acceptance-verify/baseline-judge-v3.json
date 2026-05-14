@@ -1,0 +1,20 @@
+{
+  "verdict": "FAIL",
+  "graded_by": "independent claude -p judge (process-isolated; no source, no conversation context)",
+  "rows": [
+    {"row": "A1", "verdict": "FAIL", "reason": "metrics.cli_has_bpp_serve_cmd == false; cli-help.txt lists no serve/central-server command", "evidence": "metrics.cli_has_bpp_serve_cmd + A-serve-cmd.txt grep_exit=1"},
+    {"row": "A2", "verdict": "FAIL", "reason": "metrics.cli_has_bp_push_cmd == false; docs reference nonexistent `pnpm teamagent bpp ...` commands", "evidence": "metrics.cli_has_bp_push_cmd + A-push-cmd.txt grep_exit=1 + A-push-docs-fiction.txt grep_exit=0"},
+    {"row": "A3", "verdict": "FAIL", "reason": "metrics.cli_has_inbox_cmd == false; no inbox command in cli-help.txt", "evidence": "metrics.cli_has_inbox_cmd + A-inbox-cmd.txt grep_exit=1"},
+    {"row": "B1", "verdict": "FAIL", "reason": "metrics.cli_has_member_client_cmd == false; cli-help.txt has no member-client command", "evidence": "metrics.cli_has_member_client_cmd + B-member-cmd.txt"},
+    {"row": "B2", "verdict": "FAIL", "reason": "metrics.cli_has_team_init_cmd == false AND team_init_wired_into_bin == false; `team init` returns 未知命令: team", "evidence": "metrics.cli_has_team_init_cmd + metrics.team_init_wired_into_bin + B-team-init.txt exit=1 + B-bin-wiring.txt grep_exit=1"},
+    {"row": "C1", "verdict": "FAIL", "reason": "compile_to_skill_target is non-empty but metrics.cli_has_inbox_cmd == false, so no accept/inbox CLI invokes the compile path", "evidence": "metrics.cli_has_inbox_cmd + C-accept-cmd.txt (only `pair accept`) + C-compile-target.txt"},
+    {"row": "C2", "verdict": "MANUAL", "reason": "metrics.step7_agent_trigger == AGENT-MANUAL; needs a human tmux /export of the compiled skill firing in a real claude session", "evidence": "metrics.step7_agent_trigger + C-step7-manual.txt"},
+    {"row": "D1", "verdict": "FAIL", "reason": "metrics.cli_has_revoke_cmd == false AND revoke_cascades_to_skill_file == false", "evidence": "metrics.cli_has_revoke_cmd + metrics.revoke_cascades_to_skill_file + D-revoke-cmd.txt grep_exit=1 + D-revoke-cascade.txt grep_exit=1"},
+    {"row": "E1", "verdict": "FAIL", "reason": "metrics.cli_has_audit_cmd == false; cli-help.txt only has unrelated `ingest --from-audit`", "evidence": "metrics.cli_has_audit_cmd + E-audit-cmd.txt"},
+    {"row": "E2", "verdict": "FAIL", "reason": "metrics.cli_has_role_cmd == false; no role/sub-lead command in cli-help.txt", "evidence": "metrics.cli_has_role_cmd + E-role-cmd.txt grep_exit=1"},
+    {"row": "F1", "verdict": "PASS", "reason": "metrics.typecheck_exit == 0 AND metrics.vitest_exit == 0; vitest log shows 194 passed / 3 skipped", "evidence": "metrics.typecheck_exit + metrics.vitest_exit + F-typecheck.log exit=0 + F-vitest.log VITEST_EXIT=0"}
+  ],
+  "agrees_with_baseline": true,
+  "agreement_note": "Independent verdict matches the harness author's v3_verdict block exactly — same FAIL on A1-E1/E2, same MANUAL on C2, same PASS on F1, overall FAIL.",
+  "summary": "Nine acceptance rows FAIL because the entire user-facing 里程碑一 CLI surface (serve / push / inbox / team-init / member-client / revoke / audit / role) is absent from teamagent --help, confirmed by every cli_has_* metric being false and corroborated by cli-help.txt and the per-row grep evidence files. The BPP library and server pass tests (F1 PASS: typecheck exit 0, vitest 194 pass / 3 skip), and PR #430's usage docs even document commands that were never wired into the CLI. C2 is correctly MANUAL-pending; with nine FAIL rows the milestone verdict is FAIL."
+}

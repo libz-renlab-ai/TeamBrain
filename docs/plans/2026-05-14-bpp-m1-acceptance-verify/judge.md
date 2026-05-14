@@ -235,7 +235,13 @@ must not be FAIL). Output JSON: {"verdict","rows":[{row,verdict,reason,evidence}
 Recorded in `.judge/2026-05-14-bpp-m1/` (gitignored transient evidence);
 `judge.json` copied into this plan dir as `baseline-judge.json`.
 
-**Actual baseline verdict: FAIL — 10 FAIL / 1 PASS / 1 MANUAL.**
+**Actual baseline verdict: FAIL — 9 FAIL / 1 PASS / 1 MANUAL.**
+
+Independently re-graded by a process-isolated `claude -p` judge that saw
+ONLY `judge.json` + `evidence/**` (no source, no conversation context):
+verdict **FAIL**, row-by-row identical to the table below — recorded in
+`baseline-judge-v3.json`. The independent re-grade also corrected an
+off-by-one in the harness author's first summary draft (9 FAIL, not 10).
 
 | Row | Verdict | Finding |
 |-----|---------|---------|
