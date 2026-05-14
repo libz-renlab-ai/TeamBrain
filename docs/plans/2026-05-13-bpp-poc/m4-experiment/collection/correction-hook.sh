@@ -13,7 +13,16 @@ MEMBER="${BPP_MEMBER_ID:-}"
 [[ -n "$MEMBER" ]] || exit 0
 TASK="${BPP_CURRENT_TASK:-unknown}"
 
-KEYWORDS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/correction-keywords.txt"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=jsonl-lib.sh
+source "$HERE/jsonl-lib.sh"
+# This runs from a UserPromptSubmit hook — env vars are not fully trusted.
+# Validate before either value reaches printf-built JSON. A bad value here
+# means "skip silently" (exit 0), not "crash the user's prompt".
+[[ "$MEMBER" =~ ^[A-Za-z0-9._@-]+$ ]] || exit 0
+[[ "$TASK" == "unknown" || "$TASK" =~ ^[a-z0-9][a-z0-9-]*$ ]] || TASK="unknown"
+
+KEYWORDS_FILE="$HERE/correction-keywords.txt"
 [[ -f "$KEYWORDS_FILE" ]] || exit 0
 
 matched=""
@@ -29,9 +38,8 @@ done < "$KEYWORDS_FILE"
 
 TODAY="$(date -u +%Y-%m-%d)"
 TS="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/daily" && pwd)"
-mkdir -p "$ROOT/$TODAY"
-FILE="$ROOT/$TODAY/$MEMBER.jsonl"
+FILE="$HERE/daily/$TODAY/$MEMBER.jsonl"
 HASH="$(printf '%s' "$TEXT" | sha256sum | cut -c1-16)"
-printf '{"type":"ai-correction","ts":"%s","member_id":"%s","task_slug":"%s","transcript_snippet_hash":"sha256:%s","matched_keyword":"%s"}\n' \
-  "$TS" "$MEMBER" "$TASK" "$HASH" "$matched" >> "$FILE"
+LINE="$(printf '{"type":"ai-correction","ts":"%s","member_id":"%s","task_slug":"%s","transcript_snippet_hash":"sha256:%s","matched_keyword":"%s"}' \
+  "$TS" "$MEMBER" "$TASK" "$HASH" "$matched")"
+append_jsonl "$FILE" "$LINE"

@@ -15,6 +15,13 @@ python3 "$HERE/tools/random-split.py" \
   --seed 20260513 \
   --out "$TMP/groups.json"
 
+echo "=== Step 1b · balance-check (baseline questionnaire equivalence) ==="
+# Advisory in the dry-run: example screening rows are synthetic, so a FAIL
+# here is not a real signal. We run it to prove the wiring works.
+python3 "$HERE/tools/balance-check.py" \
+  --screening "$HERE/recruitment/screening-examples/screening-*.json" \
+  --groups "$TMP/groups.json" || echo "(balance-check non-zero — expected on synthetic example data)"
+
 echo "=== Step 2 · aggregate ==="
 python3 "$HERE/analysis/aggregate.py" \
   --input "$HERE/collection/example-daily/" \
@@ -31,7 +38,9 @@ echo "Groups:"
 cat "$TMP/groups.json" | python3 -m json.tool | head -30
 echo
 echo "Verdict overall_pass:"
-python3 -c "import json; print(json.load(open('$TMP/verdict.json'))['overall_pass'])"
+# Pass the path via argv, not string interpolation, so a TMP value containing
+# a quote cannot break out of the Python string literal.
+python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['overall_pass'])" "$TMP/verdict.json"
 echo
 echo "All artifacts written under $TMP/"
 echo "NOTE: this is a SMOKE TEST. Real M4 verdict requires real human data."

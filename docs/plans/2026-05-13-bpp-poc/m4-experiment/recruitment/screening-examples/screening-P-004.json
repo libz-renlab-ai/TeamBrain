@@ -1,0 +1,14 @@
+{
+  "member_id": "P-004",
+  "filled_at": "2026-05-12T16:00:00Z",
+  "answers": {
+    "q1_hours": 1,
+    "q2_tools": ["claude_code"],
+    "q3_langs": ["typescript"],
+    "q4_proficiency": 5,
+    "q5_recent_usage": 1,
+    "q6_helps_or_hurts": 5,
+    "q7_prior_experiment": false,
+    "q8_free_text": "example screening row for dry-run smoke test only"
+  }
+}
