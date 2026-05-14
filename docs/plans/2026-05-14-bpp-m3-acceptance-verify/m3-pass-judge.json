@@ -1,0 +1,23 @@
+{
+  "run_id": "2026-05-14-bpp-m3",
+  "exit_code": 0,
+  "metrics": {
+    "cli_has_mine_cmd": true,
+    "mining_reads_convo_repo": true,
+    "mining_seeded_candidates": 6,
+    "auto_pushed_high_tier": 3,
+    "mining_pool_retains_low_tier": true,
+    "mining_log_traces_sessions": true,
+    "budget_log_recorded": true,
+    "mining_deterministic": true,
+    "mock_fallback_on_bad_key": true,
+    "budget_cap_stops_batch": true,
+    "budget_persisted_to_disk": true,
+    "no_llm_key_in_source": true,
+    "no_llm_key_in_logs": true,
+    "mining_perf_ok": true,
+    "typecheck_exit": 0,
+    "vitest_exit": 0
+  },
+  "evidence_dir": ".judge/2026-05-14-bpp-m3/evidence/"
+}
