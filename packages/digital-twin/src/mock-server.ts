@@ -4,6 +4,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import type { Server as HttpsServer } from 'node:https';
 import type { Socket } from 'node:net';
 import { gunzipSync } from 'node:zlib';
 import {
@@ -43,6 +44,11 @@ import { getRoleTier } from './bpp/role-hierarchy.js';
 // subscriptions stay isolated (tests run many parallel servers).
 import { BppSseBroadcaster } from './bpp/sse-broadcast.js';
 import { handleInboxAct } from './bpp/accept-handler.js';
+// M2 (对话上传通道) — transport security on the conversation-upload path.
+// `wrapServerWithHttps` reuses the plain-HTTP request listener over TLS;
+// `requireBearerToken` gates POST /v1/cc-sessions when BPP_AUTH_TOKEN is set.
+import { wrapServerWithHttps } from './bpp/https-server.js';
+import { requireBearerToken } from './bpp/auth-gate.js';
 
 // Re-exported here for backwards compat — `safeUserId` / `dateStamp` were
 // originally defined in this module before `cc-status/path-safety.ts` split
@@ -64,6 +70,19 @@ export interface MockServerOptions {
   host?: string;
   /** Clock for date-stamping subdirectories. Defaults to () => new Date(). */
   now?: () => Date;
+  /**
+   * M2 — when set, serve over TLS using this PEM key+cert pair instead of
+   * plain HTTP. The same request listener is reused via `wrapServerWithHttps`;
+   * the handle's `url` reports `https://`.
+   */
+  tls?: { keyPath: string; certPath: string };
+  /**
+   * M2 — when set (non-empty), `POST /v1/cc-sessions` requires a matching
+   * `Authorization: Bearer <token>`. Defaults to `process.env.BPP_AUTH_TOKEN`.
+   * Empty/undefined = auth disabled (dev/test default) so existing callers
+   * and the M1 bpp routes are unaffected.
+   */
+  authToken?: string;
 }
 
 export interface MockServerHandle {
@@ -668,12 +687,16 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
   mkdirSync(outputDir, { recursive: true });
   const host = opts.host ?? '127.0.0.1';
   const now = opts.now ?? (() => new Date());
+  // M2 — token-auth gate on the conversation-upload endpoint. Empty string
+  // means auth is disabled (the dev/test default), which keeps every existing
+  // caller and the M1 bpp routes working unchanged.
+  const authToken = opts.authToken ?? process.env.BPP_AUTH_TOKEN ?? '';
   // Gap 2: per-instance SSE broadcaster — receivers subscribe via
   // GET /v1/inbox/stream?receiver=<id>, server-side fires events after
   // handleBpPush/handleRevoke succeed. Held in closure so tests stay isolated.
   const broadcaster = new BppSseBroadcaster();
 
-  const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const requestHandler = (req: IncomingMessage, res: ServerResponse): void => {
     if (req.method === 'GET') {
       // Gap 2 — SSE endpoint: GET /v1/inbox/stream?receiver=<id>. Long-lived
       // text/event-stream connection; each push/revoke broadcast writes one
@@ -724,6 +747,19 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
     ) {
       send(res, 404);
       return;
+    }
+
+    // M2 — token auth on the conversation-upload endpoint. When BPP_AUTH_TOKEN
+    // is set, POST /v1/cc-sessions requires a matching Bearer token. Checked
+    // BEFORE the body read so a missing/wrong token 401s regardless of payload.
+    // Scoped to cc-sessions only — the M1 bpp routes keep their existing
+    // unauthenticated contract; widening the gate is out of M2 scope.
+    if (authToken && route === ROUTE_CC_SESSIONS) {
+      const auth = requireBearerToken(req.headers, authToken);
+      if (!auth.ok) {
+        send(res, 401, { error: 'unauthorized' });
+        return;
+      }
     }
 
     let bodyBytes = 0;
@@ -1080,7 +1116,20 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
         send(res, 500);
       }
     });
-  });
+  };
+
+  // M2 — when TLS opts are present, serve the SAME request listener over TLS
+  // via `wrapServerWithHttps` (the plain-HTTP server below is built but never
+  // `.listen()`-ed in that case). Plain HTTP otherwise — tests, dev, and
+  // behind-nginx-TLS deploys are unaffected.
+  const httpServer = createServer(requestHandler);
+  const server: Server | HttpsServer = opts.tls
+    ? wrapServerWithHttps({
+        httpsKeyPath: opts.tls.keyPath,
+        httpsCertPath: opts.tls.certPath,
+        http: httpServer,
+      })
+    : httpServer;
 
   // Track open sockets so close() can force-destroy slow connections instead of
   // hanging until systemd's TimeoutStopSec SIGKILL.
@@ -1099,7 +1148,7 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
         return;
       }
       resolve({
-        url: `http://${host}:${addr.port}`,
+        url: `${opts.tls ? 'https' : 'http'}://${host}:${addr.port}`,
         port: addr.port,
         outputDir,
         close: () =>

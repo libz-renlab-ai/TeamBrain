@@ -71,6 +71,10 @@ export function renderBppServeHelp(): string {
     "  --host=<host>  绑定地址（默认 0.0.0.0，或环境变量 HOST）",
     "  --dir=<path>   数据落盘目录（默认 ~/teamagent-collector，或 TEAMAGENT_COLLECTOR_DIR）",
     "",
+    "环境变量（M2 对话上传通道传输安全）:",
+    "  BPP_AUTH_TOKEN              设置后，POST /v1/cc-sessions 需携带 Authorization: Bearer <token>",
+    "  HTTPS_KEY_PATH/HTTPS_CERT_PATH  同时设置后，服务走 TLS 而非明文 HTTP",
+    "",
     "服务器进程持续运行，直到收到 SIGINT / SIGTERM。",
   ].join("\n");
 }
