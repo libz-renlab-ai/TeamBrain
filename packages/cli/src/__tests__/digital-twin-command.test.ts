@@ -18,6 +18,7 @@ import {
   executeDigitalTwinResume,
   executeDigitalTwinStatus,
   executeDigitalTwinInjectMock,
+  executeDigitalTwinMemberStats,
 } from '../commands/digital-twin.js';
 
 function freshHome(): string {
@@ -447,5 +448,106 @@ describe('config file is not corrupted by login twice', () => {
     const raw = readFileSync(cfgPath, 'utf-8');
     const parsed = JSON.parse(raw);
     expect(parsed.uploader.token).toBe('second-token');
+  });
+});
+
+// M2 (对话上传通道) — `teamagent digital-twin member-stats`.
+describe('digital-twin member-stats', () => {
+  it('parses --server / --user / --json', () => {
+    const parsed = parseDigitalTwinArgs([
+      'member-stats',
+      '--server=http://collector:8080',
+      '--user=zhang@libz.ai',
+      '--json',
+    ]);
+    expect(parsed).toEqual({
+      sub: 'member-stats',
+      server: 'http://collector:8080',
+      user: 'zhang@libz.ai',
+      json: true,
+    });
+  });
+
+  /** Minimal Response stub for the injected fetchFn. */
+  function stubFetch(status: number, body: unknown): typeof fetch {
+    return (async () => ({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+    })) as unknown as typeof fetch;
+  }
+
+  it('prints the three self-view stats from the central server', async () => {
+    const cap = captureOutput();
+    const result = await executeDigitalTwinMemberStats(
+      { sub: 'member-stats', user: 'zhang@libz.ai' },
+      {
+        print: cap.print,
+        printErr: cap.printErr,
+        fetchFn: stubFetch(200, {
+          ok: true,
+          user_id: 'zhang@libz.ai',
+          uploaded_total: 7,
+          last_upload_at: '2026-05-14T10:00:00.000Z',
+          redaction_count: 4,
+        }),
+      },
+    );
+    expect(result.exitCode).toBe(0);
+    const joined = cap.out.join('\n');
+    expect(joined).toContain('已上传对话总量：7');
+    expect(joined).toContain('最近一次上传时间：2026-05-14T10:00:00.000Z');
+    expect(joined).toContain('敏感字段被模糊化次数：4');
+  });
+
+  it('emits raw JSON under --json', async () => {
+    const cap = captureOutput();
+    await executeDigitalTwinMemberStats(
+      { sub: 'member-stats', user: 'zhang@libz.ai', json: true },
+      {
+        print: cap.print,
+        printErr: cap.printErr,
+        fetchFn: stubFetch(200, {
+          ok: true,
+          user_id: 'zhang@libz.ai',
+          uploaded_total: 2,
+          last_upload_at: null,
+          redaction_count: 0,
+        }),
+      },
+    );
+    expect(JSON.parse(cap.out.join('\n'))).toMatchObject({
+      user_id: 'zhang@libz.ai',
+      uploaded_total: 2,
+    });
+  });
+
+  it('exits 1 when the central server is unreachable', async () => {
+    const cap = captureOutput();
+    const result = await executeDigitalTwinMemberStats(
+      { sub: 'member-stats', user: 'zhang@libz.ai' },
+      {
+        print: cap.print,
+        printErr: cap.printErr,
+        fetchFn: (async () => {
+          throw new Error('connect ECONNREFUSED');
+        }) as unknown as typeof fetch,
+      },
+    );
+    expect(result.exitCode).toBe(1);
+    expect(cap.err.join('\n')).toContain('无法连接到中心服务');
+  });
+
+  it('exits 1 on a non-ok server response', async () => {
+    const cap = captureOutput();
+    const result = await executeDigitalTwinMemberStats(
+      { sub: 'member-stats', user: 'zhang@libz.ai' },
+      {
+        print: cap.print,
+        printErr: cap.printErr,
+        fetchFn: stubFetch(500, { error: 'boom' }),
+      },
+    );
+    expect(result.exitCode).toBe(1);
   });
 });

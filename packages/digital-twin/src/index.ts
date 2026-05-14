@@ -77,6 +77,8 @@ export {
 
 export { runProdServer, type RunProdServerDeps } from './bin-prod-server.js';
 
+export { computeMemberStats, type MemberStats } from './member-stats.js';
+
 export {
   tapSession,
   projectDirForCwd,

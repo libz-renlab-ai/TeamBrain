@@ -29,6 +29,9 @@ import {
   readLatestAllUsers,
   readHistory,
 } from './cc-status/store.js';
+// M2 (对话上传通道) — member self-view stats ("成员可以查看自己的『已上传对话
+// 总量、最近一次上传时间、敏感字段被模糊化次数』").
+import { computeMemberStats } from './member-stats.js';
 // BPP (Best-Practice Push) — issue/spec dated 2026-05-13. Wires
 // /v1/bp-push (POST) and /v1/inbox (GET) onto the existing
 // digital-twin server so we get realtime fan-out + audit log for
@@ -502,6 +505,19 @@ function handleGet(
       return;
     }
     send(res, 200, { ok: true, user_id: user, tier: getRoleTier(outputDir, user) });
+    return;
+  }
+
+  // M2 — GET /v1/member-stats?user=<id>. A member's self-view of their own
+  // upload activity: 已上传对话总量 / 最近一次上传时间 / 敏感字段被模糊化次数.
+  // Computed on demand from the output-dir tree (no running counter).
+  if (path === '/v1/member-stats') {
+    const user = q.get('user');
+    if (typeof user !== 'string' || user.length === 0) {
+      send(res, 400, { ok: false, error: 'user query param required' });
+      return;
+    }
+    send(res, 200, { ok: true, ...computeMemberStats(outputDir, user) });
     return;
   }
 
@@ -1092,6 +1108,7 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
         // enough ("必须记一条警报"). cc-session transcripts only; recordings
         // carry binary audio that is not text-scannable.
         let l2MatchedKinds: string[] = [];
+        let l2RedactionCount = 0;
         if (isLog) {
           const text = decoded.toString('utf8');
           const findings = detectSensitiveText(text);
@@ -1099,6 +1116,7 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
             // Record only the matched RULE KINDS, never the matched text — an
             // alert that echoed the secret would itself be a privacy leak.
             l2MatchedKinds = [...new Set(findings.map((f) => f.kind))].sort();
+            l2RedactionCount = findings.length;
             decoded = Buffer.from(redactSensitiveText(text), 'utf8');
           }
         }
@@ -1121,6 +1139,38 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
               } catch {
                 // Defense-in-depth: never let a quota sidecar failure 5xx the
                 // transcript upload. Best-effort write only.
+              }
+            }
+          }
+        }
+
+        // M2 — per-session redaction-count sidecar. `GET /v1/member-stats`
+        // sums these on demand for "敏感字段被模糊化次数" — there is no running
+        // counter to drift. l1 = the member's uploader pass (carried on the
+        // envelope); l2 = this server's fallback pass. Written only when at
+        // least one field was scrubbed, so clean transcripts add no files.
+        if (isLog) {
+          const l1RedactionCount =
+            typeof obj.l1_redaction_count === 'number' &&
+            obj.l1_redaction_count >= 0
+              ? obj.l1_redaction_count
+              : 0;
+          if (l1RedactionCount > 0 || l2RedactionCount > 0) {
+            const metaFile = join(targetDir, `${id}.meta.json`);
+            if (isUnder(outputDir, metaFile)) {
+              try {
+                atomicWriteFileSync(
+                  metaFile,
+                  Buffer.from(
+                    JSON.stringify({
+                      l1_redaction_count: l1RedactionCount,
+                      l2_redaction_count: l2RedactionCount,
+                    }),
+                    'utf8',
+                  ),
+                );
+              } catch {
+                // best-effort sidecar — never 5xx a successful upload
               }
             }
           }

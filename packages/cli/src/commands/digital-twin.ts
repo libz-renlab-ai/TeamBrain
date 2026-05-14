@@ -1,12 +1,16 @@
 /**
  * `teamagent digital-twin <subcommand>` handlers.
  *
- * 5 subcommands:
+ * 7 subcommands:
  *   - login <token>  → write token to ~/.teamagent/digital-twin.json
  *   - logout         → clear uploader.token
  *   - status         → human-readable config + queue + daemon status
  *   - pause          → uploader.enabled = false
  *   - resume         → uploader.enabled = true
+ *   - inject-mock    → enqueue a synthetic cc-session for local testing
+ *   - member-stats   → query the central server for this member's upload
+ *                      stats (已上传对话总量 / 最近一次上传时间 / 敏感字段被
+ *                      模糊化次数) — M2 对话上传通道 self-view
  *
  * Handlers accept dependency injection via `homedir` + `print` so tests can
  * point at a tmp HOME and capture stdout without touching the real shell.
@@ -37,7 +41,8 @@ export type DigitalTwinSubcommand =
   | 'status'
   | 'pause'
   | 'resume'
-  | 'inject-mock';
+  | 'inject-mock'
+  | 'member-stats';
 
 export interface DigitalTwinDeps {
   homedir?: () => string;
@@ -54,6 +59,8 @@ export interface DigitalTwinDeps {
   cwd?: () => string;
   /** Inject tapSession (tests pass a fake to avoid real fs deps). */
   tapSession?: typeof tapSession;
+  /** Inject fetch for member-stats (tests pass a stub to avoid the network). */
+  fetchFn?: typeof fetch;
 }
 
 export interface DigitalTwinResult {
@@ -74,13 +81,19 @@ export interface DigitalTwinParsedArgs {
   cwd?: string;
   /** inject-mock: override session id (default: ulid()). */
   sessionId?: string;
+  /** member-stats: central server URL (default: http://127.0.0.1:8080). */
+  server?: string;
+  /** member-stats: user id to query (default: this machine's configured user). */
+  user?: string;
+  /** member-stats: emit raw JSON instead of the human-readable summary. */
+  json?: boolean;
 }
 
 export function parseDigitalTwinArgs(rest: string[]): DigitalTwinParsedArgs {
   const sub = rest[0];
   if (!sub) {
     throw new DigitalTwinArgError(
-      'Usage: teamagent digital-twin <login|logout|status|pause|resume|inject-mock> [args]',
+      'Usage: teamagent digital-twin <login|logout|status|pause|resume|inject-mock|member-stats> [args]',
     );
   }
   switch (sub) {
@@ -112,9 +125,27 @@ export function parseDigitalTwinArgs(rest: string[]): DigitalTwinParsedArgs {
       }
       return result;
     }
+    case 'member-stats': {
+      const result: DigitalTwinParsedArgs = { sub: 'member-stats' };
+      for (let i = 1; i < rest.length; i++) {
+        const a = rest[i]!;
+        if (a === '--server' && rest[i + 1]) {
+          result.server = rest[++i];
+        } else if (a.startsWith('--server=')) {
+          result.server = a.slice('--server='.length);
+        } else if (a === '--user' && rest[i + 1]) {
+          result.user = rest[++i];
+        } else if (a.startsWith('--user=')) {
+          result.user = a.slice('--user='.length);
+        } else if (a === '--json') {
+          result.json = true;
+        }
+      }
+      return result;
+    }
     default:
       throw new DigitalTwinArgError(
-        `Unknown digital-twin subcommand: ${sub}. Use one of login|logout|status|pause|resume|inject-mock.`,
+        `Unknown digital-twin subcommand: ${sub}. Use one of login|logout|status|pause|resume|inject-mock|member-stats.`,
       );
   }
 }
@@ -329,6 +360,63 @@ export function executeDigitalTwinInjectMock(
   return { exitCode: 1 };
 }
 
+/** Default central-server URL — matches runProdServer's default PORT=8080. */
+const DEFAULT_MEMBER_STATS_SERVER = 'http://127.0.0.1:8080';
+
+/**
+ * `teamagent digital-twin member-stats` — M2 (对话上传通道) self-view. Queries
+ * the central server's `GET /v1/member-stats?user=` for this member's
+ * 已上传对话总量 / 最近一次上传时间 / 敏感字段被模糊化次数.
+ */
+export async function executeDigitalTwinMemberStats(
+  parsed: DigitalTwinParsedArgs,
+  deps: DigitalTwinDeps = {},
+): Promise<DigitalTwinResult> {
+  const r = resolveDeps(deps);
+  const fetchFn = deps.fetchFn ?? fetch;
+  const server = (parsed.server ?? DEFAULT_MEMBER_STATS_SERVER).replace(/\/+$/, '');
+  // Default to the member's own configured identity — the spec is "查看自己的".
+  const userIdFn = r.getUserId ?? getUserId;
+  const user = parsed.user ?? userIdFn();
+  if (!user) {
+    r.printErr(
+      'digital-twin member-stats: 无法确定成员身份 — 用 --user=<id> 指定，或先跑 `teamagent digital-twin login`',
+    );
+    return { exitCode: 1 };
+  }
+
+  const url = `${server}/v1/member-stats?user=${encodeURIComponent(user)}`;
+  let resp: Awaited<ReturnType<typeof fetch>>;
+  try {
+    resp = await fetchFn(url);
+  } catch (err) {
+    r.printErr(
+      `digital-twin member-stats: 无法连接到中心服务 ${server} — ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return { exitCode: 1 };
+  }
+  if (!resp.ok) {
+    r.printErr(`digital-twin member-stats: 中心服务返回 ${resp.status}`);
+    return { exitCode: 1 };
+  }
+
+  const body = (await resp.json()) as {
+    user_id?: string;
+    uploaded_total?: number;
+    last_upload_at?: string | null;
+    redaction_count?: number;
+  };
+  if (parsed.json) {
+    r.print(JSON.stringify(body));
+    return { exitCode: 0 };
+  }
+  r.print(`成员 ${body.user_id ?? user} 的上传统计：`);
+  r.print(`  已上传对话总量：${body.uploaded_total ?? 0}`);
+  r.print(`  最近一次上传时间：${body.last_upload_at ?? '（暂无）'}`);
+  r.print(`  敏感字段被模糊化次数：${body.redaction_count ?? 0}`);
+  return { exitCode: 0 };
+}
+
 /** Top-level dispatcher used by bin.ts. */
 export async function executeDigitalTwin(
   parsed: DigitalTwinParsedArgs,
@@ -347,5 +435,7 @@ export async function executeDigitalTwin(
       return executeDigitalTwinResume(deps);
     case 'inject-mock':
       return executeDigitalTwinInjectMock(parsed, deps);
+    case 'member-stats':
+      return executeDigitalTwinMemberStats(parsed, deps);
   }
 }

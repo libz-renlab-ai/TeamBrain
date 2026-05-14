@@ -831,3 +831,103 @@ describe('mock-server — M2 server-side L2 scan', () => {
   });
 });
 
+// M2 (对话上传通道) — member self-view stats. GET /v1/member-stats?user=
+// returns 已上传对话总量 / 最近一次上传时间 / 敏感字段被模糊化次数, computed on
+// demand from the output-dir tree. See judge.md §V1.G.
+describe('mock-server — M2 member-stats', () => {
+  let server: MockServerHandle;
+  let outputDir: string;
+
+  beforeEach(async () => {
+    outputDir = mkdtempSync(join(tmpdir(), 'dt-m2stats-'));
+    server = await startMockServer({ port: 0, outputDir, now: () => FROZEN });
+  });
+
+  afterEach(async () => {
+    await server.close();
+  });
+
+  /** POST a cc-session, optionally declaring an L1 redaction count + a raw
+   *  (un-redacted) transcript to exercise the server-side L2 pass. */
+  async function postSession(
+    sessionId: string,
+    userId: string,
+    opts: { l1?: number; rawTranscript?: string } = {},
+  ): Promise<Response> {
+    const transcript =
+      opts.rawTranscript ?? '{"role":"user","content":"hello"}\n';
+    const compressed = gzipSync(Buffer.from(transcript));
+    const payload: Record<string, unknown> = {
+      schema_version: 1,
+      envelope: {
+        session_id: sessionId,
+        user_id: userId,
+        captured_at: '2026-05-09T03:00:00.000Z',
+      },
+      transcript: { compression: 'gzip+base64', content: compressed.toString('base64') },
+    };
+    if (opts.l1 !== undefined) payload.l1_redaction_count = opts.l1;
+    return fetch(`${server.url}/v1/cc-sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  interface MemberStatsBody {
+    ok?: boolean;
+    user_id?: string;
+    uploaded_total?: number;
+    last_upload_at?: string | null;
+    redaction_count?: number;
+  }
+
+  async function getStats(
+    user: string,
+  ): Promise<{ status: number; body: MemberStatsBody }> {
+    const res = await fetch(
+      `${server.url}/v1/member-stats?user=${encodeURIComponent(user)}`,
+    );
+    return { status: res.status, body: (await res.json()) as MemberStatsBody };
+  }
+
+  it('400s when the user query param is missing', async () => {
+    const res = await fetch(`${server.url}/v1/member-stats`);
+    expect(res.status).toBe(400);
+  });
+
+  it('reports zeroed stats for a never-uploaded member', async () => {
+    const { status, body } = await getStats('nobody@libz.ai');
+    expect(status).toBe(200);
+    expect(body.uploaded_total).toBe(0);
+    expect(body.last_upload_at).toBeNull();
+    expect(body.redaction_count).toBe(0);
+  });
+
+  it('counts uploaded transcripts and reports a last_upload_at', async () => {
+    await postSession('stats-s1', 'zhang@libz.ai');
+    await postSession('stats-s2', 'zhang@libz.ai');
+    const { body } = await getStats('zhang@libz.ai');
+    expect(body.uploaded_total).toBe(2);
+    expect(body.last_upload_at).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+  });
+
+  it('sums the L1 redaction count declared on the upload envelope', async () => {
+    await postSession('stats-l1a', 'zhang@libz.ai', { l1: 4 });
+    await postSession('stats-l1b', 'zhang@libz.ai', { l1: 1 });
+    const { body } = await getStats('zhang@libz.ai');
+    expect(body.redaction_count).toBe(5);
+  });
+
+  it('also counts server-side L2 redactions toward the member total', async () => {
+    // A raw AWS key reaches the server un-redacted — the L2 pass scrubs it and
+    // the per-session sidecar records the L2 count.
+    await postSession('stats-l2', 'li@libz.ai', {
+      rawTranscript: '{"role":"user","content":"key AKIAIOSFODNN7EXAMPLE"}\n',
+    });
+    const { body } = await getStats('li@libz.ai');
+    expect(body.uploaded_total).toBe(1);
+    expect(body.redaction_count).toBeGreaterThanOrEqual(1);
+  });
+});
+
