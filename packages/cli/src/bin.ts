@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { runSkeletonDemo } from "./commands/skeleton-demo.js";
+import { buildStorefrontHelp, isShowAll } from "./help-text.js";
 import {
   executeVerifyAnchors,
   parseVerifyAnchorsArgs,
@@ -1610,8 +1611,14 @@ async function main(): Promise<void> {
     case "--help":
     case "-h":
     case "help": {
-      process.stdout.write(
-        [
+      // CLI surface triage: default `teamagent --help` lists only the 8
+      // storefront commands, curated by the 3 business features. The
+      // pre-existing full help text (already an incomplete listing — some
+      // commands like `presence` never had a help line) is kept as-is below
+      // under `teamagent help --all`. No `case` dispatch changed — every
+      // command stays callable as before.
+      const showAll = isShowAll(rest);
+      const fullHelpLines = [
           "teamagent — TeamAgent CLI",
           "",
           "用法:",
@@ -1756,7 +1763,9 @@ async function main(): Promise<void> {
           "环境变量:",
           "  TEAMAGENT_VISIBILITY=silent|smart|verbose    归因渲染模式（默认 verbose）",
           "",
-        ].join("\n"),
+      ];
+      process.stdout.write(
+        showAll ? fullHelpLines.join("\n") : buildStorefrontHelp(),
       );
       return;
     }
