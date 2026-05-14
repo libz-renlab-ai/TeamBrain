@@ -48,14 +48,23 @@ Each slice maps to numbered steps of §2 里程碑一 验证方法.
     pnpm teamagent --help > evidence_dir/cli-help.txt 2>&1
     grep -nE 'bpp|bp-push|bp-serve|central.?server' evidence_dir/cli-help.txt \
       > evidence_dir/A-serve-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/A-serve-cmd.txt
-2.  # step 4 — push one BestPractice to the push endpoint (external command)
-    #   requires a running server + a documented port; capture whether the
-    #   acceptance docs even name a stable serve command + port.
+2.  # step 4 — push one BestPractice to the push endpoint. The REAL existence
+    #   probe greps cli-help.txt: a command exists only if the CLI lists it,
+    #   never because a doc mentions it. Anchored on the `teamagent <cmd>`
+    #   command prefix so it does NOT false-match an unrelated `--push` flag
+    #   (e.g. `m5-publish [--push]`). grep_exit=0 here == CLI has the command.
+    grep -nE 'teamagent (bpp|bp-push)\b' evidence_dir/cli-help.txt \
+      > evidence_dir/A-push-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/A-push-cmd.txt
+2b. # SEPARATE probe — fictional-docs detector. The usage/ops guides shipped in
+    #   PR #430 instruct `pnpm teamagent bpp ...`; this probe records that the
+    #   docs reference commands that do NOT exist in cli-help.txt. grep_exit=0
+    #   here is a RED flag (docs promise a CLI that was never wired), NOT a pass.
     grep -rnE 'teamagent .*(bpp|bp-push)|/v1/bp-push' docs/usage/ docs/ops/ \
-      > evidence_dir/A-push-cmd.txt 2>&1 ; echo "grep_exit=$?" >> evidence_dir/A-push-cmd.txt
-3.  # step 5 — inbox fan-out reachable from a command
-    grep -rnE 'teamagent .*inbox|/v1/inbox' docs/usage/ \
-      > evidence_dir/A-inbox-cmd.txt 2>&1 ; echo "grep_exit=$?" >> evidence_dir/A-inbox-cmd.txt
+      > evidence_dir/A-push-docs-fiction.txt 2>&1 ; echo "grep_exit=$?" >> evidence_dir/A-push-docs-fiction.txt
+3.  # step 5 — inbox fan-out reachable from a command (real probe = cli-help.txt,
+    #   anchored on the `teamagent <cmd>` prefix, same anti-false-match rule)
+    grep -nE 'teamagent .*\binbox\b' evidence_dir/cli-help.txt \
+      > evidence_dir/A-inbox-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/A-inbox-cmd.txt
 4.  # library-layer cross-check (informational only — proves the SERVER code
     #   works even when the CLI surface does not; keeps the verdict honest)
     npx vitest run packages/digital-twin/src/bpp 2>&1 \
@@ -102,7 +111,11 @@ Each slice maps to numbered steps of §2 里程碑一 验证方法.
     grep -nE 'revoke' evidence_dir/cli-help.txt \
       > evidence_dir/D-revoke-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/D-revoke-cmd.txt
 2.  # does revoke.ts cascade to skill-file deletion, or only to inbox status?
-    grep -nE 'unlink|rm|delete|skill' packages/digital-twin/src/bpp/revoke.ts \
+    #   Pattern is tightened to actual fs-deletion APIs + compiled-skill paths —
+    #   the loose `delete|skill` matched error-message string literals and gave
+    #   a false grep_exit=0. grep_exit=0 here == revoke really deletes the skill.
+    grep -nE 'unlinkSync|rmSync|fs\.rm|removeSync|deleteSkill|compile-to-skill|SKILL\.md|skills/teamagent' \
+      packages/digital-twin/src/bpp/revoke.ts \
       > evidence_dir/D-revoke-cascade.txt 2>&1 ; echo "grep_exit=$?" >> evidence_dir/D-revoke-cascade.txt
 ```
 
