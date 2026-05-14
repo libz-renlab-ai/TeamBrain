@@ -22,7 +22,9 @@ describe("buildUserLevelHookCommand — shim shape", () => {
     // Body is path-free — path goes through positional argv. This is what
     // makes the shim robust to apostrophes in $HOME (regression test below).
     expect(cmd.startsWith("bash -c '")).toBe(true);
-    expect(cmd).toContain(`'[ -f "$1" ] || exit 0; exec node "$1"'`);
+    expect(cmd).toContain(
+      `'[ -f "$1" ] || exit 0; exec node --experimental-sqlite --no-warnings "$1"'`,
+    );
     expect(cmd).toContain("|| exit 0");
     // The path appears AFTER the body, as the trailing argv (preceded by
     // `_` placeholder for $0).
@@ -30,6 +32,17 @@ describe("buildUserLevelHookCommand — shim shape", () => {
     // No path interpolation inside the body — guards against re-introducing
     // the inline form.
     expect(cmd).not.toContain("[ -f /abs/path/bin-stop.cjs ]");
+  });
+
+  it("#477: bakes --experimental-sqlite --no-warnings into the exec node command (P1)", () => {
+    // Claude Code spawns hooks as child processes that do NOT inherit the
+    // calling shell's NODE_OPTIONS. Without the baked-in flag every hook is
+    // DOA with ERR_UNKNOWN_BUILTIN_MODULE on Node 22.5–23.3.
+    const cmd = buildUserLevelHookCommand("/abs/path/bin-stop.cjs");
+    expect(cmd).toContain("--experimental-sqlite");
+    expect(cmd).toContain("--no-warnings");
+    // Flags must sit on the `exec node` invocation, before the staged path.
+    expect(cmd).toContain('exec node --experimental-sqlite --no-warnings "$1"');
   });
 
   it("normalises Windows backslash paths to forward slashes", () => {

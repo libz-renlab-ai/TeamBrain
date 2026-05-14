@@ -40,6 +40,12 @@
  *      与 bin-post-tool-use canary 同形。runHook 内部 try/finally 保证不抛
  *      （任何异常都被 logFallback 吞掉再 exit 0），所以 main 不需要 .catch。
  */
+// Issue #477: MUST be the first import — arms the node:sqlite-load guard
+// before ./hook-shell (→ @teamagent/adapters → schema.ts, which throws at
+// module-init on a Node without node:sqlite) is evaluated. bin-updater is
+// spawned detached by SessionStart; the spawn site also passes the flag, but
+// this is the defense-in-depth layer for any path that bypasses it.
+import { armHookBootstrap } from "./lib/hook-bootstrap.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -55,6 +61,10 @@ import { runAdvancedHook } from "./hook-shell/index.js";
 import { withUpdateStateLock } from "./lib/update-state-lock.js";
 import { emitUpgradeEvent } from "./lib/upgrade-event-emitter.js";
 import { gatherLocalIdentity } from "./lib/local-identity.js";
+
+// Issue #477: keep the node:sqlite-load guard import referenced (the actual
+// arming runs at hook-bootstrap module-load, above the hook-shell import).
+armHookBootstrap();
 
 function teamagentHome(): string {
   return process.env["TEAMAGENT_HOME"] ?? path.join(os.homedir(), ".teamagent");

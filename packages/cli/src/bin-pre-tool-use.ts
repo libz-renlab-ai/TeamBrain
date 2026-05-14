@@ -29,6 +29,10 @@
  * cjs 不支持 top-level await。所以包一层 `void main()` 立即调用，main 里用
  * await。runHook 自带 try/finally 保证不抛出，main 不需要 .catch。
  */
+// Issue #477: MUST be the first import — arms the node:sqlite-load guard
+// before @teamagent/adapters (whose schema.ts throws at module-init on a Node
+// without node:sqlite) is evaluated.
+import { armHookBootstrap } from "./lib/hook-bootstrap.js";
 import type { PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
 import {
   createPreToolUseHandler,
@@ -48,6 +52,10 @@ import { mergeSemanticAndLegacyMatches } from "./pre-tool-use-merge.js";
 // once per invocation, defeating tsup tree-shake/inline and adding module-load
 // latency to every tool call. The module is small + pure, no circular dep risk.
 import { describeWarmupReadiness, defaultWarmupStatePath } from "./warmup-state.js";
+
+// Issue #477: keep the node:sqlite-load guard import referenced (the actual
+// arming runs at hook-bootstrap module-load, above the adapters import).
+armHookBootstrap();
 
 // ---- Lazy singleton for semantic path (per-process, reused if process is long-lived) ----
 // Issue #164: DaemonFirstEmbedder tries the long-running embedder daemon over

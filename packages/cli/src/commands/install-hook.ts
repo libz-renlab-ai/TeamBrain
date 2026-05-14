@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildUserLevelHookCommand } from "../lib/user-level-hook-shim.js";
+import { NODE_SQLITE_FLAGS_STR } from "../lib/node-sqlite-flags.js";
 
 /**
  * Round-2 F2: CPU-friendly sync sleep. The previous busy-wait
@@ -568,7 +569,9 @@ function applyChannelOps(opts: {
       }
       command = buildUserLevelHookCommand(pathForCommand);
     } else {
-      command = `node ${shellQuote(toForwardSlash(bundlePath))}`;
+      // Issue #477: bake in --experimental-sqlite --no-warnings so the hook
+      // subprocess can load node:sqlite without inheriting NODE_OPTIONS.
+      command = `node ${NODE_SQLITE_FLAGS_STR} ${shellQuote(toForwardSlash(bundlePath))}`;
     }
 
     if (!settings.hooks[def.channel]) settings.hooks[def.channel] = [];
@@ -971,7 +974,8 @@ export function installHook(opts: InstallHookOptions = {}): {
   let statusLineSkipped = false;
   let statusLineMergedScope: "user" | "project" | null = null;
   if (hasStatusLineBundle) {
-    const teamCmd = `node ${shellQuote(toForwardSlash(statusLineEntry))}`;
+    // Issue #477: statusLine also require()s node:sqlite — same flags as hooks.
+    const teamCmd = `node ${NODE_SQLITE_FLAGS_STR} ${shellQuote(toForwardSlash(statusLineEntry))}`;
     const existing = settings.statusLine;
     const existingIsTagged = existing?._teamagentTag === STATUS_LINE_TAG;
     const existingIsEmpty = !existing || Object.keys(existing).length === 0;

@@ -51,6 +51,10 @@ import {
   REQUIRED_JSON_CONTENT,
 } from "./required-check.js";
 import { findTeamagentRoot } from "../lib/walk-up.js";
+import {
+  probeNodeSqlite,
+  type NodeSqliteProbe,
+} from "../lib/node-sqlite-probe.js";
 
 export interface InitOptions {
   cwd?: string;
@@ -71,6 +75,12 @@ export interface InitOptions {
   structure?: boolean;
   /** 跳过 hook 安装（测试环境下 dist bundle 可能不存在）。 */
   skipHook?: boolean;
+  /**
+   * #477 测试注入点：node:sqlite 可加载性探针。缺省 spawn 一个带
+   * `--experimental-sqlite` flag 的真实子进程。pre-check 用它做 fail-loud 门禁
+   * —— Node 跑不动 node:sqlite 时所有 hook 都会 DOA，init 不该报"成功"。
+   */
+  nodeSqliteProbe?: NodeSqliteProbe;
   /**
    * Issue #161 — Layer 1 viral install. When `true` (default), `installHook`
    * also writes the TeamAgent hook entries to `~/.claude/settings.json` so
@@ -252,7 +262,12 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
   }
 
   // ---------- Phase A: Pre-check ----------
-  const preCheck = runPreChecks(paths, target, opts.structure ?? false);
+  const preCheck = runPreChecks(
+    paths,
+    target,
+    opts.structure ?? false,
+    opts.nodeSqliteProbe,
+  );
   steps.push(preCheck);
   if (preCheck.status === "failed") {
     return finalize(false, dryRun, steps, emptySummary());
@@ -633,9 +648,24 @@ function runPreChecks(
   paths: ReturnType<typeof resolvePaths>,
   target: NonNullable<InitOptions["target"]>,
   checkRuleFiles: boolean,
+  nodeSqliteProbe: NodeSqliteProbe = probeNodeSqlite,
 ): InitStepResult {
   if (!fs.existsSync(paths.cwd)) {
     return failStep("pre-check", `项目目录不存在: ${paths.cwd}`);
+  }
+  // #477: fail loud on a Node runtime where hook subprocesses can't load
+  // node:sqlite. Without this gate `init` reported "success" while every hook
+  // was DOA — the product installed but was dead. The probe spawns a flagged
+  // subprocess the same way a hook is spawned; if it can't load node:sqlite,
+  // nothing TeamAgent installs will actually run.
+  const sqliteProbe = nodeSqliteProbe();
+  if (!sqliteProbe.ok) {
+    return failStep(
+      "pre-check",
+      `${sqliteProbe.detail} — 所有 hook 将 DOA，init 中止。` +
+        "请升级到 Node >= 22.5 后重试，或运行 `teamagent doctor` 查看修复建议" +
+        "（clean-uninstall 步骤见 docs/CLEAN-UNINSTALL.md）。",
+    );
   }
   try {
     const tDir = path.join(paths.home, ".teamagent");
