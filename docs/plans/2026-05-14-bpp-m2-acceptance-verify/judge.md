@@ -71,7 +71,7 @@ Several slices need a running server. Start ONE shared instance and reuse it:
     export M2_OUT="$(mktemp -d)/cc-repo"
     export M2_PORT=8092
     export BPP_AUTH_TOKEN="m2-judge-token"
-    pnpm teamagent bpp serve --port "$M2_PORT" --out "$M2_OUT" \
+    pnpm teamagent bpp serve --port "$M2_PORT" --dir "$M2_OUT" \
       > evidence_dir/0-server.log 2>&1 &
     echo "server_pid=$!" > evidence_dir/0-server-pid.txt
     sleep 2   # let it bind
@@ -153,16 +153,22 @@ Several slices need a running server. Start ONE shared instance and reuse it:
     echo "grep_exit=$?" >> evidence_dir/B-token-wired.txt
 
 3.  # behavioural probe — with BPP_AUTH_TOKEN set, a POST /v1/cc-sessions
-    #   carrying NO Authorization header must be rejected (401). A POST with
-    #   the correct Bearer token must be accepted (200).
+    #   carrying NO Authorization header must be rejected (401). The same
+    #   well-formed envelope WITH the correct Bearer token must be accepted
+    #   (200). Both POSTs carry a valid envelope so the only variable is the
+    #   token — auth must be checked BEFORE body validation, otherwise the
+    #   no-auth case 400s on the body and the probe cannot tell auth apart.
+    AUTH_B64="$(printf '{"role":"user","content":"auth probe"}\n' \
+      | gzip | base64 | tr -d '\n')"
+    AUTH_BODY="{\"schema_version\":1,\"envelope\":{\"user_id\":\"m2-judge-auth\",\"session_id\":\"m2-judge-auth-001\",\"captured_at\":\"2026-05-14T09:00:00.000Z\"},\"transcript\":{\"compression\":\"gzip+base64\",\"content\":\"${AUTH_B64}\"}}"
     curl -s -o /dev/null -w '%{http_code}' -X POST \
       "http://127.0.0.1:${M2_PORT}/v1/cc-sessions" \
-      -H 'content-type: application/json' -d '{}' \
+      -H 'content-type: application/json' -d "$AUTH_BODY" \
       > evidence_dir/B-noauth-code.txt 2>&1
     curl -s -o /dev/null -w '%{http_code}' -X POST \
       "http://127.0.0.1:${M2_PORT}/v1/cc-sessions" \
       -H 'content-type: application/json' \
-      -H "authorization: Bearer ${BPP_AUTH_TOKEN}" -d '{}' \
+      -H "authorization: Bearer ${BPP_AUTH_TOKEN}" -d "$AUTH_BODY" \
       > evidence_dir/B-auth-code.txt 2>&1
 ```
 
@@ -348,7 +354,7 @@ Metric derivation rules (so the runner is deterministic):
 | `conversation_lands_tagged` | `C-landed-file.txt` | `find_exit=0` and a path was printed |
 | `server_l2_scan_wired` | `D-l2-wired.txt` | `grep_exit=0` |
 | `l2_alert_recorded` | `D-l2-alert.txt` | `grep_exit=0` |
-| `l2_alert_no_plaintext` | `D-l2-no-plaintext.txt` | `grep_exit=1` (secret NOT found) |
+| `l2_alert_no_plaintext` | `D-l2-no-plaintext.txt` | `grep_exit!=0` (secret NOT found — `1` no match, `2` `_audit/` absent) |
 | `retry_queue_exists` | `E-retry-queue.txt` | `grep_exit=0` |
 | `retry_queue_vitest_exit` | `E-queue-vitest.log` | vitest process exit code |
 | `throughput_1500_ok` | `F-throughput.log` | a `landed=1500/1500` line |
@@ -430,23 +436,44 @@ not be FAIL. Output JSON ONLY, no prose before or after:
   like M1 row C2, no AI agent can honestly self-certify a 3-machine dogfood
   or a real 10-minute network partition.
 
-## Baseline run — 2026-05-14 against `main` @ <baseline_sha>
+## Baseline run — 2026-05-14 against `main` @ 6dab217
 
 Recorded in `.judge/2026-05-14-bpp-m2/` (gitignored transient evidence);
 `judge.json` copied into this plan dir as `baseline-judge.json`, the §V3
 verdict as `baseline-judge-v3.json`.
 
-The baseline is expected to FAIL: most rows describe guarantees that the
-grep + Read audit (see "Why this harness exists" above) found unwired.
-Rows expected to pass at baseline are the parts of the M2 backend that DO
-exist end-to-end:
+**Actual baseline verdict: FAIL — 6 PASS / 2 MANUAL / 9 FAIL.**
 
-- **A1** — the digital-twin tap IS staged by `install-hook`.
-- **C3** — the `/v1/cc-sessions` POST handler already writes
-  `<out>/<user>/<date>/<session_id>.jsonl`.
-- **E1** — `queue.ts` already has dead-letter + `first_failed_at` retry.
-- **H1** — the repo is green (M1 completion run confirmed it).
-- **A2 / E2** — MANUAL, count toward PASS, not FAIL.
+Independently re-graded by a process-isolated `claude -p` judge that saw
+ONLY `judge.json` + `evidence/**` (no source, no conversation context):
+verdict **FAIL**, row-by-row identical to the table below — recorded in
+`baseline-judge-v3.json`.
+
+| Row | Verdict | Finding |
+|-----|---------|---------|
+| A1 collector wired | PASS | `install-hook.ts` stages `bin-digital-twin-tap` into the Stop channel |
+| A2 3-machine dogfood | MANUAL | needs a human to attach per-machine evidence (3 collectors, ≥20 convos each) |
+| B1 L1 redaction | FAIL | `uploader.ts` calls no redactor — raw transcript is gzip+base64+POSTed verbatim |
+| B2 L1 recall ≥95% | FAIL | no `l1-recall.test.ts` fixture/test exists yet (ships in PR-M2A) |
+| B3 Chinese ID covered | FAIL | core `redactor.ts` regex table has no 18-digit Chinese national-ID pattern |
+| B4 ≤5ms (redaction off hook path) | PASS | `tap-session.ts` has no redact call — the hook does only copy + detached spawn |
+| C1 encrypted transport | FAIL | `bin-prod-server.ts` binds plain HTTP; reusable `bpp/https-server.ts` not wired |
+| C2 server token auth | FAIL | `mock-server.ts` validates no `Authorization`; no-auth and auth POSTs both 200 |
+| C3 conversation lands tagged | PASS | POST landed `m2-judge-zhang/2026-05-14/m2-judge-sess-001.jsonl` (user + date + session) |
+| D1 L2 scan wired | FAIL | `/v1/cc-sessions` POST handler runs no second-layer scan |
+| D2 L2 alert recorded | FAIL | leak-carrying upload returned `ok:true`; no `_audit/` dir, no `l2_scan_alert` |
+| D3 L2 alert no plaintext leak | PASS | the fake secret appears nowhere under `_audit/` (vacuously — no alert exists yet) |
+| E1 retry queue + dead-letter | PASS | `queue.ts` has `dead-letter` + `first_failed_at`; queue+uploader vitest 41 pass |
+| E2 physical 10-min disconnect | MANUAL | needs a human to attach real network-partition + auto-resume evidence |
+| F1 throughput 1500/day | FAIL | no `throughput-1500.test.ts` exists yet (ships in PR-M2-auth) |
+| G1 member self-view stats | FAIL | no `member-stats` subcommand in `digital-twin --help`; `/v1/member-stats` empty |
+| H1 repo green | PASS | 1292-file typecheck clean (`--pretty false`); digital-twin vitest 584 pass / 6 skip |
+
+The 6 baseline PASS rows are the parts of the M2 backend that DO exist
+end-to-end (collector hook, upload-lands, retry queue, repo green) plus the
+two privacy-guard rows (B4, D3) that pass vacuously because the feature they
+guard is not wired yet — they stay PASS once the feature lands only if the
+guarantee actually holds.
 
 Every FAIL row is then a tracked TODO flipped by the M2 PR series; no future
 PR can re-declare M2 "done" by prose alone — it must flip these rows by
