@@ -14,6 +14,9 @@
  *   - getUserId throws → snapshot still builds with hostname fallback.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { emitCcStatus, __resetIdentityCacheForTests } from "../realtime-emit.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -21,13 +24,31 @@ const ORIGINAL_FETCH = globalThis.fetch;
 // `if (ORIGINAL) process.env.X = ORIGINAL` left the env var leaked to the
 // NEXT test file when the original was undefined (which is typical CI).
 // Snapshot + delete-or-restore — matching presence-command.test.ts.
+//
+// Issue #350 (v0.11.1): HOME + USERPROFILE join the list so the
+// resolveBaseUrl() saved-config fallback (reads <HOME>/.teamagent/digital-twin.json)
+// can be sandboxed to a tmpdir per-test. beforeEach deletes from the env, then
+// the digital-twin-fallback tests explicitly set HOME/USERPROFILE to the
+// freshly-mkdtemped sandbox. afterEach restores the original values via the
+// same loop so no leak.
 const ENV_KEYS = [
   "TEAMAGENT_REALTIME_URL",
   "TEAMAGENT_REALTIME_TOKEN",
   "TEAMAGENT_DISABLED",
   "TEAMAGENT_REALTIME_ALLOW_REMOTE",
   "TEAMAGENT_REALTIME_RAW_PROMPT",
+  "HOME",
+  "USERPROFILE",
 ] as const;
+
+/**
+ * Issue #350 (v0.11.1) — every test in this file sandboxes HOME / USERPROFILE
+ * to a tmp dir so `resolveBaseUrl()`'s saved-config fallback (which reads
+ * `<HOME>/.teamagent/digital-twin.json`) doesn't see the developer's real
+ * configured endpoint. Tests that exercise the fallback path explicitly
+ * `fs.writeFileSync` a config into the sandbox HOME first.
+ */
+let sandboxHome: string;
 
 describe("emitCcStatus", () => {
   const saved: Record<string, string | undefined> = {};
@@ -36,6 +57,14 @@ describe("emitCcStatus", () => {
       saved[k] = process.env[k];
       delete process.env[k];
     }
+    // Issue #350 (v0.11.1) — point HOME / USERPROFILE at a fresh tmpdir so
+    // resolveBaseUrl()'s saved-config fallback can't see the real one. The
+    // loop above already deleted them; this re-sets to the sandbox so
+    // homeForConfig() in realtime-emit.ts returns the sandbox path on both
+    // POSIX and Windows.
+    sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), "realtime-emit-test-"));
+    process.env.HOME = sandboxHome;
+    process.env.USERPROFILE = sandboxHome;
     __resetIdentityCacheForTests();
   });
 
@@ -45,13 +74,87 @@ describe("emitCcStatus", () => {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
+    // Issue #350 (v0.11.1) — drop the tmpdir HOME. Best-effort: ignore EBUSY
+    // / EPERM on Windows so a slow handle-release doesn't fail the test.
+    try {
+      fs.rmSync(sandboxHome, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
   });
 
-  it("is a no-op when TEAMAGENT_REALTIME_URL is unset", () => {
+  function writeDigitalTwinConfig(cfg: {
+    enabled: boolean;
+    endpoint: string;
+    token?: string | null;
+  }): void {
+    const cfgDir = path.join(sandboxHome, ".teamagent");
+    fs.mkdirSync(cfgDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cfgDir, "digital-twin.json"),
+      JSON.stringify({
+        schema_version: "1",
+        identity: { user_id: "test@example.com", machine_id: "test-host" },
+        uploader: {
+          enabled: cfg.enabled,
+          endpoint: cfg.endpoint,
+          token: cfg.token ?? null,
+        },
+        consented_at: new Date().toISOString(),
+      }),
+    );
+    __resetIdentityCacheForTests();
+  }
+
+  it("is a no-op when TEAMAGENT_REALTIME_URL is unset AND no saved digital-twin config", () => {
     const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
     emitCcStatus({ event: "session_start", sessionId: "s1", cwd: "/tmp" });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("issue #350 — falls back to digital-twin config endpoint when env unset", async () => {
+    writeDigitalTwinConfig({
+      enabled: true,
+      endpoint: "http://192.168.22.88:8080",
+      token: "team-shared",
+    });
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({ event: "session_start", sessionId: "s-cfg", cwd: "/tmp" });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url] = fetchSpy.mock.calls[0]!;
+    // Config-derived URL bypasses the loopback gate — see resolveBaseUrl()
+    // security rationale.
+    expect(url).toBe("http://192.168.22.88:8080/v1/cc-status");
+  });
+
+  it("issue #350 — does NOT fall back when uploader.enabled is false", () => {
+    writeDigitalTwinConfig({
+      enabled: false,
+      endpoint: "http://192.168.22.88:8080",
+      token: "team-shared",
+    });
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({ event: "session_start", sessionId: "s-paused" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("issue #350 — env URL still wins over saved config", async () => {
+    writeDigitalTwinConfig({
+      enabled: true,
+      endpoint: "http://192.168.22.88:8080",
+      token: "team-shared",
+    });
+    process.env.TEAMAGENT_REALTIME_URL = "http://127.0.0.1:9787";
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    emitCcStatus({ event: "session_start", sessionId: "s-env-wins" });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://127.0.0.1:9787/v1/cc-status");
   });
 
   it("fires one POST to /v1/cc-status when the URL is set", async () => {

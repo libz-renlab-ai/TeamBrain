@@ -1,0 +1,20 @@
+{
+  "skill_name": "daily-standup",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "explore today's issues and PRs in the TeamBrain repo (libz-renlab-ai/TeamBrain) before 9am Beijing please. tell me what had happened since yesterday 9am",
+      "expected_output": "A categorized 24h-window delta report: PRs merged / created / closed-without-merge / still-open + Issues created / closed / open-in-window, regrouped by theme (Feature N / Frontend / Symphony / FIXEDFLOW / m5 / bugfix / CI / docs), ending with a 'still open / 待办' table that flags each open PR/issue and a concrete next-step recommendation. Duck voice wrapper (呷呷~ / 鸭鸭 / ASCII 鸭子). Window math must convert 09:00 +0800 → 01:00 UTC and use jq client-side filtering to exact UTC endpoints (not just gh's date-granularity --search). `gh pr list` and `gh issue list` (not `gh search prs`).",
+      "files": [],
+      "assertions": [
+        {"id": "a1", "text": "Window endpoints stated explicitly in UTC (e.g. 'YYYY-MM-DDT01:00:00Z')"},
+        {"id": "a2", "text": "Uses `gh pr list --search` and `gh issue list --search` (NOT `gh search prs` / `gh search issues`)"},
+        {"id": "a3", "text": "Reports all six buckets: PRs merged + PRs created + PRs closed-without-merge + PRs still open + Issues created + Issues closed + Issues open-in-window"},
+        {"id": "a4", "text": "Theme grouping is present (≥3 of: Feature N / Frontend / Symphony / FIXEDFLOW / m5 / bugfix / CI / docs)"},
+        {"id": "a5", "text": "'Still open / 待办' section present, lists ≥1 specific open PR or issue with a concrete next-step recommendation (e.g. driver-dispatchable, /review PASS, etc.)"},
+        {"id": "a6", "text": "Duck voice wrapper present: at least one of 呷呷~ / 鸭鸭 / ASCII 鸭子 / (>ω<) anywhere in the output"},
+        {"id": "a7", "text": "Ends with `result:` line stating the headline (per background-session contract)"}
+      ]
+    }
+  ]
+}

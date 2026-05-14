@@ -32,6 +32,10 @@ FORMAT answers "what shape", HOSTING answers "what URL", WORKFLOW answers "when 
 
 ## 1. The four mandatory content categories
 
+**Canonical anchor sentence (mirrored from `CLAUDE.md` so `pnpm teamagent verify-anchors` finds it verbatim):**
+
+> Visual proof of work HTML must include at least these four content categories: (1) tmux + real interactive claude — a captured tmux session showing a real interactive claude CLI running end-to-end, not screenshots of a static log; (2) real terminal capture — actual terminal stdout/stderr bytes from the run (asciinema cast, scrollback dump, or HTML-embedded `<pre>` block), not paraphrased text; (3) real frontend url snapshot — a live screenshot or rendered embed of the actual frontend URL the change affects; (4) real dashboard raw logs — raw, unfiltered log lines from the dashboard or pipeline that produced the change (and more if later added).
+
 Every visual-proof HTML must include all four of these, embedded directly in the HTML (inline `<pre>` blocks, base64-inlined asciinema casts, `<img>` with `data:` URIs, or vendored relative `<script src="./local.js">` per FORMAT's self-contained rule):
 
 | # | Category | What it is | What it is NOT |
