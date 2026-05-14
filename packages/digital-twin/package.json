@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@teamagent/core": "workspace:*",
     "ulid": "^2.3.0"
   },
   "devDependencies": {

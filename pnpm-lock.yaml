@@ -196,6 +196,9 @@ importers:
 
   packages/digital-twin:
     dependencies:
+      '@teamagent/core':
+        specifier: workspace:*
+        version: link:../core
       ulid:
         specifier: ^2.3.0
         version: 2.4.0

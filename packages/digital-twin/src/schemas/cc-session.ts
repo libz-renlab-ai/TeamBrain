@@ -107,6 +107,12 @@ export interface CcSessionEnvelope {
   transcript: CcSessionTranscriptBlock;
   /** Issue #283 — optional Max-tier quota snapshot piggy-backed on the envelope. */
   quota?: CcSessionQuotaBlock;
+  /**
+   * M2 (对话上传通道) — number of sensitive fields the uploader's L1 pass
+   * scrubbed from this transcript before upload. Absent on pre-M2 envelopes;
+   * the collector persists it so a member can see "敏感字段被模糊化次数".
+   */
+  l1_redaction_count?: number;
 }
 
 export interface BuildEnvelopeInput {
