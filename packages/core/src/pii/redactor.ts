@@ -8,6 +8,7 @@ export type SensitiveFindingKind =
   | "aws-key"
   | "jwt"
   | "phone"
+  | "chinese-id"
   | "credit-card";
 
 export interface SensitiveFinding {
@@ -69,6 +70,13 @@ const PATTERNS: Array<{ kind: SensitiveFindingKind; pattern: RegExp }> = [
     kind: "phone",
     pattern: /(?:\+\d{1,3}[-\s]\d{3}[-\s]\d{3}[-\s]\d{4}|\(\d{3}\)\s?\d{3}-\d{4})/g,
   },
+  {
+    // Chinese resident ID: 17 digits + 1 check char (digit or X/x). Placed
+    // before the credit-card pass so an 18-digit ID is redacted as PII, not
+    // mis-classified as a card number. M2 验证 step 3 ("模拟身份证号").
+    kind: "chinese-id",
+    pattern: /\b\d{17}[\dXx]\b/g,
+  },
 ];
 
 const REDACT_MAP: Record<SensitiveFindingKind, string> = {
@@ -81,6 +89,7 @@ const REDACT_MAP: Record<SensitiveFindingKind, string> = {
   "aws-key": "[redacted]",
   "jwt": "[redacted]",
   "phone": "[redacted]",
+  "chinese-id": "[redacted]",
   "credit-card": "[redacted]",
 };
 
