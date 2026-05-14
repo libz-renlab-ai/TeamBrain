@@ -9,7 +9,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startMockServer, type MockServerHandle } from "@teamagent/digital-twin";
+import {
+  startMockServer,
+  writeMember,
+  type MockServerHandle,
+  type TeamMember,
+} from "@teamagent/digital-twin";
 import {
   parseBppServeArgs,
   renderBppHelp,
@@ -26,8 +31,25 @@ import {
   parseBppActArgs,
   runBppAct,
   renderBppActHelp,
+  parseBppRevokeArgs,
+  runBppRevoke,
+  renderBppRevokeHelp,
+  parseBppForcePushArgs,
+  runBppForcePush,
+  renderBppForcePushHelp,
   type RunBppServeDeps,
 } from "../commands/bpp.js";
+
+function leadMember(user_id: string): TeamMember {
+  return {
+    schema_version: 1,
+    user_id,
+    display_name: user_id,
+    role: "lead",
+    joined_at: "2026-05-14T00:00:00Z",
+    notification_prefs: {},
+  };
+}
 
 describe("parseBppServeArgs", () => {
   it("parses --port / --host / --dir", () => {
@@ -404,5 +426,238 @@ describe("bpp push / inbox / accept — arg + error handling", () => {
     expect(help).toContain("teamagent bpp inbox");
     expect(help).toContain("teamagent bpp accept");
     expect(help).toContain("teamagent bpp reject");
+  });
+});
+
+// ── PR-C — revoke (+ skill-file cascade) and force-push HTTP clients ──────
+//
+// Acceptance contract §2 里程碑一 验证方法 step 8: 老张按撤回 → 5 秒内小李
+// 技能库的文件消失、小王收件箱的条目消失. The revoke client drives the
+// server-side cascade (accept persists compiled_path, revoke unlinks it).
+
+describe("bpp revoke / force-push against a real server", () => {
+  let server: MockServerHandle;
+  let dataDir: string;
+  let homeDir: string;
+  let origHome: string | undefined;
+  let origUserProfile: string | undefined;
+
+  beforeEach(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "bpp-pc-data-"));
+    homeDir = mkdtempSync(join(tmpdir(), "bpp-pc-home-"));
+    // The /v1/revoke + /v1/bp-push/force routes are lead-gated — seed a lead.
+    writeMember(dataDir, leadMember("laozhang"));
+    server = await startMockServer({
+      port: 0,
+      host: "127.0.0.1",
+      outputDir: dataDir,
+    });
+    origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
+    process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+  });
+  afterEach(async () => {
+    await server.close();
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    if (origUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = origUserProfile;
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it("revoke cascades: an accepted BP's SKILL.md is physically deleted", async () => {
+    await runBppPush(
+      parseBppPushArgs([
+        `--server=${server.url}`,
+        "--id=bp-revoke-1",
+        "--title=T",
+        "--body=B",
+        "--receivers=xiaoli",
+      ]),
+    );
+    const items = JSON.parse(
+      (
+        await runBppInbox(
+          parseBppInboxArgs([
+            `--server=${server.url}`,
+            "--receiver=xiaoli",
+            "--json",
+          ]),
+        )
+      ).stdout,
+    ) as Array<{ id: string }>;
+    await runBppAct(
+      parseBppActArgs(
+        [
+          `--server=${server.url}`,
+          `--inbox-id=${items[0]!.id}`,
+          "--receiver=xiaoli",
+        ],
+        "accept",
+      ),
+      "accept",
+    );
+    const skillPath = join(
+      homeDir,
+      ".claude",
+      "skills",
+      "teamagent",
+      "bp-revoke-1",
+      "SKILL.md",
+    );
+    expect(existsSync(skillPath)).toBe(true);
+
+    const revokeRes = await runBppRevoke(
+      parseBppRevokeArgs([
+        `--server=${server.url}`,
+        "--bp-id=bp-revoke-1",
+        "--lead-user-id=laozhang",
+        "--reason=误推送",
+      ]),
+    );
+    expect(revokeRes.exitCode).toBe(0);
+    expect(revokeRes.stdout).toContain("已撤回 bp-revoke-1");
+    expect(revokeRes.stdout).toContain("已级联删除 1 个本机技能文件");
+    expect(existsSync(skillPath)).toBe(false);
+  });
+
+  it("revoke of a pending-only BP reports no skill files deleted", async () => {
+    await runBppPush(
+      parseBppPushArgs([
+        `--server=${server.url}`,
+        "--id=bp-revoke-2",
+        "--title=T",
+        "--body=B",
+        "--receivers=xiaowang",
+      ]),
+    );
+    const res = await runBppRevoke(
+      parseBppRevokeArgs([
+        `--server=${server.url}`,
+        "--bp-id=bp-revoke-2",
+        "--lead-user-id=laozhang",
+        "--reason=cleanup",
+      ]),
+    );
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("无已采纳的技能文件需要删除");
+  });
+
+  it("revoke from a non-lead exits 1 with a 403 hint", async () => {
+    await runBppPush(
+      parseBppPushArgs([
+        `--server=${server.url}`,
+        "--id=bp-revoke-3",
+        "--title=T",
+        "--body=B",
+        "--receivers=xiaoli",
+      ]),
+    );
+    const res = await runBppRevoke(
+      parseBppRevokeArgs([
+        `--server=${server.url}`,
+        "--bp-id=bp-revoke-3",
+        "--lead-user-id=xiaoli",
+        "--reason=I disagree",
+      ]),
+    );
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain("403");
+    expect(res.stderr).toContain("不是团队负责人");
+  });
+
+  it("force-push puts a forced item directly in a member's inbox", async () => {
+    // seed the BP into _bp/ by pushing it to a throwaway receiver first
+    await runBppPush(
+      parseBppPushArgs([
+        `--server=${server.url}`,
+        "--id=bp-force-1",
+        "--title=T",
+        "--body=B",
+        "--receivers=seed",
+      ]),
+    );
+    const res = await runBppForcePush(
+      parseBppForcePushArgs([
+        `--server=${server.url}`,
+        "--bp-id=bp-force-1",
+        "--receiver=xiaowang",
+        "--lead-user-id=laozhang",
+      ]),
+    );
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("已强推 bp-force-1 → xiaowang");
+
+    const inbox = await runBppInbox(
+      parseBppInboxArgs([`--server=${server.url}`, "--receiver=xiaowang"]),
+    );
+    expect(inbox.stdout).toContain("bp=bp-force-1");
+  });
+
+  it("force-push from a non-lead exits 1 with a 403 hint", async () => {
+    await runBppPush(
+      parseBppPushArgs([
+        `--server=${server.url}`,
+        "--id=bp-force-2",
+        "--title=T",
+        "--body=B",
+        "--receivers=seed",
+      ]),
+    );
+    const res = await runBppForcePush(
+      parseBppForcePushArgs([
+        `--server=${server.url}`,
+        "--bp-id=bp-force-2",
+        "--receiver=xiaowang",
+        "--lead-user-id=xiaoli",
+      ]),
+    );
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain("403");
+  });
+});
+
+describe("bpp revoke / force-push — arg + error handling", () => {
+  it("revoke without required flags exits 2", async () => {
+    const res = await runBppRevoke(parseBppRevokeArgs(["--bp-id=x"]));
+    expect(res.exitCode).toBe(2);
+    expect(res.stderr).toContain("--bp-id / --lead-user-id / --reason");
+  });
+
+  it("force-push without required flags exits 2", async () => {
+    const res = await runBppForcePush(parseBppForcePushArgs(["--bp-id=x"]));
+    expect(res.exitCode).toBe(2);
+  });
+
+  it("revoke / force-push reject unknown args", () => {
+    expect(() => parseBppRevokeArgs(["--bogus"])).toThrow(BppArgError);
+    expect(() => parseBppForcePushArgs(["--bogus"])).toThrow(BppArgError);
+  });
+
+  it("revoke against a down server exits 1 with a connect hint", async () => {
+    const res = await runBppRevoke(
+      parseBppRevokeArgs([
+        "--server=http://127.0.0.1:1",
+        "--bp-id=x",
+        "--lead-user-id=l",
+        "--reason=r",
+      ]),
+    );
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain("无法连接");
+  });
+
+  it("help renderers mention the key flags", () => {
+    expect(renderBppRevokeHelp()).toContain("--bp-id=");
+    expect(renderBppRevokeHelp()).toContain("--reason=");
+    expect(renderBppForcePushHelp()).toContain("--receiver=");
+  });
+
+  it("namespace help now lists revoke + force-push", () => {
+    const help = renderBppHelp();
+    expect(help).toContain("teamagent bpp revoke");
+    expect(help).toContain("teamagent bpp force-push");
   });
 });

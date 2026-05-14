@@ -138,6 +138,9 @@ export function handleInboxAct(
     }
     const compiled = compileBpToSkill(bp, userHome);
     compiledPath = compiled.path;
+    // Persist the compiled path on the inbox row so the revoke cascade can
+    // physically delete the SKILL.md later (BPP acceptance §2 里程碑一 step 8).
+    updated.compiled_path = compiledPath;
   }
 
   rewriteInboxItem(filePath, lineIdx, updated);

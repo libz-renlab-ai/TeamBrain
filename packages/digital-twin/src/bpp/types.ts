@@ -54,6 +54,12 @@ export interface InboxItem {
   acted_at: string | null;
   forced_by_lead: false | string;
   delivery_channels: DeliveryChannel[];
+  /**
+   * Absolute path of the SKILL.md compiled into the receiver's local skill
+   * library on `accept`. Set by the accept handler, read by the revoke
+   * cascade so it can physically delete the file. Absent until accepted.
+   */
+  compiled_path?: string;
 }
 
 export interface TeamMember {

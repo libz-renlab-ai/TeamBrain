@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { handleRevoke } from '../revoke.js';
 import { handleBpPush } from '../server-handlers.js';
+import { handleInboxAct } from '../accept-handler.js';
 import { writeMember, readBp, listInbox } from '../store.js';
-import type { BestPractice, TeamMember } from '../types.js';
+import type { BestPractice, PushEvent, TeamMember } from '../types.js';
 
 function makeBp(id: string): BestPractice {
   return {
@@ -71,6 +72,8 @@ describe('BPP handleRevoke', () => {
       ok: true,
       bp_id: 'bp-mock-db',
       revoked_inbox_count: 2,
+      // pushed but never accepted → no compiled SKILL.md to cascade-delete
+      deleted_skill_files: [],
     });
 
     const bp = readBp(dir, 'bp-mock-db');
@@ -169,5 +172,114 @@ describe('BPP handleRevoke', () => {
     });
     expect(res.revoked_inbox_count).toBe(0);
     expect(readBp(dir, 'bp-orphan')!.revoked_by).toBe('alice@team.com');
+  });
+});
+
+// ── PR-C — revoke cascades to compiled-skill-file deletion ────────────────
+//
+// Acceptance contract §2 里程碑一: "撤回触发级联：未采纳的收件箱条目消失、
+// 已采纳的本机技能文件被删除" + 验证方法 step 8 ("验证 5 秒内：小李技能库的
+// 文件消失"). Before PR-C, handleRevoke only flipped InboxItem.status — the
+// compiled SKILL.md was orphaned on disk forever.
+
+describe('BPP handleRevoke — skill-file cascade', () => {
+  let dir: string;
+  let userHome: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'bpp-revoke-cascade-'));
+    userHome = mkdtempSync(join(tmpdir(), 'bpp-revoke-home-'));
+    writeMember(dir, member('alice@team.com', 'lead'));
+    writeMember(dir, member('bob@team.com', 'member'));
+  });
+
+  it('accept persists compiled_path into the InboxItem; revoke unlinks it', () => {
+    handleBpPush(dir, {
+      bp: makeBp('bp-cascade'),
+      receivers: ['bob@team.com'],
+    });
+    const inboxId = listInbox(dir, 'bob@team.com')[0]!.id;
+
+    // bob accepts → SKILL.md compiled, compiled_path persisted on the row
+    const acceptRes = handleInboxAct(dir, userHome, {
+      inbox_id: inboxId,
+      receiver_id: 'bob@team.com',
+      action: 'accept',
+    });
+    const skillPath = acceptRes.compiled_path;
+    expect(skillPath).toBeDefined();
+    expect(existsSync(skillPath!)).toBe(true);
+    expect(listInbox(dir, 'bob@team.com')[0]!.compiled_path).toBe(skillPath);
+
+    // lead revokes → the compiled SKILL.md is physically deleted
+    const res = handleRevoke(dir, {
+      bp_id: 'bp-cascade',
+      lead_user_id: 'alice@team.com',
+      reason: 'mis-pushed',
+    });
+    expect(res.revoked_inbox_count).toBe(1);
+    expect(res.deleted_skill_files).toEqual([skillPath]);
+    expect(existsSync(skillPath!)).toBe(false);
+
+    // the audit event records which skill files the cascade deleted
+    const today = new Date().toISOString().slice(0, 10);
+    const auditLines = readFileSync(join(dir, '_audit', `${today}.jsonl`), 'utf8')
+      .split('\n')
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l) as PushEvent);
+    const revokeEv = auditLines.find((e) => e.event_type === 'revoked');
+    expect(revokeEv).toBeDefined();
+    expect(revokeEv!.metadata.deleted_skill_files).toEqual([skillPath]);
+  });
+
+  it('revoking a BP that was only pending (never accepted) deletes no files', () => {
+    handleBpPush(dir, {
+      bp: makeBp('bp-pending'),
+      receivers: ['bob@team.com'],
+    });
+    const res = handleRevoke(dir, {
+      bp_id: 'bp-pending',
+      lead_user_id: 'alice@team.com',
+      reason: 'changed my mind',
+    });
+    expect(res.revoked_inbox_count).toBe(1);
+    expect(res.deleted_skill_files).toEqual([]);
+  });
+
+  it('cascade is best-effort: revoke does not throw if the skill file is already gone', () => {
+    handleBpPush(dir, { bp: makeBp('bp-gone'), receivers: ['bob@team.com'] });
+    const inboxId = listInbox(dir, 'bob@team.com')[0]!.id;
+    const acceptRes = handleInboxAct(dir, userHome, {
+      inbox_id: inboxId,
+      receiver_id: 'bob@team.com',
+      action: 'accept',
+    });
+    // user manually deleted the skill file before the lead revoked
+    unlinkSync(acceptRes.compiled_path!);
+
+    const res = handleRevoke(dir, {
+      bp_id: 'bp-gone',
+      lead_user_id: 'alice@team.com',
+      reason: 'too late',
+    });
+    expect(res.revoked_inbox_count).toBe(1);
+    // file was already gone — it is not reported as freshly deleted
+    expect(res.deleted_skill_files).toEqual([]);
+  });
+
+  it('rejected items are not treated as having a compiled skill file', () => {
+    handleBpPush(dir, { bp: makeBp('bp-rej'), receivers: ['bob@team.com'] });
+    const inboxId = listInbox(dir, 'bob@team.com')[0]!.id;
+    handleInboxAct(dir, userHome, {
+      inbox_id: inboxId,
+      receiver_id: 'bob@team.com',
+      action: 'reject',
+    });
+    const res = handleRevoke(dir, {
+      bp_id: 'bp-rej',
+      lead_user_id: 'alice@team.com',
+      reason: 'cleanup',
+    });
+    expect(res.revoked_inbox_count).toBe(1);
+    expect(res.deleted_skill_files).toEqual([]);
   });
 });
