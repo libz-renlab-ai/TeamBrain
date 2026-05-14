@@ -15,7 +15,14 @@ export type PushEventType =
   | 'rejected'
   | 'revoked'
   | 'force-pushed'
-  | 'secret_blocked';
+  | 'secret_blocked'
+  // M2 (对话上传通道) — server-side L2 scan caught a sensitive field that L1
+  // missed. Recorded in `_audit/<date>.jsonl` like every other audit event;
+  // `bp_id` is empty (an L2 alert is not BP-scoped), `actor` is the uploading
+  // member, `metadata.matched_rule_kinds` lists the rule kinds (never the
+  // matched text). See docs/plans/2026-05-13-bpp-full-system-acceptance.md
+  // §里程碑二 ("第二层服务端扫描 ... 必须记一条警报").
+  | 'l2_scan_alert';
 
 export interface MiningEvidence {
   sessions_observed: number;

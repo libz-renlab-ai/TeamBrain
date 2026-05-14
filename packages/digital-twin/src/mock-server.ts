@@ -37,7 +37,7 @@ import {
 import { handleBpPush, handleInbox, handleMemberJoin } from './bpp/server-handlers.js';
 import { handleRevoke } from './bpp/revoke.js';
 import { handleForcePush } from './bpp/force-push.js';
-import { listAuditEvents } from './bpp/store.js';
+import { listAuditEvents, appendAudit } from './bpp/store.js';
 import { getRoleTier } from './bpp/role-hierarchy.js';
 // Gap 2 (production gap close): SSE realtime broadcaster + accept handler.
 // Each startMockServer instance gets its own broadcaster so cross-instance
@@ -49,6 +49,9 @@ import { handleInboxAct } from './bpp/accept-handler.js';
 // `requireBearerToken` gates POST /v1/cc-sessions when BPP_AUTH_TOKEN is set.
 import { wrapServerWithHttps } from './bpp/https-server.js';
 import { requireBearerToken } from './bpp/auth-gate.js';
+// M2 — server-side L2 scan ("第二层敏感信息扫描（兜底）"): the catch-all for
+// anything the member's L1 pass missed before a transcript lands on disk.
+import { detectSensitiveText, redactSensitiveText } from '@teamagent/core';
 
 // Re-exported here for backwards compat — `safeUserId` / `dateStamp` were
 // originally defined in this module before `cc-status/path-safety.ts` split
@@ -1060,7 +1063,7 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
 
       try {
         const buf = Buffer.from(contentB64, 'base64');
-        const decoded = isLog
+        let decoded = isLog
           ? gunzipSync(buf, { maxOutputLength: MAX_DECOMPRESSED_BYTES })
           : buf;
         if (decoded.length > MAX_DECOMPRESSED_BYTES) {
@@ -1080,6 +1083,26 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
           send(res, 400, { error: 'invalid path' });
           return;
         }
+
+        // M2 — server-side L2 scan ("第二层敏感信息扫描（兜底）"). The member's
+        // L1 pass runs in the uploader daemon; this is the catch-all for
+        // anything L1 missed — a disabled rule, a bypassed collector, a
+        // hand-crafted POST. On a hit the transcript is redacted BEFORE it
+        // lands, and the alert is recorded below — silently scrubbing is not
+        // enough ("必须记一条警报"). cc-session transcripts only; recordings
+        // carry binary audio that is not text-scannable.
+        let l2MatchedKinds: string[] = [];
+        if (isLog) {
+          const text = decoded.toString('utf8');
+          const findings = detectSensitiveText(text);
+          if (findings.length > 0) {
+            // Record only the matched RULE KINDS, never the matched text — an
+            // alert that echoed the secret would itself be a privacy leak.
+            l2MatchedKinds = [...new Set(findings.map((f) => f.kind))].sort();
+            decoded = Buffer.from(redactSensitiveText(text), 'utf8');
+          }
+        }
+
         mkdirSync(targetDir, { recursive: true });
         atomicWriteFileSync(targetFile, decoded);
 
@@ -1100,6 +1123,32 @@ export async function startMockServer(opts: MockServerOptions): Promise<MockServ
                 // transcript upload. Best-effort write only.
               }
             }
+          }
+        }
+
+        // M2 — record the L2 alert AFTER the (redacted) transcript lands.
+        // "第二层服务端扫描如果命中第一层漏掉的敏感字段，必须记一条警报". The
+        // event carries only the matched rule kinds, never the matched text.
+        // An audit-append failure must never 5xx an otherwise-successful
+        // upload — the transcript is already safely on disk, redacted.
+        if (isLog && l2MatchedKinds.length > 0) {
+          try {
+            appendAudit(outputDir, {
+              schema_version: 1,
+              id: `l2-${randomUUID()}`,
+              event_type: 'l2_scan_alert',
+              bp_id: '',
+              actor: userIdSafe,
+              timestamp: now().toISOString(),
+              metadata: {
+                matched_rule_kinds: l2MatchedKinds,
+                session_id: id,
+                date,
+                route,
+              },
+            });
+          } catch {
+            // best-effort audit — never block a successful upload
           }
         }
 

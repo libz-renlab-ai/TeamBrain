@@ -4,6 +4,7 @@ import {
   mkdirSync,
   existsSync,
   readFileSync,
+  readdirSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -715,6 +716,118 @@ describe('mock-server — M2 transport security', () => {
         else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prev;
       }
     });
+  });
+});
+
+// M2 (对话上传通道) — server-side L2 scan ("第二层敏感信息扫描（兜底）"). When a
+// transcript reaches the server with sensitive fields L1 missed (a disabled
+// rule, a bypassed collector, a hand-crafted POST), the server must redact it
+// before it lands AND record an l2_scan_alert. See judge.md §V1.D.
+describe('mock-server — M2 server-side L2 scan', () => {
+  let server: MockServerHandle;
+  let outputDir: string;
+
+  beforeEach(async () => {
+    outputDir = mkdtempSync(join(tmpdir(), 'dt-m2l2-'));
+    server = await startMockServer({ port: 0, outputDir, now: () => FROZEN });
+  });
+
+  afterEach(async () => {
+    await server.close();
+  });
+
+  /** POST a cc-session whose transcript content is the given raw string. */
+  async function postRawTranscript(
+    sessionId: string,
+    userId: string,
+    rawTranscript: string,
+  ): Promise<Response> {
+    const compressed = gzipSync(Buffer.from(rawTranscript));
+    return fetch(`${server.url}/v1/cc-sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        schema_version: 1,
+        envelope: {
+          session_id: sessionId,
+          user_id: userId,
+          captured_at: '2026-05-09T03:00:00.000Z',
+        },
+        transcript: { compression: 'gzip+base64', content: compressed.toString('base64') },
+      }),
+    });
+  }
+
+  /** Concatenate every line of every `_audit/<date>.jsonl` file. */
+  function readAllAudit(): string {
+    const dir = join(outputDir, '_audit');
+    if (!existsSync(dir)) return '';
+    return readdirSync(dir)
+      .filter((f) => f.endsWith('.jsonl'))
+      .map((f) => readFileSync(join(dir, f), 'utf8'))
+      .join('');
+  }
+
+  it('redacts an L1-missed secret before the transcript lands on disk', async () => {
+    // Simulates a bypassed collector: the raw AWS key reaches the server
+    // un-redacted. The server-side L2 pass must scrub it before write.
+    const leak = 'AKIAIOSFODNN7EXAMPLE';
+    const res = await postRawTranscript(
+      'l2-leak-1',
+      'li@libz.ai',
+      `{"role":"user","content":"my key is ${leak}"}\n`,
+    );
+    expect(res.status).toBe(200);
+    const landed = join(outputDir, 'li@libz.ai', FROZEN_DATE, 'l2-leak-1.jsonl');
+    const onDisk = readFileSync(landed, 'utf8');
+    expect(onDisk).not.toContain(leak);
+    expect(onDisk).toContain('[redacted]');
+  });
+
+  it('records an l2_scan_alert carrying only the matched rule kinds', async () => {
+    const leak = 'AKIAIOSFODNN7EXAMPLE';
+    await postRawTranscript(
+      'l2-leak-2',
+      'li@libz.ai',
+      `{"role":"user","content":"key ${leak} email leak@personal.com"}\n`,
+    );
+    const audit = readAllAudit();
+    expect(audit).toContain('l2_scan_alert');
+    // The alert lists the rule kinds...
+    const line = audit.split('\n').filter(Boolean).find((l) => l.includes('l2_scan_alert'));
+    expect(line).toBeDefined();
+    const ev = JSON.parse(line!) as {
+      event_type: string;
+      actor: string;
+      metadata: { matched_rule_kinds: string[]; session_id: string };
+    };
+    expect(ev.event_type).toBe('l2_scan_alert');
+    expect(ev.actor).toBe('li@libz.ai');
+    expect(ev.metadata.session_id).toBe('l2-leak-2');
+    expect(ev.metadata.matched_rule_kinds).toEqual(
+      expect.arrayContaining(['aws-key', 'email']),
+    );
+  });
+
+  it('never echoes the matched secret text into the audit log', async () => {
+    // The privacy-critical guarantee (judge.md §V1.D step 3): an alert that
+    // recorded the leaked value would itself be a leak.
+    const leak = 'AKIAIOSFODNN7EXAMPLE';
+    await postRawTranscript(
+      'l2-leak-3',
+      'li@libz.ai',
+      `{"role":"user","content":"secret ${leak} here"}\n`,
+    );
+    expect(readAllAudit()).not.toContain(leak);
+  });
+
+  it('writes no alert for an already-clean transcript', async () => {
+    await postRawTranscript(
+      'l2-clean-1',
+      'li@libz.ai',
+      '{"role":"user","content":"please refactor the parser"}\n',
+    );
+    expect(readAllAudit()).not.toContain('l2_scan_alert');
   });
 });
 
