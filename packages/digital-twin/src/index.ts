@@ -323,8 +323,15 @@ export {
 } from './bpp/mining/transcript-extractor.js';
 export {
   mineCorrectionCandidates,
+  correctionCandidateId,
   type CorrectionAdapterInput,
 } from './bpp/mining/correction-adapter.js';
+export {
+  runMining,
+  SEED_SAMPLE_DIR,
+  type MiningRunOptions,
+  type MiningRunResult,
+} from './bpp/mining/orchestrator.js';
 export {
   mineBehaviorCandidates,
   type BehaviorMinerInput,

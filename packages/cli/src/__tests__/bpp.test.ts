@@ -48,6 +48,9 @@ import {
   parseBppJoinArgs,
   runBppJoin,
   renderBppJoinHelp,
+  parseBppMineArgs,
+  runBppMine,
+  renderBppMineHelp,
   type RunBppServeDeps,
 } from "../commands/bpp.js";
 
@@ -897,5 +900,92 @@ describe("bpp join — arg + error handling", () => {
 
   it("namespace help now lists join", () => {
     expect(renderBppHelp()).toContain("teamagent bpp join");
+  });
+});
+
+// ── PR-M3B — `bpp mine` mining orchestrator entry point ──────────────────
+//
+// Acceptance contract §里程碑三 验证方法 step 3 ("trigger a mining run").
+// `bpp mine` is a server-side batch job — it calls runMining directly and
+// drives the on-disk mining pool / inbox / audit / budget artifacts.
+
+describe("parseBppMineArgs", () => {
+  it("parses --repo / --state in both `=` and space forms", () => {
+    expect(parseBppMineArgs(["--repo=/a", "--state=/b"])).toMatchObject({
+      repo: "/a",
+      state: "/b",
+    });
+    expect(parseBppMineArgs(["--repo", "/a", "--state", "/b"])).toMatchObject({
+      repo: "/a",
+      state: "/b",
+    });
+  });
+
+  it("parses the --seed-sample / --mock flags and --budget-usd / --team", () => {
+    const args = parseBppMineArgs([
+      "--repo=/a",
+      "--state=/b",
+      "--seed-sample",
+      "--mock",
+      "--budget-usd",
+      "0.01",
+      "--team=acme",
+    ]);
+    expect(args.seedSample).toBe(true);
+    expect(args.mock).toBe(true);
+    expect(args.budgetUsd).toBe(0.01);
+    expect(args.team).toBe("acme");
+  });
+
+  it("rejects unknown args and a non-numeric --budget-usd", () => {
+    expect(() => parseBppMineArgs(["--bogus"])).toThrow(BppArgError);
+    expect(() => parseBppMineArgs(["--budget-usd=abc"])).toThrow(BppArgError);
+  });
+});
+
+describe("renderBppMineHelp / namespace help", () => {
+  it("mine help anchors on the literal command line and key flags", () => {
+    const help = renderBppMineHelp();
+    expect(help).toContain("teamagent bpp mine");
+    expect(help).toContain("--repo");
+    expect(help).toContain("--state");
+    expect(help).toContain("--seed-sample");
+    expect(help).toContain("--mock");
+  });
+
+  it("namespace help now lists mine", () => {
+    expect(renderBppHelp()).toContain("teamagent bpp mine");
+  });
+});
+
+describe("runBppMine", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  it("without --repo / --state exits 2", async () => {
+    const res = await runBppMine(parseBppMineArgs(["--repo=/only"]));
+    expect(res.exitCode).toBe(2);
+    expect(res.stderr).toContain("--repo / --state");
+  });
+
+  it("runs a seeded sample mine end-to-end and reports the candidate counts", async () => {
+    const repo = join(mkdtempSync(join(tmpdir(), "bpp-mine-")), "conv-repo");
+    const state = join(mkdtempSync(join(tmpdir(), "bpp-mine-")), "mining-state");
+    dirs.push(join(repo, ".."), join(state, ".."));
+    const res = await runBppMine(
+      parseBppMineArgs([
+        "--repo",
+        repo,
+        "--state",
+        state,
+        "--seed-sample",
+        "--mock",
+      ]),
+    );
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("6 条候选");
+    expect(res.stdout).toContain("3 条自动推送");
   });
 });

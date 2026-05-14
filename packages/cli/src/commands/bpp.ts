@@ -11,6 +11,7 @@
 
 import {
   runProdServer,
+  runMining,
   type BestPractice,
   type BpType,
   type BpTier,
@@ -964,6 +965,133 @@ export async function runBppJoin(args: BppJoinArgs): Promise<BppCmdResult> {
   };
 }
 
+// ── bpp mine ──────────────────────────────────────────────────────────────
+//
+// Unlike the other subcommands, `bpp mine` is NOT an HTTP client — it is a
+// server-side batch job that reads the M2 conversation repo and writes the
+// mining pool / inboxes / audit log / budget ledger directly on disk. It
+// calls `runMining` from @teamagent/digital-twin; no central server need run.
+
+export interface BppMineArgs {
+  help: boolean;
+  repo?: string;
+  state?: string;
+  seedSample: boolean;
+  mock: boolean;
+  budgetUsd?: number;
+  team?: string;
+}
+
+/** Accepts both `--key=value` and `--key value` so the acceptance harness's
+ *  space-separated probes (`--repo "$M3_REPO"`) and `=`-form both work. */
+export function parseBppMineArgs(argv: string[]): BppMineArgs {
+  const out: BppMineArgs = { help: false, seedSample: false, mock: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--help" || a === "-h") {
+      out.help = true;
+      continue;
+    }
+    if (a === "--seed-sample") {
+      out.seedSample = true;
+      continue;
+    }
+    if (a === "--mock") {
+      out.mock = true;
+      continue;
+    }
+    const eq = a.indexOf("=");
+    const flag = eq === -1 ? a : a.slice(0, eq);
+    const valued = flag === "--repo" || flag === "--state" || flag === "--team" || flag === "--budget-usd";
+    if (!valued) {
+      throw new BppArgError(`bpp mine: 未知参数 ${a}`);
+    }
+    let value: string;
+    if (eq !== -1) {
+      value = a.slice(eq + 1);
+    } else {
+      const next = argv[i + 1];
+      if (next === undefined) {
+        throw new BppArgError(`bpp mine: ${flag} 需要一个值`);
+      }
+      value = next;
+      i += 1;
+    }
+    if (flag === "--repo") {
+      out.repo = value;
+    } else if (flag === "--state") {
+      out.state = value;
+    } else if (flag === "--team") {
+      out.team = value;
+    } else {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) {
+        throw new BppArgError("bpp mine: --budget-usd 必须是非负数字");
+      }
+      out.budgetUsd = n;
+    }
+  }
+  return out;
+}
+
+export function renderBppMineHelp(): string {
+  return [
+    "teamagent bpp mine — 运行一次最佳实践挖矿批处理",
+    "",
+    "用法:",
+    "  teamagent bpp mine --repo <对话仓库路径> --state <挖矿状态目录>",
+    "                     [--seed-sample] [--mock] [--budget-usd <上限>] [--team <名称>]",
+    "",
+    "  --repo <path>     M2 中心对话仓库目录（也作为推送根目录）",
+    "  --state <path>    挖矿状态目录（pool/ audit/ budget-*.json mined-cursor.json）",
+    "  --seed-sample     先把内置的设计样本语料铺进 --repo 再挖矿",
+    "  --mock            强制使用确定性的 mock 大模型 provider（花费 0）",
+    "  --budget-usd <n>  每团队每天的预算上限（默认 5）",
+    "  --team <name>     预算账本的团队键（默认 default）",
+    "",
+    "  从中心对话仓库拉取还没挖过的对话 → 三个 miner 扇出 → 大模型规范化 →",
+    "  Wilson 分级：高分候选自动推送进成员收件箱，低分候选留在挖矿池等下一轮。",
+    "  --repo / --state 同时支持 `--repo=<路径>` 和 `--repo <路径>` 两种写法。",
+  ].join("\n");
+}
+
+export async function runBppMine(args: BppMineArgs): Promise<BppCmdResult> {
+  if (args.repo === undefined || args.state === undefined) {
+    return {
+      exitCode: 2,
+      stdout: "",
+      stderr: "bpp mine: 必须提供 --repo / --state\n",
+    };
+  }
+  try {
+    const result = await runMining({
+      repoDir: args.repo,
+      stateDir: args.state,
+      seedSample: args.seedSample,
+      mock: args.mock,
+      budgetUsd: args.budgetUsd,
+      team: args.team,
+      log: (m: string) => process.stderr.write(m + "\n"),
+    });
+    return {
+      exitCode: result.exit_code,
+      stdout:
+        `挖矿完成 ${result.run_id}：${result.candidates_total} 条候选，` +
+        `${result.auto_pushed} 条自动推送进收件箱，` +
+        `${result.pool_retained} 条留在挖矿池，` +
+        `${result.llm_calls} 次大模型调用，花费 $${result.spent_usd.toFixed(4)}\n`,
+      stderr: "",
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: `bpp mine: 挖矿失败 — ${msg}\n`,
+    };
+  }
+}
+
 // ── bpp namespace dispatcher ──────────────────────────────────────────────
 
 export function renderBppHelp(): string {
@@ -991,6 +1119,8 @@ export function renderBppHelp(): string {
     "                              查询某个用户的有效角色层级",
     "  teamagent bpp join --user-id=<id> --display-name=<名字>",
     "                              成员客户端：以 member 身份一键接入中心服务",
+    "  teamagent bpp mine --repo=<路径> --state=<路径> [--seed-sample] [--mock]",
+    "                              运行一次挖矿批处理：拉取未挖对话→分级→自动推送",
     "",
     "每个子命令支持 --help。",
   ].join("\n");
@@ -1099,6 +1229,16 @@ export async function runBpp(argv: string[]): Promise<void> {
       return;
     }
     writeBppResult(await runBppJoin(args));
+    return;
+  }
+
+  if (sub === "mine") {
+    const args = parseBppMineArgs(rest);
+    if (args.help) {
+      process.stdout.write(renderBppMineHelp() + "\n");
+      return;
+    }
+    writeBppResult(await runBppMine(args));
     return;
   }
 

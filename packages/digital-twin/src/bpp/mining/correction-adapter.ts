@@ -65,7 +65,7 @@ export function mineCorrectionCandidates(input: CorrectionAdapterInput): Candida
       if (m.timestamp < earliestTs) earliestTs = m.timestamp;
     }
 
-    const id = `bp-rule-${first.user_id}-${slugify(first.signal)}`;
+    const id = correctionCandidateId(first.user_id, first.signal);
     out.push({
       id,
       type: 'rule',
@@ -88,10 +88,40 @@ export function mineCorrectionCandidates(input: CorrectionAdapterInput): Candida
   return out;
 }
 
-function slugify(s: string): string {
-  return s
+/**
+ * Build a filesystem-safe, collision-free candidate id from (user_id, signal).
+ * Exported so the mining orchestrator can recompute the same id when it
+ * resolves a candidate back to its source sessions for the audit log.
+ *
+ *  - user_id is sanitized to the `assertSafeId` charset (`[A-Za-z0-9._-]`) so
+ *    email-style ids (`alice@team`) don't produce ids `writeBp` later rejects.
+ *  - the signal slug falls back to a stable FNV-1a hash when the ASCII slug is
+ *    empty — CJK-only corrections (the common case in this project) would
+ *    otherwise collapse to `""` and collide across distinct signals.
+ */
+export function correctionCandidateId(user_id: string, signal: string): string {
+  return `bp-rule-${safeIdPart(user_id)}-${slugOrHash(signal)}`;
+}
+
+function safeIdPart(s: string): string {
+  return s.replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+function slugOrHash(s: string): string {
+  const slug = s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
+  return slug.length > 0 ? slug : fnv1aHex(s);
+}
+
+/** 32-bit FNV-1a → 8 hex chars. Stable across runs and machines, no deps. */
+function fnv1aHex(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
 }
