@@ -8,6 +8,7 @@ import {
   checkClaudeMd,
   checkInstallTableBundles,
   checkDigitalTwinUploader,
+  checkNodeVersionAt,
   executeDoctor,
   renderDoctorResult,
   renderDoctorHelp,
@@ -1060,5 +1061,43 @@ describe("executeDoctor → install-table-bundles wiring (issue #299)", () => {
     expect(itb).toBeDefined();
     expect(itb?.status).toBe("fail");
     expect(r.allPassed).toBe(false);
+  });
+});
+
+describe("issue #445: checkNodeVersionAt — three Node version tiers", () => {
+  it("Node < 22 → fail with nvm hint", () => {
+    const r = checkNodeVersionAt("v20.10.0");
+    expect(r.status).toBe("fail");
+    expect(r.detail).toContain("v20.10.0");
+    expect(r.fix).toContain("nvm install 22");
+  });
+
+  it("Node 23.3.0 → fail because node:sqlite not stable (the install transcript case)", () => {
+    const r = checkNodeVersionAt("v23.3.0");
+    expect(r.status).toBe("fail");
+    expect(r.detail).toContain("v23.3.0");
+    expect(r.detail).toContain("node:sqlite");
+    expect(r.detail).toContain("NODE_OPTIONS");
+    expect(r.fix).toContain("nvm install 24");
+  });
+
+  it("Node 23.4.0 → fail (still in the broken band)", () => {
+    expect(checkNodeVersionAt("v23.4.0").status).toBe("fail");
+  });
+
+  it("Node 23.5.0 → pass (node:sqlite stable)", () => {
+    const r = checkNodeVersionAt("v23.5.0");
+    expect(r.status).toBe("pass");
+    expect(r.detail).toContain("node:sqlite stable");
+  });
+
+  it("Node 24.x LTS → pass", () => {
+    const r = checkNodeVersionAt("v24.0.0");
+    expect(r.status).toBe("pass");
+  });
+
+  it("Node 22.x → pass (below the 23.x broken band)", () => {
+    const r = checkNodeVersionAt("v22.10.0");
+    expect(r.status).toBe("pass");
   });
 });

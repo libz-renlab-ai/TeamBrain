@@ -447,6 +447,47 @@ describe("executeInit", () => {
     expect(structureStep.detail).toContain("skipImport");
   });
 
+  it("issue #445: default (no llmClient, no --import-rules) skips LLM import", async () => {
+    nodeFs.writeFileSync(path.join(tmp.cwd, "CLAUDE.md"), "- one\n- two\n");
+    const r = await executeInit({
+      ...commonOpts(),
+      // intentionally NO llmClient, NO importRules, NO skipImport
+    });
+    expect(r.ok).toBe(true);
+    expect(r.summary.importedRules).toBe(0);
+    const structureStep = r.steps.find((s) => s.step === "structure-rules")!;
+    expect(structureStep.detail).toContain("默认跳过");
+    expect(structureStep.detail).toContain("--import-rules");
+  });
+
+  it("issue #445: --import-rules without llmClient runs the import path", async () => {
+    nodeFs.writeFileSync(path.join(tmp.cwd, "CLAUDE.md"), "- one\n- two\n");
+    const r = await executeInit({
+      ...commonOpts(),
+      importRules: true,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    expect(r.ok).toBe(true);
+    expect(r.summary.importedRules).toBeGreaterThan(0);
+  });
+
+  it("issue #445: skipImport beats importRules (skipImport=true wins)", async () => {
+    nodeFs.writeFileSync(path.join(tmp.cwd, "CLAUDE.md"), "- one\n- two\n");
+    const r = await executeInit({
+      ...commonOpts(),
+      importRules: true,
+      skipImport: true,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    expect(r.ok).toBe(true);
+    expect(r.summary.importedRules).toBe(0);
+  });
+
+  it("issue #445: --import-rules CLI flag parses to importRules=true", () => {
+    expect(parseInitArgs(["--import-rules"]).importRules).toBe(true);
+    expect(parseInitArgs([]).importRules).toBeUndefined();
+  });
+
   it("LLM returning null for all rules → 0 imported, no failure", async () => {
     nodeFs.writeFileSync(path.join(tmp.cwd, "CLAUDE.md"), "- a\n- b\n");
     const r = await executeInit({

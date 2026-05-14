@@ -63,6 +63,13 @@ export interface InitOptions {
   llmClient?: LLMClient;
   /** 若为 true，跳过 LLM 导入步骤（例如无网络/无 claude CLI 时快装）。 */
   skipImport?: boolean;
+  /**
+   * 显式 opt-in LLM 规则导入。默认 false——init 不再默认调用本机 `claude -p` 把
+   * CLAUDE.md / .cursorrules 结构化入库，避免：(a) 无 ANTHROPIC_API_KEY 时静默挂死；
+   * (b) 烧穿 Claude Code 订阅 quota（typical 91+140 条规则串行调用）。
+   * 测试路径走 llmClient 注入：opts.llmClient 存在 + skipImport!==true 时仍 import。
+   */
+  importRules?: boolean;
   /** 跳过 hook 安装（测试环境下 dist bundle 可能不存在）。 */
   skipHook?: boolean;
   /**
@@ -999,11 +1006,24 @@ async function doImportRules(
     };
   }
 
-  if (opts.skipImport) {
+  // Issue #445: default to skipping LLM rule import to avoid (a) silent hang
+  // when no API key, (b) burning the user's Claude Code subscription quota.
+  // Programmatic / test callers that inject opts.llmClient still get the
+  // import path (preserves all existing test fixtures and InitOptions API).
+  const shouldImport =
+    opts.skipImport !== true &&
+    (opts.importRules === true || opts.llmClient !== undefined);
+  if (!shouldImport) {
+    const reason = opts.skipImport
+      ? "skipImport=true"
+      : "默认跳过 LLM 规则导入";
+    const hint = opts.skipImport
+      ? ""
+      : "。如需导入，运行：teamagent init --import-rules";
     steps.push(
       okStep(
         "structure-rules",
-        `skipImport=true，跳过（${rawTexts.length} 条规则未导入）`,
+        `${reason}，跳过（${rawTexts.length} 条规则未导入）${hint}`,
       ),
     );
     return { steps, importedCount: 0, wouldImport: rawTexts.length };
@@ -1905,6 +1925,7 @@ export function parseInitArgs(argv: string[]): InitOptions {
     const a = argv[i]!;
     if (a === "--dry-run") opts.dryRun = true;
     else if (a === "--skip-import") opts.skipImport = true;
+    else if (a === "--import-rules") opts.importRules = true;
     else if (a === "--skip-hook") opts.skipHook = true;
     else if (a === "--skip-seed") opts.skipSeed = true;
     else if (a === "--no-user-level-hook") opts.userLevelHook = false;

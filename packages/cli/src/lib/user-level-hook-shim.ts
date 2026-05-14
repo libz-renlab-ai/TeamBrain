@@ -47,8 +47,27 @@ export function shellQuote(p: string): string {
  *
  * The literal `_` between body and path is a conventional placeholder for
  * `$0` (script name); `$1` is the staged path.
+ *
+ * Issue #445 (bug 2): On Node 22.5–22.x and 23.0–23.4, `node:sqlite` is
+ * behind `--experimental-sqlite`. Hooks are spawned by Claude Code with a
+ * fresh env that does NOT inherit NODE_OPTIONS from the user's shell rc,
+ * so the staged bin-*.cjs crashes with ERR_UNKNOWN_BUILTIN_MODULE the
+ * moment it tries `require('node:sqlite')`. We detect the running Node
+ * version inside the shim and inject the flag only on the broken band.
+ * On Node ≥23.5 (stable node:sqlite) and ≥24, no flag is passed.
+ * On Node 22.0–22.4 (no node:sqlite at all), no flag (will still fail
+ * loudly, which `teamagent doctor` flags separately).
  */
+export const HOOK_NODE_VERSION_INJECT_BODY =
+  '[ -f "$1" ] || exit 0; ' +
+  'v=$(node -p process.versions.node 2>/dev/null); ' +
+  'case "$v" in ' +
+  '22.[5-9].*|22.[1-9][0-9].*|23.[0-4].*) ' +
+  'exec node --experimental-sqlite "$1" ;; ' +
+  '*) exec node "$1" ;; ' +
+  'esac';
+
 export function buildUserLevelHookCommand(stagedPath: string): string {
   const q = shellQuote(toForwardSlash(stagedPath));
-  return `bash -c '[ -f "$1" ] || exit 0; exec node "$1"' _ ${q}`;
+  return `bash -c '${HOOK_NODE_VERSION_INJECT_BODY}' _ ${q}`;
 }

@@ -604,15 +604,21 @@ async function main(): Promise<void> {
     case "init": {
       if (rest.includes("--help") || rest.includes("-h")) {
         process.stdout.write(
-          "Usage: teamagent init [--dry-run] [--skip-import] [--skip-hook] [--skip-seed]\n" +
-          "                      [--skip-warmup] [--install-plugins]\n" +
+          "Usage: teamagent init [--dry-run] [--import-rules] [--skip-import] [--skip-hook]\n" +
+          "                      [--skip-seed] [--skip-warmup] [--install-plugins]\n" +
           "                      [--target=claude|codex|both] [--pack <all|name1,name2>]\n" +
           "                      [--no-user-level-hook] [--force-nested-init]\n" +
           "                      [--cwd=<path>] [--home=<path>]\n" +
           "\n" +
           "Options:\n" +
           "  --dry-run              Preview what init would do without making changes\n" +
-          "  --skip-import          Skip LLM-based rule import step\n" +
+          "  --import-rules         OPT-IN: structure CLAUDE.md / .cursorrules via local\n" +
+          "                         `claude -p` and import into knowledge DB. Default OFF\n" +
+          "                         (issue #445) — running ~231 LLM calls on every init\n" +
+          "                         silently hangs without an API key and can burn the\n" +
+          "                         user's Claude Code subscription quota.\n" +
+          "  --skip-import          Force-skip LLM-based rule import step (overrides any\n" +
+          "                         --import-rules; equivalent to default since #445).\n" +
           "  --skip-hook            Skip hook registration\n" +
           "  --skip-seed            Skip bundled seed-rule injection\n" +
           "  --skip-warmup          Skip embedding model warmup\n" +
