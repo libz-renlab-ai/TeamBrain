@@ -44,16 +44,23 @@ Each slice maps to numbered steps of §2 里程碑一 验证方法.
 ### §V1.A — Server foundation + push fan-out (验证方法 steps 1, 4, 5)
 
 ```
-1.  # step 1 — start a central server instance via the user-facing CLI
+1.  # step 1 — start a central server instance via the user-facing CLI.
+    #   Capture BOTH the top-level help AND the `bpp` namespace help: bpp
+    #   subcommands live under `teamagent bpp <sub>`, so bpp-help.txt is the
+    #   authoritative per-subcommand surface. Probes anchor on the literal
+    #   `teamagent bpp <sub>` prefix — that string only appears on a REAL
+    #   command line, never in the namespace help's "coming soon" prose
+    #   (which lists bare words `push / inbox / ...`, not `teamagent bpp X`).
     pnpm teamagent --help > evidence_dir/cli-help.txt 2>&1
-    grep -nE 'bpp|bp-push|bp-serve|central.?server' evidence_dir/cli-help.txt \
+    pnpm teamagent bpp --help > evidence_dir/bpp-help.txt 2>&1
+    grep -nE 'teamagent bpp serve\b' evidence_dir/bpp-help.txt \
       > evidence_dir/A-serve-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/A-serve-cmd.txt
 2.  # step 4 — push one BestPractice to the push endpoint. The REAL existence
-    #   probe greps cli-help.txt: a command exists only if the CLI lists it,
-    #   never because a doc mentions it. Anchored on the `teamagent <cmd>`
-    #   command prefix so it does NOT false-match an unrelated `--push` flag
-    #   (e.g. `m5-publish [--push]`). grep_exit=0 here == CLI has the command.
-    grep -nE 'teamagent (bpp|bp-push)\b' evidence_dir/cli-help.txt \
+    #   probe greps bpp-help.txt for the literal `teamagent bpp push` command
+    #   line: a command exists only if the CLI lists it as a real command,
+    #   never because a doc mentions it and never because the namespace help
+    #   names it as a future subcommand. grep_exit=0 here == CLI has it.
+    grep -nE 'teamagent bpp push\b' evidence_dir/bpp-help.txt \
       > evidence_dir/A-push-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/A-push-cmd.txt
 2b. # SEPARATE probe — fictional-docs detector. The usage/ops guides shipped in
     #   PR #430 instruct `pnpm teamagent bpp ...`; this probe records that the
@@ -61,9 +68,9 @@ Each slice maps to numbered steps of §2 里程碑一 验证方法.
     #   here is a RED flag (docs promise a CLI that was never wired), NOT a pass.
     grep -rnE 'teamagent .*(bpp|bp-push)|/v1/bp-push' docs/usage/ docs/ops/ \
       > evidence_dir/A-push-docs-fiction.txt 2>&1 ; echo "grep_exit=$?" >> evidence_dir/A-push-docs-fiction.txt
-3.  # step 5 — inbox fan-out reachable from a command (real probe = cli-help.txt,
-    #   anchored on the `teamagent <cmd>` prefix, same anti-false-match rule)
-    grep -nE 'teamagent .*\binbox\b' evidence_dir/cli-help.txt \
+3.  # step 5 — inbox fan-out reachable from a command. Real probe = bpp-help.txt,
+    #   anchored on the literal `teamagent bpp inbox` command line.
+    grep -nE 'teamagent bpp inbox\b' evidence_dir/bpp-help.txt \
       > evidence_dir/A-inbox-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/A-inbox-cmd.txt
 4.  # library-layer cross-check (informational only — proves the SERVER code
     #   works even when the CLI surface does not; keeps the verdict honest)
