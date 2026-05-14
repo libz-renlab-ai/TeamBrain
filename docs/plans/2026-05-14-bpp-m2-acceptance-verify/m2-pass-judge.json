@@ -1,0 +1,26 @@
+{
+  "run_id": "2026-05-14-bpp-m2",
+  "exit_code": 0,
+  "metrics": {
+    "collector_wired_into_stop_hook": true,
+    "uploader_redacts_l1": true,
+    "chinese_id_regex_present": true,
+    "l1_redaction_off_hook_path": true,
+    "l1_redaction_recall": 1.0,
+    "prod_server_supports_tls": true,
+    "upload_endpoint_validates_token": true,
+    "upload_rejects_missing_token": true,
+    "conversation_lands_tagged": true,
+    "server_l2_scan_wired": true,
+    "l2_alert_recorded": true,
+    "l2_alert_no_plaintext": true,
+    "retry_queue_exists": true,
+    "retry_queue_vitest_exit": 0,
+    "throughput_1500_ok": true,
+    "cli_has_member_stats_cmd": true,
+    "member_stats_endpoint_responds": true,
+    "typecheck_exit": 0,
+    "vitest_exit": 0
+  },
+  "evidence_dir": ".judge/2026-05-14-bpp-m2/evidence/"
+}

@@ -491,3 +491,46 @@ re-running the matching §V1 slice.
 | PR-M2B | `/v1/cc-sessions` POST handler runs L2 scan, redacts before write, appends `l2_scan_alert` (rule kinds only) to `_audit/` | D1, D2, D3 |
 | PR-M2C | `GET /v1/member-stats?user=` (reads the output-dir tree on demand) + `teamagent digital-twin member-stats` CLI | G1 |
 | PR-M2D | M2 judge harness completion run → PASS `judge.json` + `judge-v3.json` | (records the M2 verdict) |
+
+## M2 completion run — 2026-05-14 against `main` @ 3517601
+
+Recorded in `.judge/2026-05-14-bpp-m2/` (gitignored transient evidence);
+`judge.json` copied into this plan dir as `m2-pass-judge.json`, the §V3
+verdict as `m2-pass-judge-v3.json`.
+
+**Actual M2 verdict: PASS — 15 PASS / 2 MANUAL.**
+
+The 9 baseline FAIL rows were flipped by a 4-PR series, each re-running its
+§V1 slice to confirm:
+
+| PR | Scope shipped | Rows flipped |
+|----|---------------|--------------|
+| #481 PR-M2-auth | `wrapServerWithHttps` TLS + `requireBearerToken` gate wired into the cc-session upload server; `throughput-1500.test.ts` | C1, C2, F1 |
+| #482 PR-M2A | `@teamagent/core` dep; uploader daemon L1-redacts before `buildCcSessionEnvelope`; `l1_redaction_count` on the envelope; Chinese 18-digit ID regex; `l1-recall.test.ts` | B1, B2, B3 |
+| #483 PR-M2B | `/v1/cc-sessions` POST handler L2-scans, redacts before write, appends `l2_scan_alert` (rule kinds only) to `_audit/` | D1, D2, D3 |
+| #484 PR-M2C | `GET /v1/member-stats?user=` + per-session `<id>.meta.json` redaction-count sidecar + `teamagent digital-twin member-stats` CLI | G1 |
+
+Independently re-graded by a process-isolated `claude -p` judge that saw
+ONLY `judge.json` + `evidence/**` (no source, no conversation context):
+verdict **PASS**, every one of the 17 rows PASS except A2 and E2 which stay
+MANUAL-pending (count toward PASS per the §V3 rule). Recorded in
+`m2-pass-judge-v3.json`.
+
+**One gap the completion run caught + fixed in PR-M2D.** The §V1.G step 1
+probe (`digital-twin --help` must list `member-stats`) FAILed on the first
+completion run: PR-M2C added the subcommand to `commands/digital-twin.ts` but
+missed the hard-coded `digital-twin` help block in `bin.ts`. That one-line
+help-text gap is fixed in this PR — exactly the kind of "wired but not
+discoverable" gap the harness exists to catch.
+
+**Two notes carried forward:**
+
+1. **A2 / E2 still need a human.** "3-machine half-day dogfood" and "physical
+   10-minute disconnect + auto-resume" cannot be agent-self-certified — like
+   M1 row C2, a human must attach the physical-world evidence. They are the
+   two outstanding M2 items and are BLOCKED-ON-HUMAN by design, not code gaps.
+2. **B4 / D3 are no longer vacuous.** At baseline these privacy-guard rows
+   passed because the feature they guard did not exist. They now pass on the
+   real guarantee: `tap-session.ts` still carries no redaction call (redaction
+   lives in the detached uploader daemon), and the `l2_scan_alert` event
+   records only `matched_rule_kinds`, never the matched secret text.
