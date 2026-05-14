@@ -885,6 +885,81 @@ export async function runBppRole(args: BppRoleArgs): Promise<BppCmdResult> {
   };
 }
 
+// ── bpp join ──────────────────────────────────────────────────────────────
+
+export interface BppJoinArgs {
+  help: boolean;
+  server: string;
+  userId?: string;
+  displayName?: string;
+}
+
+export function parseBppJoinArgs(argv: string[]): BppJoinArgs {
+  const out: BppJoinArgs = { help: false, server: BPP_DEFAULT_SERVER };
+  for (const a of argv) {
+    if (a === "--help" || a === "-h") {
+      out.help = true;
+    } else if (a.startsWith("--server=")) {
+      out.server = a.slice("--server=".length);
+    } else if (a.startsWith("--user-id=")) {
+      out.userId = a.slice("--user-id=".length);
+    } else if (a.startsWith("--display-name=")) {
+      out.displayName = a.slice("--display-name=".length);
+    } else {
+      throw new BppArgError(`bpp join: 未知参数 ${a}`);
+    }
+  }
+  return out;
+}
+
+export function renderBppJoinHelp(): string {
+  return [
+    "teamagent bpp join — 成员客户端：一键接入 BPP 中心服务",
+    "",
+    "用法:",
+    "  teamagent bpp join --user-id=<id> --display-name=<名字> [--server=<url>]",
+    "",
+    `  --server=<url>       中心服务地址（默认 ${BPP_DEFAULT_SERVER}）`,
+    "  --user-id=<id>       你的稳定用户 id（一般是 git email）",
+    "  --display-name=<名字> 团队里展示的名字",
+    "",
+    "  以 member 角色自动注册到中心服务；之后用 `teamagent bpp inbox` 查看收到的推送。",
+  ].join("\n");
+}
+
+export async function runBppJoin(args: BppJoinArgs): Promise<BppCmdResult> {
+  if (args.userId === undefined || args.displayName === undefined) {
+    return {
+      exitCode: 2,
+      stdout: "",
+      stderr: "bpp join: 必须提供 --user-id / --display-name\n",
+    };
+  }
+  const server = normalizeServer(args.server);
+  let resp: { status: number; json: unknown };
+  try {
+    resp = await httpPostJson(`${server}/v1/members`, {
+      user_id: args.userId,
+      display_name: args.displayName,
+    });
+  } catch (err) {
+    return connRefusedResult(server, err);
+  }
+  if (resp.status !== 200) {
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: `bpp join: 服务返回 ${resp.status} — ${JSON.stringify(resp.json)}\n`,
+    };
+  }
+  const r = resp.json as { ok: true; user_id: string };
+  return {
+    exitCode: 0,
+    stdout: `已以 member 身份接入中心服务 ${server}：${r.user_id}\n`,
+    stderr: "",
+  };
+}
+
 // ── bpp namespace dispatcher ──────────────────────────────────────────────
 
 export function renderBppHelp(): string {
@@ -910,6 +985,8 @@ export function renderBppHelp(): string {
     "                              查看中心服务的审计事件日志",
     "  teamagent bpp role --user=<id>",
     "                              查询某个用户的有效角色层级",
+    "  teamagent bpp join --user-id=<id> --display-name=<名字>",
+    "                              成员客户端：以 member 身份一键接入中心服务",
     "",
     "每个子命令支持 --help。",
   ].join("\n");
@@ -1008,6 +1085,16 @@ export async function runBpp(argv: string[]): Promise<void> {
       return;
     }
     writeBppResult(await runBppRole(args));
+    return;
+  }
+
+  if (sub === "join") {
+    const args = parseBppJoinArgs(rest);
+    if (args.help) {
+      process.stdout.write(renderBppJoinHelp() + "\n");
+      return;
+    }
+    writeBppResult(await runBppJoin(args));
     return;
   }
 

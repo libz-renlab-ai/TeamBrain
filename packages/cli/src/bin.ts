@@ -1737,6 +1737,8 @@ async function main(): Promise<void> {
           "                                   半自动源加 --dry-run 只产出候选 md 供人工勾选",
           "  teamagent bpp serve [--port=<n>] [--host=<host>] [--dir=<path>]",
           "                                   启动 BPP（团队最佳实践推送）中心服务；子命令见 `teamagent bpp --help`",
+          "  teamagent bpp join --user-id=<id> --display-name=<名字> [--server=<url>]",
+          "                                   BPP 成员客户端：以 member 身份一键接入中心服务",
           "  teamagent team init --user-id=<id> --display-name=<名字> [--dir=<path>]",
           "                                   加入 BPP 团队并成为团队负责人；子命令见 `teamagent team --help`",
           "  teamagent team transfer-lead --from=<id> --to=<id> [--dir=<path>]",

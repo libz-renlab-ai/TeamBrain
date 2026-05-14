@@ -4,7 +4,13 @@
 // Plan: docs/superpowers/plans/2026-05-13-bpp.md Task 1.3.
 
 import { randomUUID } from 'node:crypto';
-import { writeBp, appendInbox, listInbox, appendAudit } from './store.js';
+import {
+  writeBp,
+  appendInbox,
+  listInbox,
+  appendAudit,
+  writeMember,
+} from './store.js';
 import type { BestPractice, InboxItem, PushEvent } from './types.js';
 
 export interface BpPushBody {
@@ -76,4 +82,55 @@ export function handleBpPush(rootDir: string, body: unknown): BpPushResult {
 
 export function handleInbox(rootDir: string, receiverId: string): InboxResult {
   return { ok: true, items: listInbox(rootDir, receiverId) };
+}
+
+export interface MemberJoinBody {
+  user_id: string;
+  display_name: string;
+}
+
+export interface MemberJoinResult {
+  ok: true;
+  user_id: string;
+}
+
+function assertValidMemberJoinBody(
+  body: unknown,
+): asserts body is MemberJoinBody {
+  if (typeof body !== 'object' || body === null) {
+    throw new Error('malformed body: object required');
+  }
+  const o = body as Record<string, unknown>;
+  if (typeof o['user_id'] !== 'string' || (o['user_id'] as string).length === 0) {
+    throw new Error('malformed body: user_id required');
+  }
+  if (
+    typeof o['display_name'] !== 'string' ||
+    (o['display_name'] as string).length === 0
+  ) {
+    throw new Error('malformed body: display_name required');
+  }
+}
+
+/**
+ * Member self-registration — the `bpp join` member client posts here on a
+ * clean dev machine to auto-join the central service (acceptance §5 item 2).
+ * Writes a `TeamMember` with `role: 'member'`; `writeMember` upserts by
+ * `user_id` so a re-join is idempotent. Unauthenticated by design (members
+ * self-register) — same LAN-readability caveat as the other /v1/* routes.
+ */
+export function handleMemberJoin(
+  rootDir: string,
+  body: unknown,
+): MemberJoinResult {
+  assertValidMemberJoinBody(body);
+  writeMember(rootDir, {
+    schema_version: 1,
+    user_id: body.user_id,
+    display_name: body.display_name,
+    role: 'member',
+    joined_at: new Date().toISOString(),
+    notification_prefs: {},
+  });
+  return { ok: true, user_id: body.user_id };
 }

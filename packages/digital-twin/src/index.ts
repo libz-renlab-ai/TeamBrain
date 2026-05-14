@@ -265,9 +265,12 @@ export {
 export {
   handleBpPush,
   handleInbox,
+  handleMemberJoin,
   type BpPushBody,
   type BpPushResult,
   type InboxResult,
+  type MemberJoinBody,
+  type MemberJoinResult,
 } from './bpp/server-handlers.js';
 
 // BPP Phase 2-6 modules (added in PR #430 follow-up after parallel agent team).
