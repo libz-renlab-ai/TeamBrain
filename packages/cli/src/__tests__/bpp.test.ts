@@ -45,6 +45,9 @@ import {
   parseBppRoleArgs,
   runBppRole,
   renderBppRoleHelp,
+  parseBppJoinArgs,
+  runBppJoin,
+  renderBppJoinHelp,
   type RunBppServeDeps,
 } from "../commands/bpp.js";
 
@@ -816,5 +819,83 @@ describe("bpp audit / role — arg + error handling", () => {
     const help = renderBppHelp();
     expect(help).toContain("teamagent bpp audit");
     expect(help).toContain("teamagent bpp role");
+  });
+});
+
+describe("bpp join against a real server", () => {
+  let server: MockServerHandle;
+  let dataDir: string;
+
+  beforeEach(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "bpp-join-data-"));
+    server = await startMockServer({
+      port: 0,
+      host: "127.0.0.1",
+      outputDir: dataDir,
+    });
+  });
+  afterEach(async () => {
+    await server.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it("join self-registers a member; bpp role then reports member tier", async () => {
+    const res = await runBppJoin(
+      parseBppJoinArgs([
+        `--server=${server.url}`,
+        "--user-id=xiaowang",
+        "--display-name=Xiao Wang",
+      ]),
+    );
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("xiaowang");
+
+    const role = await runBppRole(
+      parseBppRoleArgs([`--server=${server.url}`, "--user=xiaowang"]),
+    );
+    expect(role.stdout).toContain("member");
+  });
+
+  it("join is idempotent — re-joining the same user still exits 0", async () => {
+    const args = [
+      `--server=${server.url}`,
+      "--user-id=xiaoli",
+      "--display-name=Xiao Li",
+    ];
+    expect((await runBppJoin(parseBppJoinArgs(args))).exitCode).toBe(0);
+    expect((await runBppJoin(parseBppJoinArgs(args))).exitCode).toBe(0);
+  });
+});
+
+describe("bpp join — arg + error handling", () => {
+  it("join without required flags exits 2", async () => {
+    const res = await runBppJoin(parseBppJoinArgs(["--user-id=x"]));
+    expect(res.exitCode).toBe(2);
+    expect(res.stderr).toContain("--user-id / --display-name");
+  });
+
+  it("join rejects unknown args", () => {
+    expect(() => parseBppJoinArgs(["--bogus"])).toThrow(BppArgError);
+  });
+
+  it("join against a down server exits 1 with a connect hint", async () => {
+    const res = await runBppJoin(
+      parseBppJoinArgs([
+        "--server=http://127.0.0.1:1",
+        "--user-id=x",
+        "--display-name=X",
+      ]),
+    );
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain("无法连接");
+  });
+
+  it("help renderer mentions the key flags", () => {
+    expect(renderBppJoinHelp()).toContain("--user-id=");
+    expect(renderBppJoinHelp()).toContain("--display-name=");
+  });
+
+  it("namespace help now lists join", () => {
+    expect(renderBppHelp()).toContain("teamagent bpp join");
   });
 });
