@@ -90,6 +90,7 @@ describe("executeInit", () => {
 
     const r = await executeInit({
       ...commonOpts(),
+      structure: true,
       llmClient: stubLLM(OK_LLM_RESPONSE),
     });
 
@@ -125,6 +126,44 @@ describe("executeInit", () => {
     );
     expect(mirrorStep?.status).toBe("skipped");
     expect(mirrorStep?.detail).toContain("不存在");
+  });
+
+  // #445: default `init` must NOT call the LLM or read
+  // CLAUDE.md/AGENTS.md/.cursorrules. LLM rule structuring spawns one
+  // `claude -p` per rule (231 in a real install transcript), burns the user's
+  // Claude subscription quota, and hangs with no API key. Now opt-in: --structure.
+  it("default init does NOT call the LLM and imports 0 rules (#445)", async () => {
+    nodeFs.writeFileSync(
+      path.join(tmp.cwd, "CLAUDE.md"),
+      "# Team rules\n- Prefer fetch over axios\n- Use pnpm\n",
+    );
+    let llmCalls = 0;
+    const spyLLM: LLMClient = {
+      complete: async () => {
+        llmCalls++;
+        return OK_LLM_RESPONSE;
+      },
+    };
+    const r = await executeInit({ ...commonOpts(), llmClient: spyLLM });
+    expect(r.ok).toBe(true);
+    expect(llmCalls).toBe(0);
+    expect(r.summary.importedRules).toBe(0);
+    const structureStep = r.steps.find((s) => s.step === "structure-rules")!;
+    expect(structureStep.detail).toContain("--structure");
+  });
+
+  it("--structure opts in to LLM-based rule import (#445)", async () => {
+    nodeFs.writeFileSync(
+      path.join(tmp.cwd, "CLAUDE.md"),
+      "# Team rules\n- Prefer fetch over axios\n- Use pnpm\n",
+    );
+    const r = await executeInit({
+      ...commonOpts(),
+      structure: true,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    expect(r.ok).toBe(true);
+    expect(r.summary.importedRules).toBe(2);
   });
 
   // Issue #284 slice 1: required-mode artifacts.
@@ -287,6 +326,7 @@ describe("executeInit", () => {
     const r = await executeInit({
       ...commonOpts(),
       target: "codex",
+      structure: true,
       llmClient: stubLLM(OK_LLM_RESPONSE),
     });
 
@@ -297,6 +337,24 @@ describe("executeInit", () => {
       status: "failed",
       detail: "CLAUDE.md 文件无读取权限，请运行: chmod 644 CLAUDE.md",
     });
+  });
+
+  it("default init (no --structure) succeeds even with an unreadable CLAUDE.md (#445)", async () => {
+    const claudePath = path.join(tmp.cwd, "CLAUDE.md");
+    nodeFs.writeFileSync(claudePath, "# locked\n");
+    const accessSpy = vi.spyOn(nodeFs, "accessSync").mockImplementation((p) => {
+      if (p === claudePath) throw new Error("EACCES");
+      return undefined as unknown as void;
+    });
+    const r = await executeInit({
+      ...commonOpts(),
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    accessSpy.mockRestore();
+    // #445: default init does not read CLAUDE.md, so an unreadable one must not block it.
+    expect(r.ok).toBe(true);
+    expect(r.steps[0]).toMatchObject({ step: "pre-check", status: "ok" });
+    expect(accessSpy).not.toHaveBeenCalledWith(claudePath, nodeFs.constants.R_OK);
   });
 
   it("target=codex pre-check only requires read access for existing AGENTS.md", async () => {
@@ -313,6 +371,7 @@ describe("executeInit", () => {
     const r = await executeInit({
       ...commonOpts(),
       target: "codex",
+      structure: true,
       llmClient: stubLLM(OK_LLM_RESPONSE),
     });
 
@@ -358,6 +417,7 @@ describe("executeInit", () => {
       const r = await executeInit({
         ...commonOpts(),
         target: "both",
+        structure: true,
         llmClient: stubLLM(OK_LLM_RESPONSE),
       });
 
@@ -403,6 +463,7 @@ describe("executeInit", () => {
   it("no CLAUDE.md + no .cursorrules → import step reports '无规则可导入'", async () => {
     const r = await executeInit({
       ...commonOpts(),
+      structure: true,
       llmClient: stubLLM(OK_LLM_RESPONSE),
     });
     const structureStep = r.steps.find((s) => s.step === "structure-rules")!;
@@ -428,6 +489,7 @@ describe("executeInit", () => {
     );
     const r = await executeInit({
       ...commonOpts(),
+      structure: true,
       llmClient: stubLLM(OK_LLM_RESPONSE),
     });
     expect(r.summary.importedRules).toBe(3);
@@ -451,6 +513,7 @@ describe("executeInit", () => {
     nodeFs.writeFileSync(path.join(tmp.cwd, "CLAUDE.md"), "- a\n- b\n");
     const r = await executeInit({
       ...commonOpts(),
+      structure: true,
       llmClient: stubLLM("null"),
     });
     expect(r.ok).toBe(true);
@@ -467,7 +530,11 @@ describe("executeInit", () => {
         return OK_LLM_RESPONSE;
       },
     };
-    const r = await executeInit({ ...commonOpts(), llmClient: flakyLLM });
+    const r = await executeInit({
+      ...commonOpts(),
+      structure: true,
+      llmClient: flakyLLM,
+    });
     expect(r.ok).toBe(true);
     expect(r.summary.importedRules).toBe(1);
   });
@@ -758,6 +825,9 @@ describe("parseInitArgs", () => {
   });
   it("--dry-run", () => {
     expect(parseInitArgs(["--dry-run"])).toEqual({ dryRun: true });
+  });
+  it("--structure", () => {
+    expect(parseInitArgs(["--structure"])).toEqual({ structure: true });
   });
   it("--skip-import + --skip-hook combined", () => {
     expect(parseInitArgs(["--skip-import", "--skip-hook"])).toEqual({

@@ -611,15 +611,20 @@ async function main(): Promise<void> {
     case "init": {
       if (rest.includes("--help") || rest.includes("-h")) {
         process.stdout.write(
-          "Usage: teamagent init [--dry-run] [--skip-import] [--skip-hook] [--skip-seed]\n" +
-          "                      [--skip-warmup] [--install-plugins]\n" +
+          "Usage: teamagent init [--dry-run] [--structure] [--skip-import] [--skip-hook]\n" +
+          "                      [--skip-seed] [--skip-warmup] [--install-plugins]\n" +
           "                      [--target=claude|codex|both] [--pack <all|name1,name2>]\n" +
           "                      [--no-user-level-hook] [--force-nested-init]\n" +
           "                      [--cwd=<path>] [--home=<path>]\n" +
           "\n" +
           "Options:\n" +
           "  --dry-run              Preview what init would do without making changes\n" +
-          "  --skip-import          Skip LLM-based rule import step\n" +
+          "  --structure            Opt in to LLM-based rule import from CLAUDE.md /\n" +
+          "                         AGENTS.md / .cursorrules. Spawns one `claude -p` call\n" +
+          "                         per rule and consumes Claude subscription quota.\n" +
+          "                         Default OFF: init does not call the LLM or read those\n" +
+          "                         files — rules live in the rule store, not CLAUDE.md.\n" +
+          "  --skip-import          Force-skip LLM rule import even when --structure is set\n" +
           "  --skip-hook            Skip hook registration\n" +
           "  --skip-seed            Skip bundled seed-rule injection\n" +
           "  --skip-warmup          Skip embedding model warmup\n" +
@@ -644,7 +649,7 @@ async function main(): Promise<void> {
           "Scaffolds TeamAgent config in the current project:\n" +
           "  - Creates .teamagent/ directory and initializes knowledge DB\n" +
           "  - Injects meta-principles into global store\n" +
-          "  - Imports rules from CLAUDE.md / AGENTS.md / .cursorrules\n" +
+          "  - Imports rules from CLAUDE.md / AGENTS.md / .cursorrules (only with --structure)\n" +
           "  - Registers Claude Code hook (PreToolUse) at project AND user level\n" +
           "  - Exports compiled Skills\n" +
           "\n" +
@@ -1644,13 +1649,15 @@ async function main(): Promise<void> {
           "                                   --commit: 通过 LLM 提取成知识条目并写入知识库 + 更新 Skills + 调度 docs propagation",
           "  teamagent review [N] [--scope=personal|team|global]",
           "                                   列出最近 N 条知识（默认 10），供人工复核",
-          "  teamagent init [--dry-run] [--skip-import] [--skip-hook] [--install-plugins] [--target=claude|codex|both]",
-          "                                   一键安装到当前项目：建目录 + 注入元原则 + 导入已有规则 + 注册集成 + 导出 Skills",
+          "  teamagent init [--dry-run] [--structure] [--skip-hook] [--install-plugins] [--target=claude|codex|both]",
+          "                                   一键安装到当前项目：建目录 + 注入元原则 + 注册集成 + 导出 Skills",
           "                                   默认 target=claude；codex 会创建 .codex/skills 软链接且不注册 Claude hook",
+          "                                   --structure: opt-in，从 CLAUDE.md/AGENTS.md/.cursorrules 跑 LLM 结构化导入（消耗订阅额度）；默认不导入",
           "                                   --install-plugins: 同时注册团队标配插件（opt-in，改写用户全局 settings）",
           "                                   TEAMAGENT_VERBOSE_INIT=1: 在成功输出中恢复 4-step 下一步列表 + plugin tip + 🆕 本次新增 tail",
-          "  teamagent install-codex [--dry-run] [--skip-import]",
+          "  teamagent install-codex [--dry-run] [--structure]",
           "                                   Codex 快捷安装：导出 Skills，并创建 .codex/skills 软链接",
+          "                                   --structure: 同 init，opt-in LLM 结构化导入；默认不导入、不消耗订阅额度",
           "  teamagent doctor [--fix [--dry-run]] [--json] [--cwd=<path>] [--help]",
           "                                   诊断安装环境（Node版本/Claude Code/sqlite-vec/Hook/CLAUDE.md）",
           "                                   --fix: 自动修复能修的项；写 CLAUDE.md 前先备份到 ~/.teamagent/backups/",

@@ -63,6 +63,12 @@ export interface InitOptions {
   llmClient?: LLMClient;
   /** 若为 true，跳过 LLM 导入步骤（例如无网络/无 claude CLI 时快装）。 */
   skipImport?: boolean;
+  /**
+   * #445 opt-in：对 CLAUDE.md / AGENTS.md / .cursorrules 跑 LLM 结构化导入。
+   * 默认 false —— `init` 不读这三个文件、不调用 LLM、不消耗 Claude 订阅额度。
+   * 仅在需要把用户本地、尚未进规则库的自由文本规则导入时显式开启。
+   */
+  structure?: boolean;
   /** 跳过 hook 安装（测试环境下 dist bundle 可能不存在）。 */
   skipHook?: boolean;
   /**
@@ -246,7 +252,7 @@ export async function executeInit(opts: InitOptions = {}): Promise<InitResult> {
   }
 
   // ---------- Phase A: Pre-check ----------
-  const preCheck = runPreChecks(paths, target);
+  const preCheck = runPreChecks(paths, target, opts.structure ?? false);
   steps.push(preCheck);
   if (preCheck.status === "failed") {
     return finalize(false, dryRun, steps, emptySummary());
@@ -626,6 +632,7 @@ function collectInstalledPackNames(
 function runPreChecks(
   paths: ReturnType<typeof resolvePaths>,
   target: NonNullable<InitOptions["target"]>,
+  checkRuleFiles: boolean,
 ): InitStepResult {
   if (!fs.existsSync(paths.cwd)) {
     return failStep("pre-check", `项目目录不存在: ${paths.cwd}`);
@@ -639,19 +646,24 @@ function runPreChecks(
   } catch {
     return failStep("pre-check", "无法创建 ~/.teamagent 目录，请检查磁盘权限");
   }
-  const mdPaths: Array<{ path: string; label: string }> = [];
-  if (targetIncludesClaude(target) || targetIncludesCodex(target)) {
-    mdPaths.push({ path: paths.claudeMdPath, label: "CLAUDE.md" });
-  }
-  if (targetIncludesCodex(target)) {
-    mdPaths.push({ path: paths.agentsMdPath, label: "AGENTS.md" });
-  }
-  for (const item of mdPaths) {
-    if (!fs.existsSync(item.path)) continue;
-    try {
-      fs.accessSync(item.path, fs.constants.R_OK);
-    } catch {
-      return failStep("pre-check", `${item.label} 文件无读取权限，请运行: chmod 644 ${item.label}`);
+  // #445: only probe CLAUDE.md / AGENTS.md readability when --structure opts in
+  // to LLM rule import. Default init does not read those files, so an unreadable
+  // CLAUDE.md must not block a default install.
+  if (checkRuleFiles) {
+    const mdPaths: Array<{ path: string; label: string }> = [];
+    if (targetIncludesClaude(target) || targetIncludesCodex(target)) {
+      mdPaths.push({ path: paths.claudeMdPath, label: "CLAUDE.md" });
+    }
+    if (targetIncludesCodex(target)) {
+      mdPaths.push({ path: paths.agentsMdPath, label: "AGENTS.md" });
+    }
+    for (const item of mdPaths) {
+      if (!fs.existsSync(item.path)) continue;
+      try {
+        fs.accessSync(item.path, fs.constants.R_OK);
+      } catch {
+        return failStep("pre-check", `${item.label} 文件无读取权限，请运行: chmod 644 ${item.label}`);
+      }
     }
   }
   return okStep("pre-check", "所有前置检查通过");
@@ -956,6 +968,25 @@ async function doImportRules(
   now: () => Date,
 ): Promise<{ steps: InitStepResult[]; importedCount: number; wouldImport: number }> {
   const steps: InitStepResult[] = [];
+
+  // #445: default `init` does NOT read CLAUDE.md / AGENTS.md / .cursorrules and
+  // does NOT call the LLM. Structuring rules via `claude -p` is opt-in
+  // (--structure): it spawns one serial LLM call per rule (231 in a real
+  // install transcript), burns the user's Claude subscription quota, and hangs
+  // with no API key. Rules now live in the rule store, not CLAUDE.md.
+  if (!opts.structure || opts.skipImport) {
+    const why = opts.skipImport
+      ? "skipImport=true（显式跳过）"
+      : "未指定 --structure（默认不调用 LLM、不读 CLAUDE.md、不消耗订阅额度）";
+    steps.push({
+      step: "scan-rules",
+      status: "skipped",
+      detail: "跳过规则扫描（LLM 结构化导入为 --structure opt-in）",
+    });
+    steps.push({ step: "structure-rules", status: "skipped", detail: why });
+    return { steps, importedCount: 0, wouldImport: 0 };
+  }
+
   const claudeMdExists = fs.existsSync(paths.claudeMdPath);
   const agentsMdExists =
     fs.existsSync(paths.agentsMdPath) && !isManagedAgentsMdSymlink(paths);
@@ -997,16 +1028,6 @@ async function doImportRules(
       importedCount: 0,
       wouldImport: 0,
     };
-  }
-
-  if (opts.skipImport) {
-    steps.push(
-      okStep(
-        "structure-rules",
-        `skipImport=true，跳过（${rawTexts.length} 条规则未导入）`,
-      ),
-    );
-    return { steps, importedCount: 0, wouldImport: rawTexts.length };
   }
 
   if (dryRun) {
@@ -1905,6 +1926,7 @@ export function parseInitArgs(argv: string[]): InitOptions {
     const a = argv[i]!;
     if (a === "--dry-run") opts.dryRun = true;
     else if (a === "--skip-import") opts.skipImport = true;
+    else if (a === "--structure") opts.structure = true;
     else if (a === "--skip-hook") opts.skipHook = true;
     else if (a === "--skip-seed") opts.skipSeed = true;
     else if (a === "--no-user-level-hook") opts.userLevelHook = false;
