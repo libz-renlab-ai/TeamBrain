@@ -258,6 +258,7 @@ export {
   appendInbox,
   listInbox,
   appendAudit,
+  listAuditEvents,
   writeMember,
   readMembers,
 } from './bpp/store.js';
