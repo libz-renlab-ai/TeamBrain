@@ -100,7 +100,7 @@
 
 | # | 成因 | 位置 |
 |---|---|---|
-| (a) | `uninstall()` 只删**项目级** hook（`uninstallHook({cwd})`），从不调 `uninstallUserHook()`——用户级 SessionStart hook + digital-twin Stop tap 卸载后依然注册在 `~/.claude/settings.json` | `packages/cli/src/commands/uninstall.ts`（行 55–142）；死代码 `uninstallUserHook()` 在 `packages/cli/src/commands/install-user-hook.ts:264` |
+| (a) | `uninstall()` 只删**项目级** hook（`uninstallHook({cwd})`），从不调 `uninstallUserHook()`——用户级 SessionStart hook + digital-twin Stop tap 卸载后依然注册在 `~/.claude/settings.json` | `packages/cli/src/commands/uninstall.ts`（行 55–142）；`uninstallUserHook()` 在 `packages/cli/src/commands/install-user-hook.ts:264`——函数存在、经 `uninstall-user-hook` 子命令（`bin.ts:560`）可达，但 `uninstall` 命令从不调它 |
 | (b) | `uninstall.ts` **不杀任何运行中的进程**——uploader daemon、embedder daemon、auto-updater 继续用旧代码路径跑 | `packages/cli/src/commands/uninstall.ts` |
 | (c) | 不带 `--delete-data` 时 `~/.teamagent` 整个保留（含 staged 的 `bin-uploader.cjs`、含 `interval_hours: 1` 的 updater 状态）。重装后 = 两代 hook/daemon/状态并存 | `packages/cli/src/commands/uninstall.ts`（step 3 仅在 `--delete-data` 时删数据） |
 | (d) | 重装时 `spawnDetachedWarmup()` **没有"是否已有 warmup 在跑"的守卫**——多个 ~120MB 模型的 warmup 子进程会叠起来 | `packages/teamagent/postinstall.mjs`（行 316–364） |
