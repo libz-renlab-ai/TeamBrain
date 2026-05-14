@@ -134,11 +134,18 @@ Each slice maps to numbered steps of §2 里程碑一 验证方法.
 ### §V1.E — Audit chain + sub-lead boundary (验证方法 steps 9, 10)
 
 ```
-1.  # step 9 — audit log records push/accept/revoke with verifiable hash chain
-    grep -nE 'audit' evidence_dir/cli-help.txt \
+1.  # step 9 — audit log records push/accept/revoke. Real probe = bpp-help.txt,
+    #   anchored on the literal `teamagent bpp audit` command line (bpp-help.txt
+    #   is captured in §V1.A step 1). The old loose `grep audit cli-help.txt`
+    #   false-matched `ingest --from-audit` — same false-positive class as the
+    #   `\bpush\b` → `m5-publish [--push]` collision §V1.A step 2 already fixed.
+    grep -nE 'teamagent bpp audit\b' evidence_dir/bpp-help.txt \
       > evidence_dir/E-audit-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/E-audit-cmd.txt
-2.  # step 10 — sub-lead can revoke but cannot transfer lead role
-    grep -nE 'role|sub.?lead|transfer' evidence_dir/cli-help.txt \
+2.  # step 10 — sub-lead boundary: a command to inspect a user's role tier.
+    #   Real probe = bpp-help.txt, anchored on the literal `teamagent bpp role`
+    #   command line. The old loose `grep 'role|sub.?lead|transfer' cli-help.txt`
+    #   false-matched unrelated top-level help prose.
+    grep -nE 'teamagent bpp role\b' evidence_dir/bpp-help.txt \
       > evidence_dir/E-role-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/E-role-cmd.txt
 ```
 
