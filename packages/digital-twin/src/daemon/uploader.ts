@@ -12,6 +12,7 @@
  *   429 / 5xx → transient, retry with exponential backoff
  *   other 4xx → permanent client error → dead-letter
  */
+import { detectSensitiveText, redactSensitiveText } from '@teamagent/core';
 import {
   buildCcSessionEnvelope,
   type CcSessionEnvelope,
@@ -101,7 +102,31 @@ export async function uploadEntry(
     return { kind: 'network-error', error: 'global fetch is not available' };
   }
 
-  const envelope = buildFn(input);
+  // M2 (对话上传通道) — L1 redaction. Scrub sensitive strings (keys, tokens,
+  // emails, Chinese IDs, ...) out of cc-session transcripts BEFORE they leave
+  // this machine ("命中敏感信息的字段就地模糊化处理，原文不出本机"). This runs
+  // in the uploader daemon — a detached process, NOT the Stop-hook path — so
+  // the collector's <=5ms latency budget is untouched. Recordings carry binary
+  // audio that is not text-redactable, so they pass through unchanged.
+  let effectiveInput = input;
+  let l1RedactionCount = 0;
+  if (input.metadata.kind === 'cc-session') {
+    const raw = input.payloadBytes.toString('utf8');
+    l1RedactionCount = detectSensitiveText(raw).length;
+    if (l1RedactionCount > 0) {
+      effectiveInput = {
+        ...input,
+        payloadBytes: Buffer.from(redactSensitiveText(raw), 'utf8'),
+      };
+    }
+  }
+
+  const envelope = buildFn(effectiveInput);
+  // Surface how many fields L1 scrubbed so the member can see "敏感字段被模糊化
+  // 次数" — the count travels on the wire envelope; the collector persists it.
+  if (effectiveInput.metadata.kind === 'cc-session') {
+    (envelope as CcSessionEnvelope).l1_redaction_count = l1RedactionCount;
+  }
   const url = stripTrailingSlash(input.endpoint) + ROUTE_BY_KIND[input.metadata.kind];
 
   let res: { status: number; text: () => Promise<string> };

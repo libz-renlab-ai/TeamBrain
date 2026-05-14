@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { gunzipSync } from 'node:zlib';
 import { uploadEntry, classifyResponse, type FetchLike } from '../uploader.js';
-import type { CcSessionMetadata } from '../../schemas/cc-session.js';
+import type {
+  CcSessionMetadata,
+  CcSessionEnvelope,
+} from '../../schemas/cc-session.js';
 import type { RecordingMetadata } from '../../schemas/recording.js';
 
 const meta: CcSessionMetadata = {
@@ -267,5 +271,92 @@ describe('uploadEntry', () => {
     expect(buildCalled).toBe(1);
     const body = JSON.parse(capture.init!.body);
     expect(body.transcript.content).toBe('STUB');
+  });
+});
+
+// M2 (对话上传通道) — L1 redaction. The uploader scrubs sensitive strings out
+// of cc-session transcripts before they leave the machine, and reports the
+// redaction count on the wire envelope.
+describe('uploadEntry — L1 redaction', () => {
+  /** gunzip the transcript block the uploader actually sent. */
+  function uploadedTranscript(body: string): string {
+    const env = JSON.parse(body) as CcSessionEnvelope;
+    return gunzipSync(Buffer.from(env.transcript.content, 'base64')).toString('utf8');
+  }
+
+  it('redacts secrets from a cc-session transcript before upload', async () => {
+    const raw =
+      '{"role":"user","content":"my key is sk-ant-api03-LEAKED0123456789abc and email alice@personal.com"}\n';
+    const capture: { url?: string; init?: Parameters<FetchLike>[1] } = {};
+    await uploadEntry(
+      {
+        metadata: meta,
+        payloadBytes: Buffer.from(raw, 'utf8'),
+        endpoint: 'http://h:8080',
+        token: 't',
+        identity: { user_id: 'u', machine_id: 'm' },
+      },
+      { fetchFn: fetchStub(200, '', capture) },
+    );
+    const sent = uploadedTranscript(capture.init!.body);
+    expect(sent).not.toContain('sk-ant-api03-LEAKED0123456789abc');
+    expect(sent).not.toContain('alice@personal.com');
+    expect(sent).toContain('[redacted]');
+  });
+
+  it('reports the L1 redaction count on the envelope', async () => {
+    const raw =
+      '{"role":"user","content":"key sk-ant-api03-LEAKED0123456789abc id 110101199003078515"}\n';
+    const capture: { url?: string; init?: Parameters<FetchLike>[1] } = {};
+    await uploadEntry(
+      {
+        metadata: meta,
+        payloadBytes: Buffer.from(raw, 'utf8'),
+        endpoint: 'http://h:8080',
+        token: 't',
+        identity: { user_id: 'u', machine_id: 'm' },
+      },
+      { fetchFn: fetchStub(200, '', capture) },
+    );
+    const env = JSON.parse(capture.init!.body) as CcSessionEnvelope;
+    // secret + chinese-id = 2 findings.
+    expect(env.l1_redaction_count).toBe(2);
+  });
+
+  it('sets l1_redaction_count to 0 for a clean transcript', async () => {
+    const raw = '{"role":"user","content":"please refactor the parser"}\n';
+    const capture: { url?: string; init?: Parameters<FetchLike>[1] } = {};
+    await uploadEntry(
+      {
+        metadata: meta,
+        payloadBytes: Buffer.from(raw, 'utf8'),
+        endpoint: 'http://h:8080',
+        token: 't',
+        identity: { user_id: 'u', machine_id: 'm' },
+      },
+      { fetchFn: fetchStub(200, '', capture) },
+    );
+    const env = JSON.parse(capture.init!.body) as CcSessionEnvelope;
+    expect(env.l1_redaction_count).toBe(0);
+    expect(uploadedTranscript(capture.init!.body)).toBe(raw);
+  });
+
+  it('leaves recording (binary audio) uploads untouched — no redaction pass', async () => {
+    const audio = Buffer.from('OggS-binary-audio-not-text-redactable');
+    const capture: { url?: string; init?: Parameters<FetchLike>[1] } = {};
+    const out = await uploadEntry(
+      {
+        metadata: recordingMeta,
+        payloadBytes: audio,
+        endpoint: 'http://h:8080',
+        token: 't',
+        identity: { user_id: 'u', machine_id: 'm' },
+      },
+      { fetchFn: fetchStub(200, '', capture) },
+    );
+    expect(out.kind).toBe('success');
+    const env = JSON.parse(capture.init!.body) as Record<string, unknown>;
+    // recordings carry no l1_redaction_count field.
+    expect(env.l1_redaction_count).toBeUndefined();
   });
 });
