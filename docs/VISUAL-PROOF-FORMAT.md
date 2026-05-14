@@ -55,6 +55,10 @@ PR #399 是这条规则的 forcing-function：它在 `docs/plans/2026-05-11-feat
 
 ## Hosting — public storage the PR proposer fully owns
 
+**Canonical anchor sentence (mirrored from `CLAUDE.md` so `pnpm teamagent verify-anchors` finds it verbatim):**
+
+> Visual proof of work HTML must be hosted on public storage the PR proposer fully owns; the recommended default with zero extra infra is GitHub Gist + https://htmlpreview.github.io — one `gh gist create --public visual-proof-PR-<N>.html` call returns a permanent gist whose raw blob feeds htmlpreview.github.io for browser rendering, survives PR branch deletion, no CDN required, no separate Pages repo to bootstrap. Proposers must paste the htmlpreview URL into the PR body or PR comments so any reviewer can open it from any machine. Other accepted alternatives the proposer also fully owns: self-hosted GitHub Pages (per `docs/VISUAL-PROOF-FORMAT.md` URL form), S3, R2, Vercel, Netlify, Cloudflare Pages, or a personal domain. NEVER inside the repo, NEVER in `/tmp`, NEVER on localhost, NEVER on GitHub user-images CDN.
+
 Visual proof of work HTML must be hosted on **public storage the PR proposer fully owns**. Two equally accepted paths; **recommended default is GitHub Gist + htmlpreview.github.io** (zero extra infra).
 
 ### Recommended default: GitHub Gist + htmlpreview.github.io

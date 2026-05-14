@@ -33,6 +33,16 @@ function meetingFileToJson(file: string): string {
   return `/data/meetings/${safe}.json`;
 }
 
+function dynamicAgentJson(name: string): string {
+  const safe = encodeURIComponent(name);
+  return `/data/agents/${safe}.json`;
+}
+
+function dynamicTaskJson(id: string): string {
+  const safe = id.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `/data/tasks/${safe}.json`;
+}
+
 function rewriteUrl(rawUrl: string, basePath: string): string | null {
   // Strip query/hash for prefix matching
   const noQuery = rawUrl.split('?')[0]!.split('#')[0]!;
@@ -45,6 +55,16 @@ function rewriteUrl(rawUrl: string, basePath: string): string | null {
   if (apiPath.startsWith('/api/meetings/')) {
     const file = decodeURIComponent(apiPath.slice('/api/meetings/'.length));
     return basePath + meetingFileToJson(file);
+  }
+  // Dynamic /api/agents/<name>
+  if (apiPath.startsWith('/api/agents/')) {
+    const name = decodeURIComponent(apiPath.slice('/api/agents/'.length).split('/')[0] || '');
+    if (name) return basePath + dynamicAgentJson(name);
+  }
+  // Dynamic /api/tasks/<id>
+  if (apiPath.startsWith('/api/tasks/')) {
+    const id = apiPath.slice('/api/tasks/'.length).split('/')[0] || '';
+    if (id) return basePath + dynamicTaskJson(id);
   }
   // Unknown /api/* — leave null, caller will short-circuit
   return null;

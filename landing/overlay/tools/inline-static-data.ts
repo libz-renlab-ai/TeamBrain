@@ -45,11 +45,27 @@ async function dumpAgents(): Promise<void> {
     })
   );
   await writeJson('agents.json', { agents });
+  // Per-agent dump so the dynamic [name] detail route can resolve /api/agents/<name>
+  // via the StaticFetchShim. File names are raw UTF-8 (HTTP servers decode the
+  // percent-encoded URL once before hitting disk); the shim builds the URL via
+  // encodeURIComponent and the on-disk name decodes to match.
+  for (const agent of agents) {
+    if (!agent || (agent as { _error?: string })._error) continue;
+    const name = (agent as { name: string }).name;
+    if (!name) continue;
+    await writeJson(join('agents', `${name}.json`), agent);
+  }
 }
 
 async function dumpTasks(): Promise<void> {
   const tasks = await listTasks().catch(() => []);
   await writeJson('tasks.json', { tasks });
+  for (const t of tasks) {
+    const id = (t as { id?: string }).id;
+    if (!id) continue;
+    const safe = id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    await writeJson(join('tasks', `${safe}.json`), t);
+  }
 }
 
 async function dumpResources(): Promise<void> {

@@ -24,13 +24,21 @@ Status: **canonical** for the `track:symphony` lifecycle. Cross-track rules
 [`docs/TWO-DRIVER-COEXISTENCE.md`](TWO-DRIVER-COEXISTENCE.md). This file
 covers the Symphony track in isolation.
 
-> Runtime status (2026-05-12): Symphony's upstream `openai/symphony` repo
-> ships only a Linear tracker adapter. A `Symphony.Tracker.Github` module
-> does not exist yet. Until it does, this document is **the contract a
-> future GitHub adapter must obey**, and the `track:symphony` label
-> functions as a "do not let fixed-flow touch this" parking signal.
+> Runtime status (2026-05-14): the upstream `openai/symphony` repo still
+> ships only a Linear tracker adapter, BUT a Symphony fork
+> [`LiuShiyuMath/symphony#claude-multi-provider`](https://github.com/LiuShiyuMath/symphony/tree/claude-multi-provider)
+> now implements both (a) a multi-provider agent runner that drives
+> Claude Code (`claude -p` headless) instead of Codex, and (b) a
+> `Symphony.Tracker.Github` adapter that calls `gh` CLI for label-based
+> issue dispatch. This document is now **executable contract** —
+> dispatched runs land via the fork. See ADR-0015 for the policy shift
+> and the fork's `elixir/CLAUDE-PROVIDER.md` for the runner matrix.
 
 ## TL;DR — 5-phase lifecycle, human gate at END
+
+**Canonical anchor sentence (mirrored from `CLAUDE.md` so `pnpm teamagent verify-anchors` finds it verbatim):**
+
+> TeamBrain Symphony track has 5 phases: (Q0) `needs-triage` (shared with fixed-flow); (Q1) `track:symphony` — maintainer opted into autonomous track at triage; (Q2) `track:symphony` + `symphony-working` — Symphony daemon has claimed the issue (cross-host mutex per `docs/SYMPHONY-FLOW.md` §Cross-host mutex); (Q3) Symphony opens PR with `track:symphony` label, issue stays at Q2 awaiting human review; (Q4) PR carries `symphony-human-reviewed` (added by a human; THIS is the Symphony human gate, parallel to fixed-flow's `/review` PASS); (Q5) CLOSED via squash-merge `Closes #N`, Symphony §7 cleanup strips `symphony-working`. Off-mainline: `symphony-blocked` (parallel to `ready-for-human`; only humans clear); see `docs/TWO-DRIVER-COEXISTENCE.md` for cross-track refusal rules.
 
 1. **Triage (human)** — maintainer adds `track:symphony` label to an issue
    judged suitable for autonomous execution (see TWO-DRIVER-COEXISTENCE.md

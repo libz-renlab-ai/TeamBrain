@@ -25,6 +25,10 @@
 
 ## 两步铁律 / The Two-Step Rule
 
+**Canonical anchor sentence (mirrored from `CLAUDE.md` so `pnpm teamagent verify-anchors` finds it verbatim):**
+
+> Visual-proof-guided PR workflow has two steps: (1) propose an issue first; (2) make the PR without asking for permission, but append the comment with PROPER visual proof of work in HTML — the HTML shall be hosted on the PR proposer's own public storage (canonical hosting options per `docs/VISUAL-PROOF-FORMAT.md § Hosting`: recommended default is GitHub Gist + htmlpreview.github.io, with self-hosted GitHub Pages and other proposer-owned endpoints accepted), so any reviewer can open the link from any machine and the proof survives after the PR branch is deleted.
+
 1. **Propose an issue first** — 任何带视觉副作用（UI / 渲染 / dashboard / 截图 / demo / video / chart）的工作，开 PR 之前先在 GitHub 开一个 issue，按 `docs/FIXEDFLOW.md` ≤50 字 body 约束写清「想做什么 + 期望的可视化产出形态」。这一步**不需要**等 `grill-ready` —— 视觉证据型 issue 通常 self-evident，但仍要走 `docs/ISSUE-TRACKING.md` 把 issue 编号落到本地 ledger。
 2. **Make the PR without asking, but append the comment with PROPER visual proof of work in HTML** —— 实施完成后**不需要再问用户许可**就可以直接 `gh pr create`（普通 PR、禁 draft，沿用 `docs/COMMIT-FLOW.md` anchor），但**必须**在 PR 创建后 **append 一条 PR comment**，comment 里贴一个**可公网点开的 HTML 链接**作为 visual proof of work。该 HTML **shall be hosted on the PR proposer's own storage**，禁止仓库内 / 构建机 `/tmp` / `localhost`。
 

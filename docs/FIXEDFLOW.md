@@ -26,7 +26,20 @@
   step 3-5 必须由人手动 invoke；两个 label（grill-ready + docs-grill-ready）必须同时存在
 ```
 
-# FIXEDFLOW — TeamBrain 唯一 issue → PR → merge 工作流
+# FIXEDFLOW — TeamBrain manual fallback issue → PR → merge 工作流
+
+> **Status (2026-05-14)**: per [ADR-0015](adr/0015-symphony-replaces-fixedflow.md),
+> the **default** driver for grill-ready issues is now autonomous Symphony
+> (fork [`LiuShiyuMath/symphony#claude-multi-provider`](https://github.com/LiuShiyuMath/symphony/tree/claude-multi-provider),
+> see [`docs/SYMPHONY-FLOW.md`](SYMPHONY-FLOW.md) Q0-Q5 lifecycle).
+> Manual `/fixed-flow-driver` (this doc) remains supported as the
+> **fallback** path for: (a) hotfix / synchronous-control situations,
+> (b) issues a maintainer explicitly opts into manual mode for, and
+> (c) debugging Symphony itself. The Phase-2 cutover (root `CLAUDE.md`
+> "禁止 watcher" hard-rule rewrite) lands in a follow-up PR so this PR
+> stays small and reversible.
+
+## Original FIXEDFLOW spec (manual driver path)
 
 适用范围：`https://github.com/libz-renlab-ai/TeamBrain` 的所有 issue 与 PR。
 
