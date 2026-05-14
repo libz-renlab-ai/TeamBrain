@@ -28,6 +28,7 @@ import {
   readEmbedderState,
 } from "./embedder-state.js";
 import { tryAcquireSpawnLock } from "./embedder-spawn-lock.js";
+import { NODE_SQLITE_FLAGS } from "./lib/node-sqlite-flags.js";
 
 const DEFAULT_MODEL = "Xenova/multilingual-e5-small";
 const DEFAULT_DIM = 384;
@@ -124,11 +125,18 @@ export function tryDetachedSpawn(statePath: string): void {
       const s2 = readEmbedderState(statePath);
       if (s2 && s2.status === "starting") return;
 
-      const child = spawn(process.execPath, [binPath, "--state-path", statePath], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
+      // Issue #477: --experimental-sqlite --no-warnings — bin-embedder bundles
+      // @teamagent/adapters (→ node:sqlite at module-init); the detached child
+      // does not inherit a shell NODE_OPTIONS.
+      const child = spawn(
+        process.execPath,
+        [...NODE_SQLITE_FLAGS, binPath, "--state-path", statePath],
+        {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: true,
+        },
+      );
       child.unref();
     } finally {
       lock.release();

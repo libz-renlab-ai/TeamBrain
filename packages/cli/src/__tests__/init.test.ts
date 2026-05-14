@@ -11,6 +11,7 @@ import {
 } from "../commands/init.js";
 import { DualLayerStore, SqliteKnowledgeStore, openDb } from "@teamagent/adapters";
 import type { LLMClient } from "@teamagent/ports";
+import type { NodeSqliteProbe } from "../lib/node-sqlite-probe.js";
 
 function mkTmp() {
   const root = nodeFs.mkdtempSync(path.join(os.tmpdir(), "init-"));
@@ -337,6 +338,43 @@ describe("executeInit", () => {
       status: "failed",
       detail: "CLAUDE.md 文件无读取权限，请运行: chmod 644 CLAUDE.md",
     });
+  });
+
+  // #477: a Node runtime where hook subprocesses can't load node:sqlite means
+  // every hook is DOA. `init` must fail loud at pre-check, never report success
+  // on a dead install.
+  it("#477: init fails loud at pre-check when node:sqlite can't load in a subprocess", async () => {
+    const failingNodeSqliteProbe: NodeSqliteProbe = () => ({
+      ok: false,
+      nodeVersion: process.version,
+      detail: `${process.version} — hook 子进程无法加载 node:sqlite (exit 1)`,
+    });
+    const r = await executeInit({
+      ...commonOpts(),
+      nodeSqliteProbe: failingNodeSqliteProbe,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    expect(r.ok).toBe(false);
+    expect(r.steps[0]).toMatchObject({ step: "pre-check", status: "failed" });
+    expect(r.steps[0]?.detail).toContain("node:sqlite");
+    expect(r.steps[0]?.detail).toContain("hook");
+    // No knowledge DB should have been created on a DOA-gated abort.
+    expect(nodeFs.existsSync(tmp.projectDbPath)).toBe(false);
+  });
+
+  it("#477: init proceeds normally when the node:sqlite probe passes", async () => {
+    const passingNodeSqliteProbe: NodeSqliteProbe = () => ({
+      ok: true,
+      nodeVersion: process.version,
+      detail: `${process.version} — hook 子进程可加载 node:sqlite`,
+    });
+    const r = await executeInit({
+      ...commonOpts(),
+      nodeSqliteProbe: passingNodeSqliteProbe,
+      llmClient: stubLLM(OK_LLM_RESPONSE),
+    });
+    expect(r.ok).toBe(true);
+    expect(r.steps[0]).toMatchObject({ step: "pre-check", status: "ok" });
   });
 
   it("default init (no --structure) succeeds even with an unreadable CLAUDE.md (#445)", async () => {

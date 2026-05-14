@@ -24,6 +24,7 @@ import {
   emitUpgradeEventSync,
   type EmitUpgradeOptions,
 } from "./lib/upgrade-event-emitter.js";
+import { NODE_SQLITE_FLAGS } from "./lib/node-sqlite-flags.js";
 
 export const DEFAULT_DEBOUNCE_HOURS = 24;
 
@@ -120,7 +121,9 @@ export function spawnAutoInit(cwd: string): void {
   } catch { /* silent */ }
   const child = spawn(
     process.execPath,
-    [findMainBin(), "init", "--skip-import"],
+    // Issue #477: --experimental-sqlite --no-warnings so the spawned `init`
+    // can load node:sqlite (this child does not inherit a shell NODE_OPTIONS).
+    [...NODE_SQLITE_FLAGS, findMainBin(), "init", "--skip-import"],
     {
       detached: true,
       stdio: "ignore",
@@ -186,7 +189,10 @@ export function spawnUpdater(): void {
     logError("updater-bin-missing", new Error(updaterBin));
     return;
   }
-  const child = spawn(process.execPath, [updaterBin], {
+  // Issue #477: --experimental-sqlite --no-warnings — bin-updater bundles
+  // @teamagent/adapters (→ node:sqlite at module-init); the detached child
+  // does not inherit a shell NODE_OPTIONS.
+  const child = spawn(process.execPath, [...NODE_SQLITE_FLAGS, updaterBin], {
     detached: true,
     stdio: "ignore",
     env: process.env,

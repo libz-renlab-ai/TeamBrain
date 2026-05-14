@@ -25,6 +25,12 @@
  *
  * Cross-platform: pure HTTP + filesystem, no Unix-socket / named-pipe code.
  */
+// Issue #477: MUST be the first import — arms the node:sqlite-load guard
+// before @teamagent/adapters (whose schema.ts throws at module-init on a Node
+// without node:sqlite) is evaluated. bin-embedder is spawned detached by
+// SessionStart; the spawn site also passes the flag, but this is the
+// defense-in-depth layer for any path that bypasses it.
+import { armHookBootstrap } from "./lib/hook-bootstrap.js";
 import http from "node:http";
 import process from "node:process";
 import {
@@ -38,6 +44,10 @@ import {
   type EmbedderState,
 } from "./embedder-state.js";
 import { tryAcquireSpawnLock } from "./embedder-spawn-lock.js";
+
+// Issue #477: keep the node:sqlite-load guard import referenced (the actual
+// arming runs at hook-bootstrap module-load, above the adapters import).
+armHookBootstrap();
 
 const DEFAULT_IDLE_EXIT_MS = 30 * 60 * 1000; // 30 min — well past typical session
 

@@ -41,6 +41,20 @@ describe("installHook", () => {
     expect(content.hooks.PreToolUse[0].hooks[0].command).toContain(forwardEntry);
   });
 
+  it("#477: project-level hook command bakes in --experimental-sqlite --no-warnings (P1)", () => {
+    // Claude Code spawns hooks as child processes that do NOT inherit the
+    // calling shell's NODE_OPTIONS — the flag must live in the registered
+    // command itself or every hook is DOA with ERR_UNKNOWN_BUILTIN_MODULE
+    // on Node 22.5–23.3.
+    const r = installHook({ cwd: tmp.cwd, hookEntry: FAKE_HOOK_ENTRY, userLevel: false });
+    const content = JSON.parse(fs.readFileSync(r.settingsPath, "utf-8"));
+    const cmd: string = content.hooks.PreToolUse[0].hooks[0].command;
+    expect(cmd).toContain("--experimental-sqlite");
+    expect(cmd).toContain("--no-warnings");
+    // Flags sit between `node` and the bundle path.
+    expect(cmd).toMatch(/^node --experimental-sqlite --no-warnings /);
+  });
+
   it("preserves existing user settings", () => {
     const settingsPath = path.join(tmp.cwd, ".claude", "settings.local.json");
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });

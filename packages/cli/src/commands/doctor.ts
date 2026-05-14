@@ -16,6 +16,10 @@ import {
   enumerateInstallTableBundlePaths,
   type InstallTableBundleEntry,
 } from "./install-hook.js";
+import {
+  probeNodeSqlite,
+  type NodeSqliteProbe,
+} from "../lib/node-sqlite-probe.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -111,6 +115,8 @@ export interface DoctorOptions {
   mcpProbe?: McpProbe;
   /** Issue #280: injectable hook spawn probe for `checkHookSpawn`. Default uses real child_process. */
   hookProbe?: HookProbe;
+  /** Issue #477: injectable node:sqlite-loadability probe for `checkNodeVersion`. Default spawns a real flagged subprocess. */
+  nodeSqliteProbe?: NodeSqliteProbe;
   /** Issue #368: injectable uploader-daemon spawn probe for `checkDigitalTwinUploader`. Default uses real child_process. */
   uploaderProbe?: UploaderProbe;
   /**
@@ -275,8 +281,8 @@ export async function executeDoctor(opts: DoctorOptions = {}): Promise<DoctorRes
     fixOutcomes.push(outcome);
   };
 
-  // Check 1: Node.js version
-  const nodeCheck = checkNodeVersion();
+  // Check 1: Node.js version + honest node:sqlite-loadability probe (#477)
+  const nodeCheck = checkNodeVersion(opts.nodeSqliteProbe);
   checks.push(nodeCheck);
   if (nodeCheck.status === "fail") {
     return finalize(checks, true, opts, fixOutcomes);
@@ -514,17 +520,45 @@ function skip(name: string, detail: string): DoctorCheckResult {
   return { name, status: "skip", detail };
 }
 
-function checkNodeVersion(): DoctorCheckResult {
+/**
+ * Issue #477: honest node:sqlite-loadability check.
+ *
+ * The old body was a cheap `major >= 22` test — it reported green while every
+ * hook was DOA. Hook subprocesses don't inherit the calling shell's
+ * `NODE_OPTIONS`, so `node:sqlite` only loads when the *spawned* process
+ * carries `--experimental-sqlite` (Node 22.5–23.3). A `major` check can't see
+ * that. The probe spawns a real subprocess the same way a hook is spawned and
+ * verifies it can actually `require("node:sqlite")`; on failure it fails loud,
+ * never silent green.
+ */
+function checkNodeVersion(
+  probe: NodeSqliteProbe = probeNodeSqlite,
+): DoctorCheckResult {
   const raw = process.version; // e.g. "v22.4.0"
   const major = parseInt(raw.slice(1).split(".")[0] ?? "0", 10);
-  if (major >= 22) {
-    return { name: "node-version", status: "pass", detail: `${raw}  (需要 ≥ 22)` };
+  // Cheap sanity gate first — anything below 22 can't have node:sqlite at all,
+  // and below 22.5 the experimental builtin doesn't exist either. No point
+  // spawning a probe to confirm a version number.
+  if (major < 22) {
+    return {
+      name: "node-version",
+      status: "fail",
+      detail: `${raw} — Node < 22，node:sqlite 内置模块不存在；所有 hook DOA`,
+      fix: "nvm install 22 && nvm use 22  (需要 Node >= 22.5)",
+    };
+  }
+  // The honest part: a real flagged subprocess must be able to load node:sqlite.
+  const result = probe();
+  if (result.ok) {
+    return { name: "node-version", status: "pass", detail: result.detail };
   }
   return {
     name: "node-version",
     status: "fail",
-    detail: `${raw} (需要 ≥ 22)`,
-    fix: "nvm install 22 && nvm use 22",
+    detail: `${result.detail} — hook 全部 DOA，install 看似成功实则不可用`,
+    fix:
+      "升级到 Node >= 22.5 后重装 teamagent（让 hook 注册命令带上 " +
+      "--experimental-sqlite）；clean-uninstall 步骤见 docs/CLEAN-UNINSTALL.md",
   };
 }
 

@@ -36,12 +36,21 @@
  * Note: bin is bundled to cjs (`bin-pre-compact.cjs`); cjs has no top-level
  * await. Wrapped in `async main` + `void main()` per the canary commit (5).
  */
+// Issue #477: MUST be the first import — arms the node:sqlite-load guard
+// before ./bin-stop / ./hook-shell (→ @teamagent/adapters → schema.ts, which
+// throws at module-init on a Node without node:sqlite) is evaluated.
+import { armHookBootstrap } from "./lib/hook-bootstrap.js";
+import { NODE_SQLITE_FLAGS } from "./lib/node-sqlite-flags.js";
 import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runFullRescanPipeline, type StopHookInput } from "./bin-stop.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
+
+// Issue #477: keep the node:sqlite-load guard import referenced (the actual
+// arming runs at hook-bootstrap module-load, above the bin-stop import).
+armHookBootstrap();
 
 function isValidStopHookInput(v: unknown): v is StopHookInput {
   return (
@@ -94,9 +103,12 @@ async function main(): Promise<void> {
         return undefined;
       }
       const selfPath = process.argv[1]!;
+      // Issue #477: --experimental-sqlite --no-warnings — the detached child
+      // re-enters this same sqlite-bundling .cjs and node argv flags do NOT
+      // pass to children, so they must be re-supplied here.
       const child = spawn(
         process.execPath,
-        [selfPath, JSON.stringify(ctx.input)],
+        [...NODE_SQLITE_FLAGS, selfPath, JSON.stringify(ctx.input)],
         {
           detached: true,
           stdio: "ignore",

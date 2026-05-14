@@ -34,6 +34,7 @@ import {
   type DoctorResult,
   type FixOutcome,
 } from "../commands/doctor.js";
+import type { NodeSqliteProbe } from "../lib/node-sqlite-probe.js";
 import { digitalTwinPaths } from "@teamagent/digital-twin";
 
 function makeResult(overrides: Partial<DoctorResult> = {}): DoctorResult {
@@ -46,6 +47,68 @@ function makeResult(overrides: Partial<DoctorResult> = {}): DoctorResult {
     ...overrides,
   };
 }
+
+describe("executeDoctor — #477 honest node:sqlite probe (P2)", () => {
+  const failingNodeSqliteProbe: NodeSqliteProbe = () => ({
+    ok: false,
+    nodeVersion: process.version,
+    detail: `${process.version} — hook 子进程无法加载 node:sqlite (exit 1)`,
+  });
+  const passingNodeSqliteProbe: NodeSqliteProbe = () => ({
+    ok: true,
+    nodeVersion: process.version,
+    detail: `${process.version} — hook 子进程可加载 node:sqlite`,
+  });
+
+  function makeTempDirs(): { cwd: string; homeDir: string; cleanup: () => void } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-doctor-477-"));
+    const cwd = path.join(root, "workspace");
+    const homeDir = path.join(root, "home");
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.mkdirSync(homeDir, { recursive: true });
+    return { cwd, homeDir, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
+  }
+
+  it("fails loud — does NOT report node-version pass — when a subprocess can't load node:sqlite", async () => {
+    const t = makeTempDirs();
+    try {
+      const result = await executeDoctor({
+        cwd: t.cwd,
+        homeDir: t.homeDir,
+        nodeSqliteProbe: failingNodeSqliteProbe,
+      });
+      const nodeCheck = result.checks.find((c) => c.name === "node-version");
+      expect(nodeCheck).toBeDefined();
+      // The old `major >= 22` check would have reported green here. The honest
+      // probe must NOT.
+      expect(nodeCheck?.status).toBe("fail");
+      expect(nodeCheck?.status).not.toBe("pass");
+      expect(nodeCheck?.detail).toContain("node:sqlite");
+      // A failing node check is the first check and triggers an early exit —
+      // the overall result must be non-passing (CLI exits non-zero).
+      expect(result.allPassed).toBe(false);
+      expect(result.failed).toBeGreaterThanOrEqual(1);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("reports node-version pass when the probe confirms node:sqlite loads", async () => {
+    const t = makeTempDirs();
+    try {
+      const result = await executeDoctor({
+        cwd: t.cwd,
+        homeDir: t.homeDir,
+        nodeSqliteProbe: passingNodeSqliteProbe,
+      });
+      const nodeCheck = result.checks.find((c) => c.name === "node-version");
+      expect(nodeCheck?.status).toBe("pass");
+      expect(nodeCheck?.detail).toContain("node:sqlite");
+    } finally {
+      t.cleanup();
+    }
+  });
+});
 
 describe("renderDoctorResult", () => {
   it("shows all-pass message when allPassed=true", () => {

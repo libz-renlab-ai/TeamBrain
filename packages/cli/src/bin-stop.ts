@@ -40,6 +40,11 @@
  *
  * 这是 M6 fused PR 的最后一个简单 bin 迁移。
  */
+// Issue #477: MUST be the first import — arms the node:sqlite-load guard
+// before @teamagent/adapters (whose schema.ts throws at module-init on a Node
+// without node:sqlite) is evaluated.
+import { armHookBootstrap } from "./lib/hook-bootstrap.js";
+import { NODE_SQLITE_FLAGS } from "./lib/node-sqlite-flags.js";
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync, existsSync, unlinkSync, readFileSync } from "node:fs";
 import os from "node:os";
@@ -70,6 +75,10 @@ import { runAdvancedHook } from "./hook-shell/index.js";
 import type { AdvancedHookOptions } from "./hook-shell/index.js";
 import { findTeamagentRoot } from "./lib/walk-up.js";
 import { emitCcStatus } from "./realtime-emit.js";
+
+// Issue #477: keep the node:sqlite-load guard import referenced (the actual
+// arming runs at hook-bootstrap module-load, above the adapters import).
+armHookBootstrap();
 
 /**
  * 用户可见进度事件的注入入口。
@@ -1049,7 +1058,10 @@ async function main(): Promise<void> {
           ctx.logError("write-tmp", err);
           return;
         }
-        const child = spawn(process.execPath, [selfPath, tmpFile], {
+        // Issue #477: --experimental-sqlite --no-warnings — the detached child
+        // re-enters this same sqlite-bundling .cjs and node argv flags do NOT
+        // pass to children, so they must be re-supplied here.
+        const child = spawn(process.execPath, [...NODE_SQLITE_FLAGS, selfPath, tmpFile], {
           detached: true,
           stdio: "ignore",
           cwd: ctx.cwd,

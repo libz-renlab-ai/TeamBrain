@@ -43,6 +43,10 @@
  * commit-5 canary pattern. `runAdvancedHook` never throws, so no `.catch`
  * needed.
  */
+// Issue #477: MUST be the first import — arms the node:sqlite-load guard
+// before ./hook-shell (→ @teamagent/adapters → schema.ts, which throws at
+// module-init on a Node without node:sqlite) is evaluated.
+import { armHookBootstrap } from "./lib/hook-bootstrap.js";
 import os from "node:os";
 import path from "node:path";
 import type { SessionStartHookInput } from "@anthropic-ai/claude-agent-sdk";
@@ -66,6 +70,10 @@ import { tryDetachedSpawn } from "./daemon-first-embedder.js";
 import { defaultEmbedderStatePath } from "./embedder-state.js";
 import { postRegister } from "./embedder-client.js";
 import { emitCcStatus } from "./realtime-emit.js";
+
+// Issue #477: keep the node:sqlite-load guard import referenced (the actual
+// arming runs at hook-bootstrap module-load, above the hook-shell import).
+armHookBootstrap();
 
 /**
  * SessionStart accepts a Claude Code SessionStart payload (or empty stdin

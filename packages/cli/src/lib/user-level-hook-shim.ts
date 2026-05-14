@@ -16,12 +16,19 @@
  *
  * Properties:
  * - bundle missing  -> silent exit 0 (Stop hook never blocks session close).
- * - bundle present  -> `exec node <path>` replaces the shell, so the bundle's
- *   real exit code (incl. Stop-hook-feedback exit 2 → ask Claude to retry)
- *   propagates intact and stdin/stdout/stderr are forwarded as-is.
+ * - bundle present  -> `exec node --experimental-sqlite --no-warnings <path>`
+ *   replaces the shell, so the bundle's real exit code (incl. Stop-hook-
+ *   feedback exit 2 → ask Claude to retry) propagates intact and
+ *   stdin/stdout/stderr are forwarded as-is.
  * - cross-platform: relies on `bash` being on PATH, the same assumption made
  *   by `.claude/hooks/digital-twin-tap.sh` and the install-hook docs.
+ *
+ * Issue #477: the `node` invocation carries `--experimental-sqlite --no-warnings`
+ * (NODE_SQLITE_FLAGS_STR). Claude Code spawns hooks as child processes that do
+ * NOT inherit the calling shell's `NODE_OPTIONS`, so without the baked-in flag
+ * every hook is DOA with `ERR_UNKNOWN_BUILTIN_MODULE` on Node 22.5–23.3.
  */
+import { NODE_SQLITE_FLAGS_STR } from "./node-sqlite-flags.js";
 
 export function toForwardSlash(p: string): string {
   return p.replace(/\\/g, "/");
@@ -50,5 +57,5 @@ export function shellQuote(p: string): string {
  */
 export function buildUserLevelHookCommand(stagedPath: string): string {
   const q = shellQuote(toForwardSlash(stagedPath));
-  return `bash -c '[ -f "$1" ] || exit 0; exec node "$1"' _ ${q}`;
+  return `bash -c '[ -f "$1" ] || exit 0; exec node ${NODE_SQLITE_FLAGS_STR} "$1"' _ ${q}`;
 }

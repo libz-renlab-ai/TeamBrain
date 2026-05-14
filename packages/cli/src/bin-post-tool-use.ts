@@ -23,9 +23,17 @@
  * top-level await。所以包一层 `void main()` 立即调用，main 里用 await。
  * runHook 自带 try/finally 保证不抛出，main 不需要 .catch。
  */
+// Issue #477: MUST be the first import — arms the node:sqlite-load guard
+// before @teamagent/adapters (whose schema.ts throws at module-init on a Node
+// without node:sqlite) is evaluated.
+import { armHookBootstrap } from "./lib/hook-bootstrap.js";
 import type { PostToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
 import { createPostToolUseHandler, type SqliteEventLog } from "@teamagent/adapters";
 import { runHook } from "./hook-shell/index.js";
+
+// Issue #477: keep the node:sqlite-load guard import referenced (the actual
+// arming runs at hook-bootstrap module-load, above the adapters import).
+armHookBootstrap();
 
 async function main(): Promise<void> {
   await runHook<PostToolUseHookInput, Record<string, never>>({

@@ -28,6 +28,10 @@
  *
  * Any error: shell catches and exits 0 (never block user input).
  */
+// Issue #477: MUST be the first import — arms the node:sqlite-load guard
+// before @teamagent/adapters (whose schema.ts throws at module-init on a Node
+// without node:sqlite) is evaluated.
+import { armHookBootstrap } from "./lib/hook-bootstrap.js";
 import path from "node:path";
 import type {
   AttributionEvent,
@@ -62,6 +66,10 @@ import {
 import { runHook } from "./hook-shell/index.js";
 import { DaemonFirstEmbedder } from "./daemon-first-embedder.js";
 import { emitCcStatus } from "./realtime-emit.js";
+
+// Issue #477: keep the node:sqlite-load guard import referenced (the actual
+// arming runs at hook-bootstrap module-load, above the adapters import).
+armHookBootstrap();
 
 const HOOK_TIMEOUT_MS = 5_000;
 
