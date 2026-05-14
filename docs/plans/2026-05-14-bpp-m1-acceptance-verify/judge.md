@@ -296,3 +296,44 @@ off-by-one in the harness author's first summary draft (9 FAIL, not 10).
 This is the mechanical confirmation of the gap the PR #430 hand-evaluation
 found. Each FAIL row is now a tracked TODO; no future PR can re-declare M1
 "done" by prose alone — it must flip these rows by re-running §V1.
+
+## M1 completion run — 2026-05-14 against `main` @ 6fc88f2
+
+Recorded in `.judge/2026-05-14-bpp-m1/` (gitignored transient evidence);
+`judge.json` copied into this plan dir as `m1-pass-judge.json`, the §V3
+verdict as `m1-pass-judge-v3.json`.
+
+**Actual M1 verdict: PASS — 10 PASS / 1 MANUAL.**
+
+The 9 baseline FAIL rows were flipped by a 5-PR CLI-surface series, each
+re-running its §V1 slice to confirm:
+
+| PR | Subcommands shipped | Rows flipped |
+|----|---------------------|--------------|
+| #470 PR-A | `bpp` namespace + `bpp serve` | A1 |
+| #471 PR-B | `bpp push` / `inbox` / `accept` / `reject` | A2, A3, C1 |
+| #472 PR-C | `bpp revoke` / `force-push` + skill-file cascade | D1 |
+| #474 PR-D | `bpp audit` / `role` + wired `team init` / `transfer-lead` | B2, E1, E2 |
+| #475 PR-E | `bpp join` + `POST /v1/members` member self-registration | B1 |
+
+Independently re-graded by a process-isolated `claude -p` judge that saw
+ONLY `judge.json` + `evidence/**` (no source, no conversation context):
+verdict **PASS**, every one of the 11 rows PASS except C2 which stays
+MANUAL-pending (counts toward PASS per the §V3 rule). Recorded in
+`m1-pass-judge-v3.json`.
+
+**Two notes carried forward:**
+
+1. **C2 still needs a human.** The "accepted skill auto-triggers in a real
+   claude session" row cannot be agent-self-certified — a human must attach a
+   tmux `/export` showing the compiled skill firing. This is the one
+   outstanding M1 item and it is BLOCKED-ON-HUMAN by design, not a code gap.
+2. **Audit events are stored but not hash-chained.** The handlers call
+   `appendAudit` directly, not via `linkAuditEvent`; `bpp audit` lists events
+   but tamper-evident chain verification is M5 audit-hardening scope (the
+   `linkAuditEvent` / `verifyAuditChain` functions exist, labeled "Phase 5
+   P5.4", but are not wired into the write path).
+
+The §V1.A.2b fictional-docs probe still matches, but most commands it flags
+(`bpp push/inbox/accept/reject/revoke/force-push/audit/role/join`) now exist —
+a match there is expected noise post-M1, not a fiction flag.

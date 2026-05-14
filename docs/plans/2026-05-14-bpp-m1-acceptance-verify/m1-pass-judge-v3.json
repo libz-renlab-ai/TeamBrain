@@ -1,0 +1,71 @@
+{
+  "verdict": "PASS",
+  "rows": [
+    {
+      "row": "A1. Central server reachable via CLI",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.cli_has_bpp_serve_cmd == true; A-serve-cmd.txt shows `teamagent bpp serve [--port] [--host] [--dir]` with grep_exit=0",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/A-serve-cmd.txt"
+    },
+    {
+      "row": "A2. Push endpoint usable as a command",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.cli_has_bp_push_cmd == true; A-push-cmd.txt shows `teamagent bpp push --id --title --body --receivers` with grep_exit=0",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/A-push-cmd.txt"
+    },
+    {
+      "row": "A3. Inbox fan-out reachable",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.cli_has_inbox_cmd == true; A-inbox-cmd.txt shows `teamagent bpp inbox --receiver [--json]` with grep_exit=0",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/A-inbox-cmd.txt"
+    },
+    {
+      "row": "B1. Member client ships + auto-joins",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.cli_has_member_client_cmd == true; B-member-cmd.txt shows `teamagent bpp join --user-id --display-name [--server]` with grep_exit=0",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/B-member-cmd.txt"
+    },
+    {
+      "row": "B2. team init makes creator the lead",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.cli_has_team_init_cmd == true AND team_init_wired_into_bin == true; B-team-init.txt shows `team init` usage exit=0 and B-bin-wiring.txt shows runTeamInit imported into bin",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/B-team-init.txt + B-bin-wiring.txt"
+    },
+    {
+      "row": "C1. Accept writes a skill file",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.cli_has_inbox_cmd == true AND compile_to_skill_target is non-empty (<userHome>/.claude/skills/teamagent/<bp_id>/SKILL.md); C-accept-cmd.txt shows `bpp accept` and C-compile-target.txt shows the SKILL.md target path",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/C-accept-cmd.txt + C-compile-target.txt"
+    },
+    {
+      "row": "C2. Accepted skill auto-triggers",
+      "verdict": "MANUAL",
+      "reason": "metrics.step7_agent_trigger == AGENT-MANUAL; C-step7-manual.txt states a human must attach a tmux /export — not FAIL, MANUAL-pending counts toward PASS",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/C-step7-manual.txt"
+    },
+    {
+      "row": "D1. Lead revoke cascade",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.cli_has_revoke_cmd == true AND revoke_cascades_to_skill_file == true; D-revoke-cmd.txt shows `bpp revoke` and D-revoke-cascade.txt shows unlinkSync cascade physically deleting compiled SKILL.md files",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/D-revoke-cmd.txt + D-revoke-cascade.txt"
+    },
+    {
+      "row": "E1. Audit chain inspectable",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.cli_has_audit_cmd == true; E-audit-cmd.txt shows `teamagent bpp audit [--since] [--json]` with grep_exit=0",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/E-audit-cmd.txt"
+    },
+    {
+      "row": "E2. Sub-lead boundary",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.cli_has_role_cmd == true; E-role-cmd.txt shows `teamagent bpp role --user=<id>` with grep_exit=0",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/E-role-cmd.txt"
+    },
+    {
+      "row": "F1. Repo green",
+      "verdict": "PASS",
+      "reason": "judge.json metrics.typecheck_exit == 0 AND vitest_exit == 0; F-typecheck.log shows exit=0 and F-vitest.log shows 28 files / 210 passed with vitest_exit=0",
+      "evidence": ".judge/2026-05-14-bpp-m1/evidence/F-typecheck.log + F-vitest.log"
+    }
+  ]
+}
