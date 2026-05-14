@@ -984,6 +984,8 @@ async function main(): Promise<void> {
             "  teamagent digital-twin resume            Enable uploader (uploader.enabled=true)\n" +
             "  teamagent digital-twin inject-mock       Write a synthetic transcript and tap it (end-to-end smoke test)\n" +
             "         [--cwd <path>] [--session-id <id>]\n" +
+            "  teamagent digital-twin member-stats      Show this member's upload stats (total / last upload / redaction count)\n" +
+            "         [--server <url>] [--user <id>] [--json]\n" +
             "\n" +
             "Manages the TeamBrain Digital Twin sidecar configuration in ~/.teamagent/.\n",
         );
