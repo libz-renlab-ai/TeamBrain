@@ -1,0 +1,43 @@
+{
+  "run_id": "2026-05-14-bpp-m1",
+  "against": "main @ ce331cb (PR #430 merge commit)",
+  "exit_code": 0,
+  "metrics": {
+    "cli_has_bpp_serve_cmd": false,
+    "cli_has_bp_push_cmd": false,
+    "cli_has_inbox_cmd": false,
+    "cli_has_team_init_cmd": false,
+    "cli_has_member_client_cmd": false,
+    "cli_has_revoke_cmd": false,
+    "cli_has_audit_cmd": false,
+    "cli_has_role_cmd": false,
+    "team_init_wired_into_bin": false,
+    "usage_docs_reference_nonexistent_cli": true,
+    "bpp_vitest_exit": 0,
+    "compile_to_skill_target": "<userHome>/.claude/skills/teamagent/<bp_id>/SKILL.md",
+    "revoke_cascades_to_skill_file": false,
+    "step7_agent_trigger": "AGENT-MANUAL",
+    "typecheck_exit": 0,
+    "typecheck_note": "code clean (1292 files, 0 errors) via --pretty false; bare pnpm typecheck exits 1 with no output on Windows due to a tsc 5.9.3 --pretty-printer flake",
+    "vitest_exit": 0
+  },
+  "evidence_dir": ".judge/2026-05-14-bpp-m1/evidence/",
+  "v3_verdict": {
+    "verdict": "FAIL",
+    "graded_by": "harness author (baseline draft). Independently re-graded by a process-isolated `claude -p` judge — verdict FAIL, row-by-row identical — recorded in docs/plans/2026-05-14-bpp-m1-acceptance-verify/baseline-judge-v3.json.",
+    "rows": [
+      {"row": "A1", "verdict": "FAIL", "reason": "no bpp/bp-serve/central-server command in `teamagent --help`", "evidence": "A-serve-cmd.txt grep_exit=1"},
+      {"row": "A2", "verdict": "FAIL", "reason": "no `teamagent bpp/bp-push` command in --help; the usage/ops guides shipped in PR #430 instruct `pnpm teamagent bpp ...` for 20+ fictional commands", "evidence": "A-push-cmd.txt grep_exit=1 (cli-help.txt) + A-push-docs-fiction.txt grep_exit=0 (docs reference nonexistent CLI)"},
+      {"row": "A3", "verdict": "FAIL", "reason": "no inbox command in `teamagent --help`", "evidence": "A-inbox-cmd.txt grep_exit=1 (cli-help.txt)"},
+      {"row": "B1", "verdict": "FAIL", "reason": "no member-client command; acceptance §5 item 2 (一键安装自动接入) unmet", "evidence": "B-member-cmd.txt"},
+      {"row": "B2", "verdict": "FAIL", "reason": "`teamagent team init` -> 未知命令: team; team-init.ts/team-transfer-lead.ts are orphan files never imported by bin.ts", "evidence": "B-team-init.txt exit=1 + B-bin-wiring.txt grep_exit=1"},
+      {"row": "C1", "verdict": "FAIL", "reason": "compile-to-skill target path is defined in source, but no inbox/accept CLI exists to invoke the accept->compile path", "evidence": "C-accept-cmd.txt (only `pair accept` noise) + C-compile-target.txt"},
+      {"row": "C2", "verdict": "MANUAL", "reason": "助手动手前主动提醒 requires a real interactive claude session picking up the compiled skill; no AI agent can self-certify (cf #122 R6)", "evidence": "C-step7-manual.txt"},
+      {"row": "D1", "verdict": "FAIL", "reason": "no revoke command in --help; revoke.ts does not cascade to compiled-skill-file deletion (only inbox status)", "evidence": "D-revoke-cmd.txt grep_exit=1 + D-revoke-cascade.txt grep_exit=1 (tightened pattern: no fs-deletion API or compiled-skill path present in revoke.ts)"},
+      {"row": "E1", "verdict": "FAIL", "reason": "no bpp audit command in --help (only `ingest --from-audit`, an unrelated feature)", "evidence": "E-audit-cmd.txt"},
+      {"row": "E2", "verdict": "FAIL", "reason": "no role/sub-lead/transfer command in --help", "evidence": "E-role-cmd.txt grep_exit=1"},
+      {"row": "F1", "verdict": "PASS", "reason": "repo typechecks clean (1292 files, 0 errors) and bpp vitest green (194 pass / 3 skip)", "evidence": "F-typecheck.log exit=0 + F-vitest.log VITEST_EXIT=0"}
+    ],
+    "summary": "9 FAIL / 1 PASS / 1 MANUAL. The BPP library + server routes work (F1 green, bpp vitest green), but the entire user-facing surface required by acceptance §2 里程碑一 — serve / push / inbox / team-init / member-client / revoke / audit / role commands — does not exist in the `teamagent` CLI. PR #430's usage guides document `pnpm teamagent bpp ...` commands that were never implemented. This is the mechanical confirmation of the gap the PR #430 hand-evaluation found."
+  }
+}
