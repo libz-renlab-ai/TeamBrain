@@ -550,6 +550,183 @@ export async function runBppAct(
   return { exitCode: 0, stdout: out, stderr: "" };
 }
 
+// ── bpp revoke ────────────────────────────────────────────────────────────
+
+export interface BppRevokeArgs {
+  help: boolean;
+  server: string;
+  bpId?: string;
+  leadUserId?: string;
+  reason?: string;
+}
+
+export function parseBppRevokeArgs(argv: string[]): BppRevokeArgs {
+  const out: BppRevokeArgs = { help: false, server: BPP_DEFAULT_SERVER };
+  for (const a of argv) {
+    if (a === "--help" || a === "-h") {
+      out.help = true;
+    } else if (a.startsWith("--server=")) {
+      out.server = a.slice("--server=".length);
+    } else if (a.startsWith("--bp-id=")) {
+      out.bpId = a.slice("--bp-id=".length);
+    } else if (a.startsWith("--lead-user-id=")) {
+      out.leadUserId = a.slice("--lead-user-id=".length);
+    } else if (a.startsWith("--reason=")) {
+      out.reason = a.slice("--reason=".length);
+    } else {
+      throw new BppArgError(`bpp revoke: 未知参数 ${a}`);
+    }
+  }
+  return out;
+}
+
+export function renderBppRevokeHelp(): string {
+  return [
+    "teamagent bpp revoke — 团队负责人撤回一条最佳实践",
+    "",
+    "用法:",
+    "  teamagent bpp revoke --bp-id=<id> --lead-user-id=<id> --reason=<文本>",
+    "                       [--server=<url>]",
+    "",
+    `  --server=<url>   中心服务地址（默认 ${BPP_DEFAULT_SERVER}）`,
+    "  撤回会级联：未采纳的收件箱条目翻转为 revoked，已采纳的本机技能文件被删除。",
+    "  调用方必须是团队负责人（main_lead / co_lead），否则服务返回 403。",
+  ].join("\n");
+}
+
+export async function runBppRevoke(args: BppRevokeArgs): Promise<BppCmdResult> {
+  if (
+    args.bpId === undefined ||
+    args.leadUserId === undefined ||
+    args.reason === undefined
+  ) {
+    return {
+      exitCode: 2,
+      stdout: "",
+      stderr: "bpp revoke: 必须提供 --bp-id / --lead-user-id / --reason\n",
+    };
+  }
+  const server = normalizeServer(args.server);
+  let resp: { status: number; json: unknown };
+  try {
+    resp = await httpPostJson(`${server}/v1/revoke`, {
+      bp_id: args.bpId,
+      lead_user_id: args.leadUserId,
+      reason: args.reason,
+    });
+  } catch (err) {
+    return connRefusedResult(server, err);
+  }
+  if (resp.status !== 200) {
+    const hint = resp.status === 403 ? "（调用方不是团队负责人）" : "";
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: `bpp revoke: 服务返回 ${resp.status}${hint} — ${JSON.stringify(resp.json)}\n`,
+    };
+  }
+  const r = resp.json as {
+    ok: true;
+    bp_id: string;
+    revoked_inbox_count: number;
+    deleted_skill_files: string[];
+  };
+  let out = `已撤回 ${r.bp_id}：${r.revoked_inbox_count} 条收件箱条目翻转为 revoked\n`;
+  if (r.deleted_skill_files.length > 0) {
+    out += `已级联删除 ${r.deleted_skill_files.length} 个本机技能文件:\n`;
+    for (const f of r.deleted_skill_files) out += `  ${f}\n`;
+  } else {
+    out += "无已采纳的技能文件需要删除\n";
+  }
+  return { exitCode: 0, stdout: out, stderr: "" };
+}
+
+// ── bpp force-push ────────────────────────────────────────────────────────
+
+export interface BppForcePushArgs {
+  help: boolean;
+  server: string;
+  bpId?: string;
+  receiver?: string;
+  leadUserId?: string;
+}
+
+export function parseBppForcePushArgs(argv: string[]): BppForcePushArgs {
+  const out: BppForcePushArgs = { help: false, server: BPP_DEFAULT_SERVER };
+  for (const a of argv) {
+    if (a === "--help" || a === "-h") {
+      out.help = true;
+    } else if (a.startsWith("--server=")) {
+      out.server = a.slice("--server=".length);
+    } else if (a.startsWith("--bp-id=")) {
+      out.bpId = a.slice("--bp-id=".length);
+    } else if (a.startsWith("--receiver=")) {
+      out.receiver = a.slice("--receiver=".length);
+    } else if (a.startsWith("--lead-user-id=")) {
+      out.leadUserId = a.slice("--lead-user-id=".length);
+    } else {
+      throw new BppArgError(`bpp force-push: 未知参数 ${a}`);
+    }
+  }
+  return out;
+}
+
+export function renderBppForcePushHelp(): string {
+  return [
+    "teamagent bpp force-push — 团队负责人强推一条最佳实践给某个成员",
+    "",
+    "用法:",
+    "  teamagent bpp force-push --bp-id=<id> --receiver=<id> --lead-user-id=<id>",
+    "                           [--server=<url>]",
+    "",
+    `  --server=<url>   中心服务地址（默认 ${BPP_DEFAULT_SERVER}）`,
+    "  强推会在接收者收件箱里直接放一条 forced_by_lead 的条目。",
+    "  调用方必须是团队负责人（main_lead / co_lead），否则服务返回 403。",
+  ].join("\n");
+}
+
+export async function runBppForcePush(
+  args: BppForcePushArgs,
+): Promise<BppCmdResult> {
+  if (
+    args.bpId === undefined ||
+    args.receiver === undefined ||
+    args.leadUserId === undefined
+  ) {
+    return {
+      exitCode: 2,
+      stdout: "",
+      stderr:
+        "bpp force-push: 必须提供 --bp-id / --receiver / --lead-user-id\n",
+    };
+  }
+  const server = normalizeServer(args.server);
+  let resp: { status: number; json: unknown };
+  try {
+    resp = await httpPostJson(`${server}/v1/bp-push/force`, {
+      bp_id: args.bpId,
+      receiver_id: args.receiver,
+      lead_user_id: args.leadUserId,
+    });
+  } catch (err) {
+    return connRefusedResult(server, err);
+  }
+  if (resp.status !== 200) {
+    const hint = resp.status === 403 ? "（调用方不是团队负责人）" : "";
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: `bpp force-push: 服务返回 ${resp.status}${hint} — ${JSON.stringify(resp.json)}\n`,
+    };
+  }
+  const r = resp.json as { ok: true; inbox_id: string; receiver_id: string };
+  return {
+    exitCode: 0,
+    stdout: `已强推 ${args.bpId} → ${r.receiver_id}（收件箱条目 ${r.inbox_id}）\n`,
+    stderr: "",
+  };
+}
+
 // ── bpp namespace dispatcher ──────────────────────────────────────────────
 
 export function renderBppHelp(): string {
@@ -567,8 +744,12 @@ export function renderBppHelp(): string {
     "                              采纳一条最佳实践（本机生成 SKILL.md）",
     "  teamagent bpp reject --inbox-id=<id> --receiver=<id>",
     "                              拒绝一条最佳实践",
+    "  teamagent bpp revoke --bp-id=<id> --lead-user-id=<id> --reason=<文本>",
+    "                              团队负责人撤回（级联删除已采纳的本机技能文件）",
+    "  teamagent bpp force-push --bp-id=<id> --receiver=<id> --lead-user-id=<id>",
+    "                              团队负责人强推一条最佳实践给某个成员",
     "",
-    "每个子命令支持 --help。更多子命令（revoke / audit / role）将在后续 PR 接入。",
+    "每个子命令支持 --help。更多子命令（audit / role）将在后续 PR 接入。",
   ].join("\n");
 }
 
@@ -625,6 +806,26 @@ export async function runBpp(argv: string[]): Promise<void> {
       return;
     }
     writeBppResult(await runBppAct(args, sub));
+    return;
+  }
+
+  if (sub === "revoke") {
+    const args = parseBppRevokeArgs(rest);
+    if (args.help) {
+      process.stdout.write(renderBppRevokeHelp() + "\n");
+      return;
+    }
+    writeBppResult(await runBppRevoke(args));
+    return;
+  }
+
+  if (sub === "force-push") {
+    const args = parseBppForcePushArgs(rest);
+    if (args.help) {
+      process.stdout.write(renderBppForcePushHelp() + "\n");
+      return;
+    }
+    writeBppResult(await runBppForcePush(args));
     return;
   }
 
