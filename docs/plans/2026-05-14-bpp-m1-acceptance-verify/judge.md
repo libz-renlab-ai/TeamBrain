@@ -117,8 +117,10 @@ Each slice maps to numbered steps of §2 里程碑一 验证方法.
 ### §V1.D — Lead revoke cascade (验证方法 step 8)
 
 ```
-1.  # step 8 — 老张 revokes; inbox entry disappears AND accepted skill file deleted
-    grep -nE 'revoke' evidence_dir/cli-help.txt \
+1.  # step 8 — 老张 revokes; inbox entry disappears AND accepted skill file deleted.
+    #   Real probe = bpp-help.txt, anchored on the literal `teamagent bpp revoke`
+    #   command line (bpp-help.txt is captured in §V1.A step 1).
+    grep -nE 'teamagent bpp revoke\b' evidence_dir/bpp-help.txt \
       > evidence_dir/D-revoke-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/D-revoke-cmd.txt
 2.  # does revoke.ts cascade to skill-file deletion, or only to inbox status?
     #   Pattern is tightened to actual fs-deletion APIs + compiled-skill paths —
