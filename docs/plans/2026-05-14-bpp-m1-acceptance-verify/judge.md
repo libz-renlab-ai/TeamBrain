@@ -81,9 +81,14 @@ Each slice maps to numbered steps of §2 里程碑一 验证方法.
 ### §V1.B — Member client + role setup (验证方法 steps 2, 3)
 
 ```
-1.  # step 2 — start three member clients (老张 / 小李 / 小王)
-    #   acceptance §5 item 2 requires "可运行的成员客户端代码，一键安装自动接入"
-    grep -nE 'team|member|client|inbox' evidence_dir/cli-help.txt \
+1.  # step 2 — start member clients (老张 / 小李 / 小王). acceptance §5 item 2
+    #   requires "可运行的成员客户端代码，一键安装自动接入中心服务" — the member
+    #   client must be discoverable from the TOP-LEVEL `teamagent --help`, so
+    #   this probe stays on cli-help.txt (NOT bpp-help.txt) but is anchored on
+    #   the literal `teamagent bpp join` command line. The old loose
+    #   `team|member|client|inbox` grep false-matched the `teamagent team init`
+    #   line — same false-positive class as the §V1.A `\bpush\b` collision.
+    grep -nE 'teamagent bpp join\b' evidence_dir/cli-help.txt \
       > evidence_dir/B-member-cmd.txt ; echo "grep_exit=$?" >> evidence_dir/B-member-cmd.txt
 2.  # step 3 — set 老张 as lead (creator = lead, per CEO decision #4)
     pnpm teamagent team init --help > evidence_dir/B-team-init.txt 2>&1 \
