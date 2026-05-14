@@ -255,7 +255,7 @@ pnpm frontend:typecheck   # tsc --noEmit
 pnpm install          # 首次 / 依赖变动后
 pnpm test             # 跑所有测试
 pnpm typecheck        # 跑所有包的 tsc --noEmit
-pnpm teamagent <cmd>  # 跑 CLI（35+ 子命令；`pnpm teamagent --help` 列全部）
+pnpm teamagent <cmd>  # 跑 CLI（67 子命令；`pnpm teamagent --help` 只列 8 门面命令，`pnpm teamagent help --all` 列全部）
 pnpm frontend:dev     # 跑 RocketTeam frontend dev server（见上节）
 ```
 
@@ -332,7 +332,7 @@ claude -p "Summarize latest changes in this repo" \
 ## 已知限制 / workaround
 
 - **Windows 下 vitest 并发 OOM**：`vitest.config.ts` 强制 `fileParallelism: false`，测试顺序跑。不要打开并发。
-- **CLI E2E subprocess 测试**：本地并发 `pnpm test` 触发 macOS scheduler 饱和（`toohot` 2026-05-10 实测 loadavg 274）。全量测试已搬到 `wip/**` CI workflow（ADR-0013，见 `docs/INNER-LOOP-TESTING.md`），不要在本地并发跑全量。本地保留单文件 `pnpm vitest run path/to/x.test.ts` + `pnpm teamagent skeleton-demo` 视觉验证；M0-onlys constraint 已废弃，现可用 CLI 子命令见 `pnpm teamagent --help`。
+- **CLI E2E subprocess 测试**：本地并发 `pnpm test` 触发 macOS scheduler 饱和（`toohot` 2026-05-10 实测 loadavg 274）。全量测试已搬到 `wip/**` CI workflow（ADR-0013，见 `docs/INNER-LOOP-TESTING.md`），不要在本地并发跑全量。本地保留单文件 `pnpm vitest run path/to/x.test.ts` + `pnpm teamagent skeleton-demo` 视觉验证；M0-onlys constraint 已废弃，现可用 CLI 子命令见 `pnpm teamagent help --all`（`--help` 只列 8 门面命令）。
 - **toohot — too many `claude.exe --bg-spare` workers**：当本机出现「鼠标 / 按键 / Terminal 全卡」且 `loadavg` 远超 core 数（如 M1 上 ≥27）时，常见根因不是热墙而是 [`claude agents`](https://docs.claude.com/claude-code) background worker 泄漏——daemon 把 20+ 个 `--bg-spare`/`--bg-pty-host` 配对常驻在 scheduler 队列里。诊断 + 安全 kill recipe（识别自己 PID 锁链 → SIGTERM/KILL 两段式 → daemon 自动重建池子）见 [docs/debugging/toohot-many-bg-spare-workers.md](docs/debugging/toohot-many-bg-spare-workers.md)。与 ADR-0013 是同种 scheduler-overload，但触发器是 `claude agents` 长寿命 worker，不是 `pnpm test` fork burst。
 
 ## M4-B 语义匹配（自 0.9.4 起）
