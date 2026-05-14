@@ -972,10 +972,12 @@ async function doImportRules(
     const why = opts.skipImport
       ? "skipImport=true（显式跳过）"
       : "未指定 --structure（默认不调用 LLM、不读 CLAUDE.md、不消耗订阅额度）";
-    steps.push(
-      okStep("scan-rules", "跳过规则扫描（LLM 结构化导入为 --structure opt-in）"),
-    );
-    steps.push(okStep("structure-rules", `skipped：${why}`));
+    steps.push({
+      step: "scan-rules",
+      status: "skipped",
+      detail: "跳过规则扫描（LLM 结构化导入为 --structure opt-in）",
+    });
+    steps.push({ step: "structure-rules", status: "skipped", detail: why });
     return { steps, importedCount: 0, wouldImport: 0 };
   }
 
