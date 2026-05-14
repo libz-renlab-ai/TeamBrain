@@ -1,0 +1,4 @@
+{"type":"user","sessionId":"bob-03","timestamp":"2026-05-12T08:00:00Z","message":{"role":"user","content":"请帮我处理 bob-03 这个任务"}}
+{"type":"assistant","timestamp":"2026-05-12T08:00:30Z","message":{"role":"assistant","content":[{"type":"text","text":"好的，我来处理"}]}}
+{"type":"user","timestamp":"2026-05-12T08:01:00Z","message":{"role":"user","content":"错了，跑 test 之前要先 lint"}}
+{"type":"assistant","timestamp":"2026-05-12T08:01:30Z","message":{"role":"assistant","content":[{"type":"text","text":"明白了，我改"}]}}

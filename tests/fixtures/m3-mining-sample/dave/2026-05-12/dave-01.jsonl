@@ -1,0 +1,4 @@
+{"type":"user","sessionId":"dave-01","timestamp":"2026-05-12T08:00:00Z","message":{"role":"user","content":"请帮我处理 dave-01 这个任务"}}
+{"type":"assistant","timestamp":"2026-05-12T08:00:30Z","message":{"role":"assistant","content":[{"type":"text","text":"好的，我来处理"}]}}
+{"type":"user","timestamp":"2026-05-12T08:01:00Z","message":{"role":"user","content":"别这样，这个项目要用 pino 不要用 winston"}}
+{"type":"assistant","timestamp":"2026-05-12T08:01:30Z","message":{"role":"assistant","content":[{"type":"text","text":"明白了，我改"}]}}

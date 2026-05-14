@@ -1,0 +1,4 @@
+{"type":"user","sessionId":"carol-04","timestamp":"2026-05-12T08:00:00Z","message":{"role":"user","content":"请帮我处理 carol-04 这个任务"}}
+{"type":"assistant","timestamp":"2026-05-12T08:00:30Z","message":{"role":"assistant","content":[{"type":"text","text":"好的，我来处理"}]}}
+{"type":"user","timestamp":"2026-05-12T08:01:00Z","message":{"role":"user","content":"不对，写新代码之前先看现有的 implementation"}}
+{"type":"assistant","timestamp":"2026-05-12T08:01:30Z","message":{"role":"assistant","content":[{"type":"text","text":"明白了，我改"}]}}
