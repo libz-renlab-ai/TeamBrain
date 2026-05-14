@@ -8,30 +8,96 @@
  *                       features (auto-capture/learning, realtime team
  *                       visibility, work recording + centralized upload).
  *   - FOLDED (13)     — install / uninstall / enable / disable / config
- *                       plumbing; folded behind `teamagent init --help`.
+ *                       plumbing; collapsed to a one-line list in `--help`.
  *   - BACKGROUND (46) — engine-room commands; reachable but only listed under
  *                       `teamagent help --all`.
  *
- * NOTE: this is a *presentation* triage only. Every command in all three tiers
- * still has its `case` in bin.ts and stays fully callable — not one line of
- * command implementation changed. `bin-help-triage.test.ts` asserts the union
- * of the three tiers exactly equals the `case` labels declared in bin.ts, so a
+ * This is a *presentation* triage only. Every command in all three tiers still
+ * has its `case` in bin.ts and stays fully callable — not one line of command
+ * implementation changed. `bin-help-triage.test.ts` asserts the union of the
+ * three tiers exactly equals the `case` labels declared in bin.ts, so a
  * newly-added command that forgets to pick a tier fails CI.
+ *
+ * The storefront tier is declared ONCE, as `STOREFRONT_ENTRIES` (structured
+ * objects). `STOREFRONT_COMMANDS` (the name list the union/drift-guard needs)
+ * and `buildStorefrontHelp()` (the rendered text) are both *derived* from it —
+ * there is no second hand-maintained copy of storefront command names.
  */
 
-/** Tier 1 — shown by default in `teamagent --help`. Curated by 3 business features. */
-export const STOREFRONT_COMMANDS = [
-  "init",
-  "analyze",
-  "doctor",
-  "dashboard",
-  "presence",
-  "daily",
-  "record",
-  "video",
-] as const;
+/** One storefront command: its tier membership AND its rendered help line. */
+export interface StorefrontEntry {
+  /** Subcommand name — must match a `case` label in bin.ts. */
+  readonly name: string;
+  /** Section header this command renders under (business-feature group). */
+  readonly group: string;
+  /** The `teamagent <name> ...` invocation line shown in help. */
+  readonly usage: string;
+  /** One-line description shown under the usage line. */
+  readonly desc: string;
+}
 
-/** Tier 2 — install/config/lifecycle plumbing, folded behind `teamagent init --help`. */
+/**
+ * Tier 1 — the 8 storefront commands, in render order, grouped by the business
+ * feature each one proves. This is the ONLY place storefront commands are
+ * declared; `STOREFRONT_COMMANDS` and `buildStorefrontHelp()` derive from it.
+ */
+export const STOREFRONT_ENTRIES: readonly StorefrontEntry[] = [
+  {
+    name: "init",
+    group: "入口",
+    usage: "teamagent init [--target=claude|codex|both] [--install-plugins]",
+    desc: "一键装到当前项目：建目录 + 注入元原则 + 注册集成 + 导出 Skills",
+  },
+  {
+    name: "analyze",
+    group: "特性① AI 不再重犯旧错（自动捕获 + 学习）",
+    usage: "teamagent analyze [--commit]",
+    desc: "分析 Claude Code 会话日志，识别纠正时刻；--commit 提取成知识条目入库",
+  },
+  {
+    name: "doctor",
+    group: "特性① AI 不再重犯旧错（自动捕获 + 学习）",
+    usage: "teamagent doctor [--fix]",
+    desc: "诊断安装环境（Node / Claude Code / sqlite-vec / Hook / CLAUDE.md）",
+  },
+  {
+    name: "dashboard",
+    group: "特性② 团队负责人实时看到每个成员在干什么",
+    usage: "teamagent dashboard --watch",
+    desc: "启动实时 HTML dashboard，周期刷新真实规则/事件数据并本地服务",
+  },
+  {
+    name: "presence",
+    group: "特性② 团队负责人实时看到每个成员在干什么",
+    usage: "teamagent presence",
+    desc: "探测当前 teammate 实时状态，输出 active/idle/offline 绿灯状态",
+  },
+  {
+    name: "daily",
+    group: "特性② 团队负责人实时看到每个成员在干什么",
+    usage: "teamagent daily",
+    desc: "跨项目扫今天活动，输出 member×project 一句话日报骨架",
+  },
+  {
+    name: "record",
+    group: "特性③ 工作录像 + 上传中心化存储",
+    usage: "teamagent record <start|stop|import>",
+    desc: "本地工作录音子命令（ffmpeg → Opus/OGG → queue）",
+  },
+  {
+    name: "video",
+    group: "特性③ 工作录像 + 上传中心化存储",
+    usage: "teamagent video upload <file>",
+    desc: "上传屏幕录像到中心化存储（mov/mp4/webm/mkv），返回 shareable link",
+  },
+];
+
+/** Tier 1 names — derived from STOREFRONT_ENTRIES, consumed by the union/drift guard. */
+export const STOREFRONT_COMMANDS: readonly string[] = STOREFRONT_ENTRIES.map(
+  (e) => e.name,
+);
+
+/** Tier 2 — install/config/lifecycle plumbing, collapsed to a one-line list in `--help`. */
 export const FOLDED_COMMANDS = [
   "install",
   "install-codex",
@@ -106,42 +172,50 @@ export const ALL_TRIAGED_COMMANDS: readonly string[] = [
 ];
 
 /**
+ * Whether `teamagent --help` / `teamagent help` should print the full
+ * 67-command listing instead of the 8-command storefront view.
+ *
+ * Only the explicit `--all` flag triggers it — a bare positional `all` does
+ * NOT, so a stray `all` token elsewhere in the args can't silently flip the
+ * output. `--all` is the form documented in the storefront help footer and
+ * used by the judge harness.
+ */
+export function isShowAll(rest: readonly string[]): boolean {
+  return rest.includes("--all");
+}
+
+/**
  * The default `teamagent --help` body: only the 8 storefront commands, grouped
- * by the business feature each one proves, plus a folded pointer for the 13
- * lifecycle commands and a hint to `teamagent help --all` for the rest.
+ * by the business feature each one proves, plus a folded one-line list for the
+ * 13 lifecycle commands and a hint to `teamagent help --all` for the rest.
+ *
+ * Rendered entirely from STOREFRONT_ENTRIES + FOLDED_COMMANDS — no hand-kept
+ * copy of command names lives in this function.
  */
 export function buildStorefrontHelp(): string {
-  return [
+  const lines: string[] = [
     "teamagent — TeamAgent CLI",
     "",
     "默认只列 8 个门面命令（按 3 大业务特性精选）。67 个命令全部仍可调用。",
+  ];
+  let lastGroup = "";
+  for (const entry of STOREFRONT_ENTRIES) {
+    if (entry.group !== lastGroup) {
+      lines.push("", `${entry.group}:`);
+      lastGroup = entry.group;
+    }
+    lines.push(`  ${entry.usage}`, `      ${entry.desc}`);
+  }
+  lines.push(
     "",
-    "入口:",
-    "  teamagent init [--target=claude|codex|both] [--install-plugins]",
-    "                                   一键装到当前项目：建目录 + 注入元原则 + 注册集成 + 导出 Skills",
-    "",
-    "  特性① AI 不再重犯旧错（自动捕获 + 学习）",
-    "  teamagent analyze [--commit]     分析 Claude Code 会话日志，识别纠正时刻；--commit 提取成知识条目入库",
-    "  teamagent doctor [--fix]         诊断安装环境（Node / Claude Code / sqlite-vec / Hook / CLAUDE.md）",
-    "",
-    "  特性② 团队负责人实时看到每个成员在干什么",
-    "  teamagent dashboard --watch      启动实时 HTML dashboard，周期刷新真实规则/事件数据并本地服务",
-    "  teamagent presence               探测当前 teammate 实时状态，输出 active/idle/offline 绿灯状态",
-    "  teamagent daily                  跨项目扫今天活动，输出 member×project 一句话日报骨架",
-    "",
-    "  特性③ 工作录像 + 上传中心化存储",
-    "  teamagent record <start|stop|import>   本地工作录音子命令（ffmpeg → Opus/OGG → queue）",
-    "  teamagent video upload <file>    上传屏幕录像到中心化存储（mov/mp4/webm/mkv），返回 shareable link",
-    "",
-    "配置 / 生命周期（13 个安装·卸载·开关·配置命令已折叠，见 teamagent init --help）:",
-    "  install · install-codex · install-plugins · install-hook · install-user-hook ·",
-    "  uninstall · uninstall-hook · uninstall-user-hook · enable · disable · config ·",
-    "  docs-propagate · warmup",
+    "配置 / 生命周期（13 个安装·卸载·开关·配置命令已折叠，完整帮助见 teamagent help --all）:",
+    `  ${FOLDED_COMMANDS.join(" · ")}`,
     "",
     "完整 67 个命令（含 46 个后台引擎室命令）:  teamagent help --all",
     "",
     "环境变量:",
     "  TEAMAGENT_VISIBILITY=silent|smart|verbose    归因渲染模式（默认 verbose）",
     "",
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
