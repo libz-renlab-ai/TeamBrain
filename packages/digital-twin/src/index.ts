@@ -311,6 +311,17 @@ export {
   type MiningInput,
 } from './bpp/mining/mining-types.js';
 export {
+  listConversationSessions,
+  readMinedCursor,
+  writeMinedCursor,
+  filterUnmined,
+  normalizeSignal,
+  extractMiningInput,
+  MINED_CURSOR_FILE,
+  type SessionRef,
+  type MinedCursor,
+} from './bpp/mining/transcript-extractor.js';
+export {
   mineCorrectionCandidates,
   type CorrectionAdapterInput,
 } from './bpp/mining/correction-adapter.js';
