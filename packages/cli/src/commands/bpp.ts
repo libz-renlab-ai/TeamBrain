@@ -16,6 +16,8 @@ import {
   type BpTier,
   type BpTopic,
   type InboxItem,
+  type PushEvent,
+  type RoleTier,
 } from "@teamagent/digital-twin";
 
 /** Thrown for malformed `bpp` invocations — bin.ts maps this to exit 2. */
@@ -727,6 +729,162 @@ export async function runBppForcePush(
   };
 }
 
+// ── bpp audit ─────────────────────────────────────────────────────────────
+
+export interface BppAuditArgs {
+  help: boolean;
+  server: string;
+  since?: string;
+  json: boolean;
+}
+
+export function parseBppAuditArgs(argv: string[]): BppAuditArgs {
+  const out: BppAuditArgs = {
+    help: false,
+    server: BPP_DEFAULT_SERVER,
+    json: false,
+  };
+  for (const a of argv) {
+    if (a === "--help" || a === "-h") {
+      out.help = true;
+    } else if (a === "--json") {
+      out.json = true;
+    } else if (a.startsWith("--server=")) {
+      out.server = a.slice("--server=".length);
+    } else if (a.startsWith("--since=")) {
+      out.since = a.slice("--since=".length);
+    } else {
+      throw new BppArgError(`bpp audit: 未知参数 ${a}`);
+    }
+  }
+  return out;
+}
+
+export function renderBppAuditHelp(): string {
+  return [
+    "teamagent bpp audit — 查看中心服务的审计事件日志",
+    "",
+    "用法:",
+    "  teamagent bpp audit [--since=<ISO 时间>] [--server=<url>] [--json]",
+    "",
+    `  --server=<url>   中心服务地址（默认 ${BPP_DEFAULT_SERVER}）`,
+    "  --since=<ISO>    只显示该时间点及之后的事件",
+    "  --json           输出原始 JSON 而非人类可读列表",
+  ].join("\n");
+}
+
+export async function runBppAudit(args: BppAuditArgs): Promise<BppCmdResult> {
+  const server = normalizeServer(args.server);
+  const qs =
+    args.since !== undefined
+      ? `?since=${encodeURIComponent(args.since)}`
+      : "";
+  let resp: { status: number; json: unknown };
+  try {
+    resp = await httpGetJson(`${server}/v1/audit${qs}`);
+  } catch (err) {
+    return connRefusedResult(server, err);
+  }
+  if (resp.status !== 200) {
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: `bpp audit: 服务返回 ${resp.status} — ${JSON.stringify(resp.json)}\n`,
+    };
+  }
+  const r = resp.json as { ok: true; events: PushEvent[] };
+  if (args.json) {
+    return {
+      exitCode: 0,
+      stdout: JSON.stringify(r.events, null, 2) + "\n",
+      stderr: "",
+    };
+  }
+  if (r.events.length === 0) {
+    return { exitCode: 0, stdout: "审计日志为空\n", stderr: "" };
+  }
+  const lines = r.events.map(
+    (ev) =>
+      `  ${ev.timestamp}  ${ev.event_type}  bp=${ev.bp_id}  actor=${ev.actor}  ${ev.id}`,
+  );
+  return {
+    exitCode: 0,
+    stdout: `审计事件日志（${r.events.length} 条）:\n${lines.join("\n")}\n`,
+    stderr: "",
+  };
+}
+
+// ── bpp role ──────────────────────────────────────────────────────────────
+
+export interface BppRoleArgs {
+  help: boolean;
+  server: string;
+  user?: string;
+}
+
+export function parseBppRoleArgs(argv: string[]): BppRoleArgs {
+  const out: BppRoleArgs = { help: false, server: BPP_DEFAULT_SERVER };
+  for (const a of argv) {
+    if (a === "--help" || a === "-h") {
+      out.help = true;
+    } else if (a.startsWith("--server=")) {
+      out.server = a.slice("--server=".length);
+    } else if (a.startsWith("--user=")) {
+      out.user = a.slice("--user=".length);
+    } else {
+      throw new BppArgError(`bpp role: 未知参数 ${a}`);
+    }
+  }
+  return out;
+}
+
+export function renderBppRoleHelp(): string {
+  return [
+    "teamagent bpp role — 查询某个用户的有效角色层级",
+    "",
+    "用法:",
+    "  teamagent bpp role --user=<id> [--server=<url>]",
+    "",
+    `  --server=<url>   中心服务地址（默认 ${BPP_DEFAULT_SERVER}）`,
+    "  --user=<id>      要查询的用户 id",
+    "",
+    "  返回 main_lead / co_lead / member 之一。",
+    "  副 lead（co_lead）可以撤回与强推，但不能转移主 lead 角色。",
+  ].join("\n");
+}
+
+export async function runBppRole(args: BppRoleArgs): Promise<BppCmdResult> {
+  if (args.user === undefined) {
+    return {
+      exitCode: 2,
+      stdout: "",
+      stderr: "bpp role: 必须提供 --user\n",
+    };
+  }
+  const server = normalizeServer(args.server);
+  let resp: { status: number; json: unknown };
+  try {
+    resp = await httpGetJson(
+      `${server}/v1/role?user=${encodeURIComponent(args.user)}`,
+    );
+  } catch (err) {
+    return connRefusedResult(server, err);
+  }
+  if (resp.status !== 200) {
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: `bpp role: 服务返回 ${resp.status} — ${JSON.stringify(resp.json)}\n`,
+    };
+  }
+  const r = resp.json as { ok: true; user_id: string; tier: RoleTier };
+  return {
+    exitCode: 0,
+    stdout: `${r.user_id} 的角色层级: ${r.tier}\n`,
+    stderr: "",
+  };
+}
+
 // ── bpp namespace dispatcher ──────────────────────────────────────────────
 
 export function renderBppHelp(): string {
@@ -748,8 +906,12 @@ export function renderBppHelp(): string {
     "                              团队负责人撤回（级联删除已采纳的本机技能文件）",
     "  teamagent bpp force-push --bp-id=<id> --receiver=<id> --lead-user-id=<id>",
     "                              团队负责人强推一条最佳实践给某个成员",
+    "  teamagent bpp audit [--since=<ISO 时间>] [--json]",
+    "                              查看中心服务的审计事件日志",
+    "  teamagent bpp role --user=<id>",
+    "                              查询某个用户的有效角色层级",
     "",
-    "每个子命令支持 --help。更多子命令（audit / role）将在后续 PR 接入。",
+    "每个子命令支持 --help。",
   ].join("\n");
 }
 
@@ -826,6 +988,26 @@ export async function runBpp(argv: string[]): Promise<void> {
       return;
     }
     writeBppResult(await runBppForcePush(args));
+    return;
+  }
+
+  if (sub === "audit") {
+    const args = parseBppAuditArgs(rest);
+    if (args.help) {
+      process.stdout.write(renderBppAuditHelp() + "\n");
+      return;
+    }
+    writeBppResult(await runBppAudit(args));
+    return;
+  }
+
+  if (sub === "role") {
+    const args = parseBppRoleArgs(rest);
+    if (args.help) {
+      process.stdout.write(renderBppRoleHelp() + "\n");
+      return;
+    }
+    writeBppResult(await runBppRole(args));
     return;
   }
 

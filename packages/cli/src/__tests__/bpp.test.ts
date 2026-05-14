@@ -12,6 +12,8 @@ import { join } from "node:path";
 import {
   startMockServer,
   writeMember,
+  appendAudit,
+  writeRoleMetadata,
   type MockServerHandle,
   type TeamMember,
 } from "@teamagent/digital-twin";
@@ -37,6 +39,12 @@ import {
   parseBppForcePushArgs,
   runBppForcePush,
   renderBppForcePushHelp,
+  parseBppAuditArgs,
+  runBppAudit,
+  renderBppAuditHelp,
+  parseBppRoleArgs,
+  runBppRole,
+  renderBppRoleHelp,
   type RunBppServeDeps,
 } from "../commands/bpp.js";
 
@@ -659,5 +667,154 @@ describe("bpp revoke / force-push — arg + error handling", () => {
     const help = renderBppHelp();
     expect(help).toContain("teamagent bpp revoke");
     expect(help).toContain("teamagent bpp force-push");
+  });
+});
+
+describe("bpp audit / role against a real server", () => {
+  let server: MockServerHandle;
+  let dataDir: string;
+
+  beforeEach(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "bpp-ar-data-"));
+    server = await startMockServer({
+      port: 0,
+      host: "127.0.0.1",
+      outputDir: dataDir,
+    });
+  });
+  afterEach(async () => {
+    await server.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it("audit lists the server's append-only event log", async () => {
+    appendAudit(dataDir, {
+      schema_version: 1,
+      id: "ev-cli-1",
+      event_type: "pushed",
+      bp_id: "bp-1",
+      actor: "laozhang",
+      timestamp: "2026-05-14T10:00:00Z",
+      metadata: {},
+    });
+    const res = await runBppAudit(parseBppAuditArgs([`--server=${server.url}`]));
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("ev-cli-1");
+    expect(res.stdout).toContain("pushed");
+  });
+
+  it("audit --since filters events at or after the ISO cutoff", async () => {
+    appendAudit(dataDir, {
+      schema_version: 1,
+      id: "ev-old",
+      event_type: "pushed",
+      bp_id: "bp-1",
+      actor: "laozhang",
+      timestamp: "2026-05-12T10:00:00Z",
+      metadata: {},
+    });
+    appendAudit(dataDir, {
+      schema_version: 1,
+      id: "ev-new",
+      event_type: "revoked",
+      bp_id: "bp-1",
+      actor: "laozhang",
+      timestamp: "2026-05-14T10:00:00Z",
+      metadata: {},
+    });
+    const res = await runBppAudit(
+      parseBppAuditArgs([`--server=${server.url}`, "--since=2026-05-13T00:00:00Z"]),
+    );
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("ev-new");
+    expect(res.stdout).not.toContain("ev-old");
+  });
+
+  it("audit --json outputs the raw event array", async () => {
+    appendAudit(dataDir, {
+      schema_version: 1,
+      id: "ev-json",
+      event_type: "accepted",
+      bp_id: "bp-1",
+      actor: "xiaoli",
+      timestamp: "2026-05-14T10:00:00Z",
+      metadata: {},
+    });
+    const res = await runBppAudit(
+      parseBppAuditArgs([`--server=${server.url}`, "--json"]),
+    );
+    const events = JSON.parse(res.stdout) as Array<{ id: string }>;
+    expect(events.some((e) => e.id === "ev-json")).toBe(true);
+  });
+
+  it("role reports main_lead for a seeded lead", async () => {
+    writeMember(dataDir, leadMember("laozhang"));
+    const res = await runBppRole(
+      parseBppRoleArgs([`--server=${server.url}`, "--user=laozhang"]),
+    );
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("laozhang");
+    expect(res.stdout).toContain("main_lead");
+  });
+
+  it("role reports co_lead when role-metadata says so", async () => {
+    writeMember(dataDir, leadMember("xiaoli"));
+    writeRoleMetadata(dataDir, {
+      schema_version: 1,
+      leads: { xiaoli: "co_lead" },
+    });
+    const res = await runBppRole(
+      parseBppRoleArgs([`--server=${server.url}`, "--user=xiaoli"]),
+    );
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("co_lead");
+  });
+
+  it("role reports member for an unknown user", async () => {
+    const res = await runBppRole(
+      parseBppRoleArgs([`--server=${server.url}`, "--user=nobody"]),
+    );
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain("member");
+  });
+});
+
+describe("bpp audit / role — arg + error handling", () => {
+  it("role without --user exits 2", async () => {
+    const res = await runBppRole(parseBppRoleArgs([]));
+    expect(res.exitCode).toBe(2);
+    expect(res.stderr).toContain("--user");
+  });
+
+  it("audit / role reject unknown args", () => {
+    expect(() => parseBppAuditArgs(["--bogus"])).toThrow(BppArgError);
+    expect(() => parseBppRoleArgs(["--bogus"])).toThrow(BppArgError);
+  });
+
+  it("audit against a down server exits 1 with a connect hint", async () => {
+    const res = await runBppAudit(
+      parseBppAuditArgs(["--server=http://127.0.0.1:1"]),
+    );
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain("无法连接");
+  });
+
+  it("role against a down server exits 1 with a connect hint", async () => {
+    const res = await runBppRole(
+      parseBppRoleArgs(["--server=http://127.0.0.1:1", "--user=x"]),
+    );
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr).toContain("无法连接");
+  });
+
+  it("help renderers mention the key flags", () => {
+    expect(renderBppAuditHelp()).toContain("--since=");
+    expect(renderBppRoleHelp()).toContain("--user=");
+  });
+
+  it("namespace help now lists audit + role", () => {
+    const help = renderBppHelp();
+    expect(help).toContain("teamagent bpp audit");
+    expect(help).toContain("teamagent bpp role");
   });
 });
