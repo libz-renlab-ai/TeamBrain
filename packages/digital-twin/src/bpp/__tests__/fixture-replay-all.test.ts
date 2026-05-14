@@ -9,6 +9,31 @@ import type { BestPractice, MiningEvidence } from '../types.js';
 // fixture-replay.test.ts).
 //
 // Spec: docs/superpowers/specs/2026-05-13-best-practice-push-design.md §8.3.
+// Stub disclaimer: tests/fixtures/scenarios/BPP-STUB.md (read this FIRST).
+// Acceptance ruler: docs/plans/2026-05-13-bpp-full-system-acceptance.md §M3, §M4, §9.5.
+//
+// STUB / SCAFFOLDING NOTICE — what this test validates and what it does NOT
+// ---------------------------------------------------------------------------
+// What it validates:
+//   - The inline placeholder miners + Wilson math + tier-rounding +
+//     conflict_with double-link produce byte-identical outputs against the
+//     hand-authored expected JSON. Useful for regression replay.
+//
+// What it does NOT validate:
+//   - That the real production mining pipeline (../mining/behavior-miner.ts,
+//     context-pattern-miner.ts, correction-adapter.ts, wilson-tier-gate.ts)
+//     produces these same outputs. Placeholder ≠ real.
+//   - That the real pipeline produces sensible outputs on real recorded
+//     transcripts. These fixtures are HAND-AUTHORED, not real recordings.
+//   - Anything about acceptance.md §M4 (the 6-12 person 4-week real-user
+//     experiment). That milestone is BLOCKED-ON-HUMAN; see
+//     docs/plans/2026-05-13-bpp-poc/m4-experiment/ for the humans-pluggable
+//     harness.
+//
+// Per acceptance.md §9.5 (合成数据陷阱再发生): hand-authored fixtures cannot
+// be counted as evidence the synthetic-data trap was avoided. Real recorded
+// transcripts + scipy.stats ablation on rule-ON / rule-OFF real-team runs
+// remain the canonical evidence path for §M4 verdict.
 //
 // IMPORTANT: Per fixture we ship a small **inline placeholder miner** because
 // the real Phase 2 behavior-miner is being built in parallel. When Phase 2

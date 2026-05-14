@@ -8,6 +8,16 @@ import type { BestPractice, MiningEvidence } from '../types.js';
 //
 // Spec: docs/superpowers/specs/2026-05-13-best-practice-push-design.md §8.
 // Judge: tests/fixtures/scenarios/bpp-brainstorm-habit/judge.md.
+// Stub disclaimer: tests/fixtures/scenarios/BPP-STUB.md (read this FIRST).
+// Acceptance ruler: docs/plans/2026-05-13-bpp-full-system-acceptance.md §M3, §M4, §9.5.
+//
+// STUB / SCAFFOLDING NOTICE
+// ---------------------------------------------------------------------------
+// This test asserts that the inline PLACEHOLDER miner produces byte-identical
+// output against a HAND-AUTHORED expected JSON. It does NOT validate the real
+// production mining pipeline, and it does NOT count as §M4 evidence under
+// acceptance.md §9.5 (合成数据陷阱). Real-team experiment harness lives at
+// docs/plans/2026-05-13-bpp-poc/m4-experiment/ (BLOCKED-ON-HUMAN to run).
 //
 // IMPORTANT: This test uses an INLINE PLACEHOLDER `mineForTest` because the
 // real Phase 2 behavior-miner is being built in parallel by another agent.
