@@ -1,0 +1,10 @@
+{"type":"task-start","ts":"2026-05-15T09:00:00.000Z","member_id":"P-002","task_slug":"01-parse-duration","group":"mining-disabled"}
+{"type":"ai-correction","ts":"2026-05-15T09:15:00.000Z","member_id":"P-002","task_slug":"01-parse-duration","transcript_snippet_hash":"sha256:111","matched_keyword":"不对"}
+{"type":"ai-correction","ts":"2026-05-15T09:30:00.000Z","member_id":"P-002","task_slug":"01-parse-duration","transcript_snippet_hash":"sha256:222","matched_keyword":"再来"}
+{"type":"ai-correction","ts":"2026-05-15T09:45:00.000Z","member_id":"P-002","task_slug":"01-parse-duration","transcript_snippet_hash":"sha256:333","matched_keyword":"重做"}
+{"type":"ai-correction","ts":"2026-05-15T10:00:00.000Z","member_id":"P-002","task_slug":"01-parse-duration","transcript_snippet_hash":"sha256:444","matched_keyword":"错了"}
+{"type":"task-end","ts":"2026-05-15T11:00:00.000Z","member_id":"P-002","task_slug":"01-parse-duration","group":"mining-disabled","result":"pass","duration_ms":7200000,"subjective_rating":2,"code_quality_score":0.70}
+{"type":"task-start","ts":"2026-05-15T13:30:00.000Z","member_id":"P-002","task_slug":"02-fix-stale-pr-detection","group":"mining-disabled"}
+{"type":"ai-correction","ts":"2026-05-15T14:00:00.000Z","member_id":"P-002","task_slug":"02-fix-stale-pr-detection","transcript_snippet_hash":"sha256:555","matched_keyword":"不对"}
+{"type":"ai-correction","ts":"2026-05-15T14:30:00.000Z","member_id":"P-002","task_slug":"02-fix-stale-pr-detection","transcript_snippet_hash":"sha256:666","matched_keyword":"再来"}
+{"type":"task-end","ts":"2026-05-15T16:00:00.000Z","member_id":"P-002","task_slug":"02-fix-stale-pr-detection","group":"mining-disabled","result":"fail","duration_ms":9000000,"subjective_rating":2,"code_quality_score":0.55}

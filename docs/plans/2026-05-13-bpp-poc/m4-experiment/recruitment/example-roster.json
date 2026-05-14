@@ -1,0 +1,14 @@
+{
+  "_comment": "Synthetic example for dry-run only. Real roster MUST replace this on day 0.",
+  "experiment_id": "m4-dryrun-2026-05-13",
+  "members": [
+    { "id": "P-001", "name_redacted": "alpha" },
+    { "id": "P-002", "name_redacted": "bravo" },
+    { "id": "P-003", "name_redacted": "charlie" },
+    { "id": "P-004", "name_redacted": "delta" },
+    { "id": "P-005", "name_redacted": "echo" },
+    { "id": "P-006", "name_redacted": "foxtrot" },
+    { "id": "P-007", "name_redacted": "golf" },
+    { "id": "P-008", "name_redacted": "hotel" }
+  ]
+}
