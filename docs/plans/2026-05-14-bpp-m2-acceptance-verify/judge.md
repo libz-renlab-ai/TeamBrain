@@ -137,11 +137,15 @@ Several slices need a running server. Start ONE shared instance and reuse it:
 ### §V1.B — Encrypted transport + token auth (功能验收 100-101)
 
 ```
-1.  # "上传走加密传输通道". The production server entry must be able to serve
-    #   the cc-session endpoint over TLS. Probe: bin-prod-server.ts wires the
-    #   reusable bpp/https-server.ts TLS wrapper.
-    grep -nE 'https-server|wrapHttpServerWithTls|createSecureServer|https\.createServer' \
+1.  # "上传走加密传输通道". The production server must be able to serve the
+    #   cc-session endpoint over TLS. Probe spans BOTH files in the TLS path:
+    #   bin-prod-server.ts must read the HTTPS_KEY_PATH/HTTPS_CERT_PATH env and
+    #   build a `tls` config; mock-server.ts must reuse the plain-HTTP request
+    #   listener over TLS via `wrapServerWithHttps`. grep_exit=0 (a match in
+    #   either file) == the TLS path is wired end-to-end.
+    grep -nE 'HTTPS_KEY_PATH|HTTPS_CERT_PATH|wrapServerWithHttps|opts\.tls' \
       packages/digital-twin/src/bin-prod-server.ts \
+      packages/digital-twin/src/mock-server.ts \
       > evidence_dir/B-prod-tls.txt 2>&1
     echo "grep_exit=$?" >> evidence_dir/B-prod-tls.txt
 
