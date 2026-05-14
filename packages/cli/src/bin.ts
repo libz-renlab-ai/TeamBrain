@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { runSkeletonDemo } from "./commands/skeleton-demo.js";
 import {
@@ -217,6 +218,11 @@ import {
   VIDEO_HELP,
 } from "./commands/video.js";
 import { runBpp, BppArgError } from "./commands/bpp.js";
+// BPP Phase 5 — `teamagent team init` / `team transfer-lead`. These two
+// command files shipped in PR #430 but were never wired into this
+// dispatcher; the `case "team":` block below is that wiring.
+import { runTeamInit } from "./commands/team-init.js";
+import { runTeamTransferLead } from "./commands/team-transfer-lead.js";
 import {
   executeFixtureReplay,
   parseFixtureReplayArgs,
@@ -1252,6 +1258,131 @@ async function main(): Promise<void> {
       if (!result.ok) process.exit(1);
       return;
     }
+    case "team": {
+      // BPP team setup — `team init` (join + become lead) / `team
+      // transfer-lead`. `--dir` defaults to the same store dir
+      // bin-prod-server.ts uses so the CLI and BPP server share it.
+      const teamSub = rest[0];
+      const teamRest = rest.slice(1);
+      const resolveTeamDir = (argv: string[]): string => {
+        for (const a of argv) {
+          if (a.startsWith("--dir=")) return a.slice("--dir=".length);
+        }
+        return (
+          process.env.TEAMAGENT_COLLECTOR_DIR ??
+          path.join(os.homedir(), "teamagent-collector")
+        );
+      };
+      const teamWrite = (s: string, channel?: "stdout" | "stderr"): void => {
+        (channel === "stderr" ? process.stderr : process.stdout).write(s);
+      };
+      if (
+        teamSub === undefined ||
+        teamSub === "--help" ||
+        teamSub === "-h" ||
+        teamSub === "help"
+      ) {
+        process.stdout.write(
+          [
+            "teamagent team — BPP 团队设置",
+            "",
+            "用法:",
+            "  teamagent team init --user-id=<id> --display-name=<名字> [--dir=<path>]",
+            "                                   加入团队并成为团队负责人（交互中输入 I AGREE 确认）",
+            "  teamagent team transfer-lead --from=<id> --to=<id> [--dir=<path>]",
+            "                                   把主 lead 角色从 --from 转移给 --to",
+            "",
+            "  --dir=<path>   BPP 数据目录（默认 $TEAMAGENT_COLLECTOR_DIR 或 ~/teamagent-collector）",
+            "",
+          ].join("\n"),
+        );
+        return;
+      }
+      if (teamSub === "init") {
+        if (teamRest.includes("--help") || teamRest.includes("-h")) {
+          process.stdout.write(
+            "Usage: teamagent team init --user-id=<id> --display-name=<名字> [--dir=<path>]\n",
+          );
+          return;
+        }
+        let userId: string | undefined;
+        let displayName: string | undefined;
+        for (const a of teamRest) {
+          if (a.startsWith("--dir=")) {
+            // consumed by resolveTeamDir
+          } else if (a.startsWith("--user-id=")) {
+            userId = a.slice("--user-id=".length);
+          } else if (a.startsWith("--display-name=")) {
+            displayName = a.slice("--display-name=".length);
+          } else {
+            process.stderr.write(`team init: 未知参数 ${a}\n`);
+            process.exit(2);
+          }
+        }
+        if (userId === undefined || displayName === undefined) {
+          process.stderr.write(
+            "team init: 必须提供 --user-id / --display-name\n",
+          );
+          process.exit(2);
+        }
+        const readlineMod = await import("node:readline/promises");
+        const rl = readlineMod.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        try {
+          const result = await runTeamInit({
+            readline: () => rl.question(""),
+            write: teamWrite,
+            now: () => new Date().toISOString(),
+            rootDir: resolveTeamDir(teamRest),
+            user_id: userId,
+            display_name: displayName,
+          });
+          if (!result.ok) process.exit(result.exitCode);
+        } finally {
+          rl.close();
+        }
+        return;
+      }
+      if (teamSub === "transfer-lead") {
+        if (teamRest.includes("--help") || teamRest.includes("-h")) {
+          process.stdout.write(
+            "Usage: teamagent team transfer-lead --from=<id> --to=<id> [--dir=<path>]\n",
+          );
+          return;
+        }
+        let fromUserId: string | undefined;
+        const transferArgv: string[] = [];
+        for (const a of teamRest) {
+          if (a.startsWith("--dir=")) {
+            // consumed by resolveTeamDir
+          } else if (a.startsWith("--from=")) {
+            fromUserId = a.slice("--from=".length);
+          } else {
+            // --to=<id> is parsed by team-transfer-lead's own parser
+            transferArgv.push(a);
+          }
+        }
+        if (fromUserId === undefined) {
+          process.stderr.write(
+            "team transfer-lead: 必须提供 --from=<当前主 lead 的 id>\n",
+          );
+          process.exit(2);
+        }
+        const result = runTeamTransferLead({
+          write: teamWrite,
+          rootDir: resolveTeamDir(teamRest),
+          from_user_id: fromUserId,
+          argv: transferArgv,
+        });
+        if (!result.ok) process.exit(result.exitCode);
+        return;
+      }
+      process.stderr.write(`未知 team 子命令: ${teamSub}\n`);
+      process.exit(1);
+      return;
+    }
     case "sync": {
       let syncArgs;
       try {
@@ -1606,6 +1737,10 @@ async function main(): Promise<void> {
           "                                   半自动源加 --dry-run 只产出候选 md 供人工勾选",
           "  teamagent bpp serve [--port=<n>] [--host=<host>] [--dir=<path>]",
           "                                   启动 BPP（团队最佳实践推送）中心服务；子命令见 `teamagent bpp --help`",
+          "  teamagent team init --user-id=<id> --display-name=<名字> [--dir=<path>]",
+          "                                   加入 BPP 团队并成为团队负责人；子命令见 `teamagent team --help`",
+          "  teamagent team transfer-lead --from=<id> --to=<id> [--dir=<path>]",
+          "                                   把 BPP 主 lead 角色转移给另一个成员",
           "",
           "环境变量:",
           "  TEAMAGENT_VISIBILITY=silent|smart|verbose    归因渲染模式（默认 verbose）",
