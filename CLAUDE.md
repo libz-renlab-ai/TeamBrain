@@ -233,7 +233,7 @@
 TeamBrain 的 active frontend 是 git submodule `landing/rocketteam`，对应 upstream [hrdAI3/RocketTeam](https://github.com/hrdAI3/RocketTeam)（Next.js 14 + Tailwind + React 18，pin 在 SHA `3922219`，由 `.gitmodules` 锁定）。任何"frontend / UI / 落地页"工作的入口都从这里出发，**不再**指向 `apps/landing/`。
 
 - `apps/landing/` 是 **legacy static-HTML 部署管道**，保留只为兼容现有 GitHub Pages workflow（`landing-deploy.yml`），新功能不要往里加；它会在后续 PR 里被 RocketTeam 直接接管。
-- `@teamagent/landing-adapter`（`packages/landing-adapter/`，PR #390 引入）保持 contract-only skeleton；当 RocketTeam 接管部署后，content-bridge 模式只用于反向把 TeamBrain feature 2/3 信号 **注入** RocketTeam 渲染层。
+- `@teamagent/landing-adapter`（`packages/landing-adapter/`，PR #390 引入）保持 contract-only skeleton；当 RocketTeam 接管部署后用于反向把 TeamBrain 信号注入渲染层，但目前的 `Feature2Signal`/`Feature3Signal` 接口对应的上游数据源（digital-twin 上传链）已删除，包内容待新的产品方向再定。
 
 **根脚本（在 TeamBrain 根目录执行）**：
 

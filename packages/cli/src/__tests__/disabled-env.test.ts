@@ -106,7 +106,6 @@ const USER_PROMPT_SUBMIT_BIN = path.join(CLI_DIST, "bin-user-prompt-submit.cjs")
 const POST_TOOL_USE_BIN = path.join(CLI_DIST, "bin-post-tool-use.cjs");
 const PRE_COMPACT_BIN = path.join(CLI_DIST, "bin-pre-compact.cjs");
 const SESSION_END_BIN = path.join(CLI_DIST, "bin-session-end.cjs");
-const DIGITAL_TWIN_TAP_BIN = path.join(CLI_DIST, "bin-digital-twin-tap.cjs");
 
 // Convention in this repo (see bin-session-start-chaos.test.ts):
 // integration tests that spawn the built `.cjs` bundles use `it.skipIf`
@@ -121,7 +120,6 @@ const BUNDLES_EXIST = [
   POST_TOOL_USE_BIN,
   PRE_COMPACT_BIN,
   SESSION_END_BIN,
-  DIGITAL_TWIN_TAP_BIN,
 ].every((bin) => fs.existsSync(bin));
 
 describe.skipIf(!BUNDLES_EXIST)("TEAMAGENT_DISABLED=1 master kill switch", () => {
@@ -241,21 +239,6 @@ describe.skipIf(!BUNDLES_EXIST)("TEAMAGENT_DISABLED=1 master kill switch", () =>
     assertNoTbRuntimeNoise(report.stderr);
   });
 
-  it("digital-twin-tap bails before stdin read / tapSession", async () => {
-    const report = await spawnHook(
-      DIGITAL_TWIN_TAP_BIN,
-      JSON.stringify({
-        hook_event_name: "Stop",
-        session_id: "issue-343-disabled-digital-twin",
-        cwd: process.cwd(),
-        transcript_path: path.join(
-          os.tmpdir(),
-          `issue-343-disabled-digital-twin-${Date.now()}.jsonl`,
-        ),
-      }),
-      { TEAMAGENT_DISABLED: "1" },
-    );
-    expect(report.exitCode).toBe(0);
-    assertNoTbRuntimeNoise(report.stderr);
-  });
+  // The digital-twin-tap TEAMAGENT_DISABLED=1 spawn assertion was removed
+  // alongside the bin-digital-twin-tap.cjs bundle itself.
 });

@@ -20,8 +20,10 @@ import { fileURLToPath } from "node:url";
  * someone reorders the imports, or adds a new sqlite-pulling import above the
  * bootstrap line.
  *
- * `bin-digital-twin-tap.ts` is intentionally excluded — it imports only
- * `@teamagent/digital-twin`, which never loads `node:sqlite`.
+ * (Historical note: `bin-digital-twin-tap.ts` was intentionally excluded
+ * because it imported only `@teamagent/digital-twin`, which never loads
+ * `node:sqlite`. That bundle has since been removed alongside the upload
+ * pipeline, so the exclusion is moot.)
  */
 
 const SRC_DIR = path.resolve(fileURLToPath(import.meta.url), "../..");
