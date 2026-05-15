@@ -33,7 +33,7 @@ _Avoid_: machine-wide, user-wide
 ### Mechanism（让 team scope 落地的机制）
 
 **Viral sync**:
-让 team-scope 规则经 git 自动流通的机制总称（infect / bootstrap / sync / enforcement 四子系统）。
+让 team-scope 规则经 git 自动流通的机制总称（infect / bootstrap / sync / enforcement 四子系统）。**已废弃**（[ADR-0016](adr/0016-abandon-m5-viral-sync.md)）—— auto-infect / auto-install / auto-push 设计上侵入性强、shipped 但未验证需求、分散 Feature #1 核心精力；术语保留仅为解释历史代码与文档，**不是推荐能力，勿基于它做新设计**。
 _Avoid_: group sync, federated sync, cross-user sync
 
 **Two gates**:
