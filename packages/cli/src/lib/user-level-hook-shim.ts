@@ -10,9 +10,10 @@
  * PreToolUse / PostToolUse / UserPromptSubmit / SessionStart that fires.
  *
  * Fix: wrap the staged path in a tiny inline `bash -c` shim that exits 0 when
- * the file is missing. Mirror of the project-level B-103 pattern in
- * `.claude/hooks/digital-twin-tap.sh`, kept inline here so the user-level
- * settings entry is self-contained — there is no second shim file to lose.
+ * the file is missing. The same self-healing pattern previously also lived in
+ * a sibling `.claude/hooks/digital-twin-tap.sh` (deleted with the upload
+ * pipeline); the inline form here is kept self-contained so the user-level
+ * settings entry never has a second shim file to lose.
  *
  * Properties:
  * - bundle missing  -> silent exit 0 (Stop hook never blocks session close).
@@ -20,8 +21,8 @@
  *   replaces the shell, so the bundle's real exit code (incl. Stop-hook-
  *   feedback exit 2 → ask Claude to retry) propagates intact and
  *   stdin/stdout/stderr are forwarded as-is.
- * - cross-platform: relies on `bash` being on PATH, the same assumption made
- *   by `.claude/hooks/digital-twin-tap.sh` and the install-hook docs.
+ * - cross-platform: relies on `bash` being on PATH, the same assumption the
+ *   install-hook docs already make for project-level `.claude/hooks/*.sh`.
  *
  * Issue #477: the `node` invocation carries `--experimental-sqlite --no-warnings`
  * (NODE_SQLITE_FLAGS_STR). Claude Code spawns hooks as child processes that do

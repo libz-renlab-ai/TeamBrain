@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { installHook, uninstallHook, stageDaemonBinaryToUser } from "../commands/install-hook.js";
+import { installHook, uninstallHook } from "../commands/install-hook.js";
 
 function mkTmp(): { cwd: string; cleanup: () => void } {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "install-hook-"));
@@ -1258,7 +1258,7 @@ describe("installHook — B+C scope new channels (2026-05-09)", () => {
     expect(proj.hooks.PreCompact[0].hooks[0].timeout).toBe(30);
   });
 
-  it("does NOT register SessionStart or DigitalTwinTap at project level", () => {
+  it("does NOT register SessionStart at project level", () => {
     installHook({
       cwd: tmp.cwd,
       hookEntry: FAKE_HOOK_ENTRY,
@@ -1266,7 +1266,6 @@ describe("installHook — B+C scope new channels (2026-05-09)", () => {
       userPromptEntry: FAKE_HOOK_ENTRY,
       stopEntry: FAKE_HOOK_ENTRY,
       sessionStartEntry: FAKE_HOOK_ENTRY,
-      digitalTwinEntry: FAKE_HOOK_ENTRY,
       homeDir: fakeHome,
       userLevel: false,
     });
@@ -1274,13 +1273,13 @@ describe("installHook — B+C scope new channels (2026-05-09)", () => {
     const projectPath = path.join(tmp.cwd, ".claude", "settings.local.json");
     const proj = JSON.parse(fs.readFileSync(projectPath, "utf-8"));
     expect(proj.hooks.SessionStart).toBeUndefined();
-    // Stop has bin-stop only at project level; the digital-twin tag belongs to
-    // the user-level mirror. Verify only one Stop entry with the bin-stop tag.
+    // The digital-twin Stop tap row was removed alongside the upload pipeline,
+    // so Stop only carries bin-stop at project level.
     expect(proj.hooks.Stop).toHaveLength(1);
     expect(proj.hooks.Stop[0]._teamagentTag).toBe("teamagent-stop");
   });
 
-  it("registers all 8 channel tags at user level (~/.claude/settings.json)", () => {
+  it("registers all 7 channel tags at user level (~/.claude/settings.json)", () => {
     installHook({
       cwd: tmp.cwd,
       hookEntry: FAKE_HOOK_ENTRY,
@@ -1290,7 +1289,6 @@ describe("installHook — B+C scope new channels (2026-05-09)", () => {
       sessionStartEntry: FAKE_HOOK_ENTRY,
       sessionEndEntry: FAKE_HOOK_ENTRY,
       preCompactEntry: FAKE_HOOK_ENTRY,
-      digitalTwinEntry: FAKE_HOOK_ENTRY,
       homeDir: fakeHome,
       userLevel: true,
     });
@@ -1314,14 +1312,13 @@ describe("installHook — B+C scope new channels (2026-05-09)", () => {
         "teamagent-session-start",
         "teamagent-session-end",
         "teamagent-pre-compact",
-        "teamagent-digital-twin-tap",
       ]),
     );
-    // Stop should host BOTH the bin-stop tag and the digital-twin-tap tag.
-    expect(userSettings.hooks.Stop).toHaveLength(2);
+    // Stop now hosts only the bin-stop tag (digital-twin tap removed).
+    expect(userSettings.hooks.Stop).toHaveLength(1);
   });
 
-  it("uninstallHook cleans SessionEnd / PreCompact / DigitalTwinTap tags", () => {
+  it("uninstallHook cleans SessionEnd / PreCompact tags", () => {
     installHook({
       cwd: tmp.cwd,
       hookEntry: FAKE_HOOK_ENTRY,
@@ -1330,7 +1327,6 @@ describe("installHook — B+C scope new channels (2026-05-09)", () => {
       stopEntry: FAKE_HOOK_ENTRY,
       sessionEndEntry: FAKE_HOOK_ENTRY,
       preCompactEntry: FAKE_HOOK_ENTRY,
-      digitalTwinEntry: FAKE_HOOK_ENTRY,
       homeDir: fakeHome,
       userLevel: false,
     });
@@ -1458,116 +1454,9 @@ describe("auditOrphanShellHooks (B+C scope, 2026-05-09)", () => {
   });
 });
 
-// Issue #146 install-hook TODO — bin-uploader.cjs staging via install-hook.
-describe("daemon binary staging (issue #146 install-hook TODO)", () => {
-  let tmp: ReturnType<typeof mkTmp>;
-  let fakeHome: string;
-  // The staged daemon source can be any file; we use a fake .cjs sentinel
-  // so existsSync passes and copyFileSync round-trips bytes we can verify.
-  let fakeDaemonSrc: string;
-
-  beforeEach(() => {
-    tmp = mkTmp();
-    fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "iht-home-"));
-    fakeDaemonSrc = path.join(fakeHome, "fake-bin-uploader.cjs");
-    fs.writeFileSync(fakeDaemonSrc, "// fake bin-uploader.cjs v1\n");
-  });
-
-  afterEach(() => {
-    tmp.cleanup();
-    fs.rmSync(fakeHome, { recursive: true, force: true });
-  });
-
-  it("stageDaemonBinaryToUser copies bin-uploader.cjs to <home>/.teamagent/digital-twin/", () => {
-    const result = stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
-    expect(result.staged).toBe(true);
-    expect(result.destPath).toBe(
-      path.join(fakeHome, ".teamagent", "digital-twin", "bin-uploader.cjs"),
-    );
-    expect(fs.existsSync(result.destPath)).toBe(true);
-    expect(fs.readFileSync(result.destPath, "utf-8")).toBe(
-      "// fake bin-uploader.cjs v1\n",
-    );
-  });
-
-  it("stageDaemonBinaryToUser returns staged=false when source missing (best-effort)", () => {
-    const result = stageDaemonBinaryToUser(
-      path.join(fakeHome, "nonexistent.cjs"),
-      fakeHome,
-    );
-    expect(result.staged).toBe(false);
-    expect(result.reason).toContain("source missing");
-    // Dest path is reported even on failure so callers can log it.
-    expect(result.destPath).toBe(
-      path.join(fakeHome, ".teamagent", "digital-twin", "bin-uploader.cjs"),
-    );
-    // No file created on failure.
-    expect(fs.existsSync(result.destPath)).toBe(false);
-  });
-
-  it("stageDaemonBinaryToUser is idempotent (skip-if-newer)", () => {
-    const r1 = stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
-    expect(r1.staged).toBe(true);
-    const mtime1 = fs.statSync(r1.destPath).mtimeMs;
-    // Second call: skip-if-newer should NOT touch the file.
-    const r2 = stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
-    expect(r2.staged).toBe(true);
-    expect(r2.reason).toMatch(/up-to-date/);
-    const mtime2 = fs.statSync(r2.destPath).mtimeMs;
-    expect(mtime2).toBe(mtime1);
-  });
-
-  it("stageDaemonBinaryToUser overwrites stale destination (newer source wins)", () => {
-    // First install: write v1 to dest.
-    stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
-    const dest = path.join(fakeHome, ".teamagent", "digital-twin", "bin-uploader.cjs");
-
-    // Force the dest to look stale: replace its bytes + bump mtime backwards.
-    const past = new Date(Date.now() - 60_000);
-    fs.utimesSync(dest, past, past);
-
-    // Bump the source mtime forward + change content to v2.
-    fs.writeFileSync(fakeDaemonSrc, "// fake bin-uploader.cjs v2\n");
-    const future = new Date(Date.now() + 5_000);
-    fs.utimesSync(fakeDaemonSrc, future, future);
-
-    const r = stageDaemonBinaryToUser(fakeDaemonSrc, fakeHome);
-    expect(r.staged).toBe(true);
-    expect(r.reason).toBeUndefined(); // not the up-to-date path
-    expect(fs.readFileSync(dest, "utf-8")).toBe("// fake bin-uploader.cjs v2\n");
-  });
-
-  it("installHook stages daemon binary into <home>/.teamagent/digital-twin/ (full integration)", () => {
-    const r = installHook({
-      cwd: tmp.cwd,
-      hookEntry: FAKE_HOOK_ENTRY,
-      homeDir: fakeHome,
-      daemonBinaryEntry: fakeDaemonSrc,
-      // userLevel:true is the default; daemon staging happens unconditionally.
-    });
-    expect(r.daemonBinary.staged).toBe(true);
-    expect(r.daemonBinary.destPath).toBe(
-      path.join(fakeHome, ".teamagent", "digital-twin", "bin-uploader.cjs"),
-    );
-    expect(fs.existsSync(r.daemonBinary.destPath)).toBe(true);
-    expect(fs.readFileSync(r.daemonBinary.destPath, "utf-8")).toBe(
-      "// fake bin-uploader.cjs v1\n",
-    );
-  });
-
-  it("installHook reports staged=false when daemonBinaryEntry source missing (no throw)", () => {
-    const r = installHook({
-      cwd: tmp.cwd,
-      hookEntry: FAKE_HOOK_ENTRY,
-      homeDir: fakeHome,
-      daemonBinaryEntry: path.join(fakeHome, "missing-bin-uploader.cjs"),
-    });
-    // installHook itself succeeds — daemon staging is best-effort.
-    expect(r.daemonBinary.staged).toBe(false);
-    expect(r.daemonBinary.reason).toContain("source missing");
-    expect(fs.existsSync(r.daemonBinary.destPath)).toBe(false);
-  });
-});
+// The `stageDaemonBinaryToUser` daemon-binary staging suite (issue #146) was
+// removed alongside the entire upload pipeline (`packages/digital-twin/`,
+// `bin-uploader.cjs`, the digital-twin Stop tap row).
 
 describe("install-user-hook deprecation (B+C scope, 2026-05-09)", () => {
   it("installUserHook emits a deprecation warning to stderr", async () => {
@@ -1599,85 +1488,8 @@ describe("install-user-hook deprecation (B+C scope, 2026-05-09)", () => {
   });
 });
 
-describe("applyChannelOps soft-warn on missing bundle (issue #299)", () => {
-  // The bug: when an install-table entry references a bundle whose file is
-  // absent (e.g. dist/bin-digital-twin-tap.cjs missing from a release tarball),
-  // applyChannelOps used to `continue;` silently — install reports success,
-  // settings.json never gets the entry, no stderr line.
-  // The fix: print one stderr line `teamagent: skipping channel <ch> — bundle
-  // <file> not found` then continue. Other channels still install.
-
-  let tmp: ReturnType<typeof mkTmp>;
-
-  beforeEach(() => {
-    tmp = mkTmp();
-  });
-
-  afterEach(() => {
-    tmp.cleanup();
-  });
-
-  it("writes a stderr line naming the channel + bundle filename when a user-level Stop bundle is missing", () => {
-    // Real PreToolUse bundle exists (this test file's own path), but the
-    // digital-twin Stop entry is intentionally pointed at a non-existent path
-    // → applyChannelOps must warn AND continue.
-    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "install-hook-warn-"));
-    const captured: string[] = [];
-    const origWrite = process.stderr.write.bind(process.stderr);
-    (process.stderr as any).write = ((chunk: any, ...rest: any[]) => {
-      captured.push(typeof chunk === "string" ? chunk : chunk?.toString?.() ?? "");
-      return origWrite(chunk, ...rest);
-    }) as typeof process.stderr.write;
-
-    try {
-      installHook({
-        cwd: tmp.cwd,
-        hookEntry: FAKE_HOOK_ENTRY,
-        userLevel: true,
-        homeDir: fakeHome,
-        // Point the digital-twin entry at a missing path; everything else
-        // defaults so the rest of the channels still resolve via cliRoot().
-        digitalTwinEntry: path.join(fakeHome, "does", "not", "exist", "bin-digital-twin-tap.cjs"),
-      });
-    } finally {
-      (process.stderr as any).write = origWrite;
-    }
-
-    const joined = captured.join("");
-    expect(joined).toContain("teamagent: skipping channel Stop");
-    expect(joined).toContain("bin-digital-twin-tap.cjs");
-    expect(joined).toContain("not found");
-
-    fs.rmSync(fakeHome, { recursive: true, force: true });
-  });
-
-  it("install still succeeds with other channels intact when one bundle is missing", () => {
-    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "install-hook-partial-"));
-    try {
-      const r = installHook({
-        cwd: tmp.cwd,
-        hookEntry: FAKE_HOOK_ENTRY,
-        userLevel: true,
-        homeDir: fakeHome,
-        digitalTwinEntry: path.join(fakeHome, "does", "not", "exist", "bin-digital-twin-tap.cjs"),
-      });
-
-      // Project-level settings.local.json was written → install succeeded.
-      expect(fs.existsSync(r.settingsPath)).toBe(true);
-      const userSettingsPath = path.join(fakeHome, ".claude", "settings.json");
-      expect(fs.existsSync(userSettingsPath)).toBe(true);
-
-      // The non-digital-twin user-level Stop entry (bin-stop.cjs) — if its
-      // bundle exists in cliRoot/dist — should still be present.
-      const user = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"));
-      const stopList = user.hooks?.Stop ?? [];
-      const hasDigitalTwin = (stopList as any[]).some(
-        (e) => e._teamagentTag === "teamagent-digital-twin-tap",
-      );
-      // Missing-bundle entry must NOT be in settings.
-      expect(hasDigitalTwin).toBe(false);
-    } finally {
-      fs.rmSync(fakeHome, { recursive: true, force: true });
-    }
-  });
-});
+// The `applyChannelOps soft-warn on missing bundle` suite previously exercised
+// the digital-twin Stop tap row of ALL_CHANNELS; that row was removed
+// alongside the upload pipeline. The underlying soft-warn behaviour stays in
+// `applyChannelOps`, but the test cases that pinned it to
+// `bin-digital-twin-tap.cjs` are no longer applicable.

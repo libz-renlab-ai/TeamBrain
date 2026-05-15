@@ -39,13 +39,14 @@ const USER_PROMPT_TAG = "teamagent-user-prompt-submit";
 const STOP_HOOK_TAG   = "teamagent-stop";
 const STATUS_LINE_TAG = "teamagent-statusline";
 // B+C scope (2026-05-09): four new channels folded into installHook.
-// SessionStart and DigitalTwinTap are user-level only (see channelOps and
-// `installHook` body for rationale); SessionEnd / PreCompact write to both
-// project and user-level settings like the existing four.
+// SessionStart is user-level only (see channelOps and `installHook` body for
+// rationale); SessionEnd / PreCompact write to both project and user-level
+// settings like the existing four. The digital-twin Stop tap was removed
+// alongside packages/digital-twin/ so the Stop channel now hosts exactly
+// one bundle (bin-stop.cjs).
 const SESSION_START_TAG = "teamagent-session-start";
 const SESSION_END_TAG   = "teamagent-session-end";
 const PRE_COMPACT_TAG   = "teamagent-pre-compact";
-const DIGITAL_TWIN_TAG  = "teamagent-digital-twin-tap";
 
 export interface InstallHookOptions {
   cwd?: string;
@@ -65,17 +66,6 @@ export interface InstallHookOptions {
   sessionEndEntry?: string;
   /** 显式指定 PreCompact hook 入口绝对路径 */
   preCompactEntry?: string;
-  /** 显式指定 digital-twin-tap Stop hook 入口绝对路径（user-level only） */
-  digitalTwinEntry?: string;
-  /**
-   * Issue #146 install-hook TODO — 显式指定 digital-twin daemon 二进制
-   * `bin-uploader.cjs` 的源路径。Default: `<cliRoot>/../digital-twin/dist/
-   * bin-uploader.cjs` (monorepo 布局，与 `resolveDaemonBin` 一致)。install-hook
-   * 把它复制到 `<homeDir>/.teamagent/digital-twin/bin-uploader.cjs`，承担起
-   * 之前由 Stop hook 首次启动时 `resolveDaemonBin` self-install 兜底的 upgrade
-   * 路径。
-   */
-  daemonBinaryEntry?: string;
   /** 显式指定 user-level home（默认 os.homedir()）。测试用。 */
   homeDir?: string;
   /**
@@ -177,35 +167,6 @@ function defaultPreCompactEntry(): string {
   return path.join(cliRoot(), "dist", "bin-pre-compact.cjs");
 }
 
-function defaultDigitalTwinEntry(): string {
-  return path.join(cliRoot(), "dist", "bin-digital-twin-tap.cjs");
-}
-
-/**
- * Issue #146 install-hook TODO — default source path for `bin-uploader.cjs`
- * (the digital-twin uploader daemon spawned by `bin-digital-twin-tap.cjs`).
- *
- * Issue #368 (v0.11.1) — now resolves to `<cliRoot>/dist/bin-uploader.cjs`,
- * the same dist directory the other staged hook bins come from. Previously
- * this pointed at `<cliRoot>/../digital-twin/dist/bin-uploader.cjs`, which
- * exists only in a monorepo checkout: in the published tarball there's no
- * sibling `digital-twin` package, so `stageDaemonBinaryToUser` silently
- * no-op'd ("source missing") and `resolveDaemonBin`'s monorepo fallback
- * (also pointing at a non-existent path) returned null. Net effect on
- * every curl-installed machine: zero uploads, no error.
- *
- * Fix flow:
- *   1. teamagent tsup.config (release tarball) builds bin-uploader.cjs into
- *      packages/teamagent/dist → tarball ships it at <install>/dist/.
- *   2. cli tsup.hook.config (monorepo dev) builds bin-uploader.cjs into
- *      packages/cli/dist → matches cliRoot() walk-up in dev.
- *   3. defaultDaemonBinaryEntry returns <cliRoot>/dist/bin-uploader.cjs;
- *      both layouts above land it where this expects.
- */
-function defaultDaemonBinaryEntry(): string {
-  return path.join(cliRoot(), "dist", "bin-uploader.cjs");
-}
-
 /**
  * 把 Windows 反斜杠路径转为正斜杠格式。
  * Git Bash 会吞掉路径里的反斜杠（视为转义），所以 hook command 必须用 /。
@@ -232,79 +193,6 @@ function toForwardSlash(p: string): string {
  * 3. copyFileSync the bundle (overwrite existing — fresh bundle on each install)
  * 4. return dest
  */
-/**
- * Issue #146 install-hook TODO — stage `bin-uploader.cjs` to the
- * user-level digital-twin location managed by `resolveDaemonBin`. Pattern
- * mirrors `stageBundleToUserTeamagent` (skip-if-newer + atomic tmp+rename)
- * but writes to `<homeDir>/.teamagent/digital-twin/bin-uploader.cjs`
- * instead of `<homeDir>/.teamagent/hooks/<bundle>`.
- *
- * Best-effort:
- * - Source missing (digital-twin not built in this worktree) → no-op,
- *   returns staged=false with a reason. install-hook continues. The Stop
- *   hook's `resolveDaemonBin` runtime self-install still picks up the
- *   binary on first daemon spawn from the monorepo dist path.
- * - Copy failure (Windows EBUSY, EPERM, EXDEV) → returns staged=false
- *   with reason; same recovery story as source-missing.
- *
- * Returns a structured result so the caller (and tests) can assert on
- * the outcome without having to inspect the filesystem.
- */
-export interface DaemonStagingResult {
-  staged: boolean;
-  destPath: string;
-  reason?: string;
-}
-
-export function stageDaemonBinaryToUser(
-  srcDistPath: string,
-  homeDir: string,
-): DaemonStagingResult {
-  const dest = path.join(homeDir, ".teamagent", "digital-twin", "bin-uploader.cjs");
-  if (!fs.existsSync(srcDistPath)) {
-    return {
-      staged: false,
-      destPath: dest,
-      reason: `daemon binary source missing: ${srcDistPath} (build with pnpm --filter @teamagent/digital-twin build)`,
-    };
-  }
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-
-  // Skip-if-newer: same heuristic as stageBundleToUserTeamagent — avoids
-  // pointless I/O on every install AND avoids racing concurrent daemon
-  // processes that already loaded the staged binary.
-  try {
-    const srcStat = fs.statSync(srcDistPath);
-    const destStat = fs.statSync(dest);
-    if (srcStat.size === destStat.size && srcStat.mtimeMs <= destStat.mtimeMs) {
-      return { staged: true, destPath: dest, reason: "already up-to-date (skip-if-newer)" };
-    }
-  } catch {
-    // dest missing — fall through to the copy.
-  }
-
-  // Atomic copy via tmp + rename — protects against in-flight daemon
-  // process reading a half-written .cjs on Unix and against Windows EBUSY
-  // when the previous daemon's copy is still mapped.
-  const tmp = `${dest}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
-  try {
-    fs.copyFileSync(srcDistPath, tmp);
-    fs.renameSync(tmp, dest);
-    return { staged: true, destPath: dest };
-  } catch (err) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      // best-effort cleanup
-    }
-    return {
-      staged: false,
-      destPath: dest,
-      reason: `daemon binary copy failed: ${(err as Error).message ?? String(err)}`,
-    };
-  }
-}
-
 function stageBundleToUserTeamagent(srcDistPath: string, homeDir: string): string {
   const dest = path.join(homeDir, ".teamagent", "hooks", path.basename(srcDistPath));
   fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -364,14 +252,14 @@ type HookChannel =
   | "SessionEnd"
   | "PreCompact";
 
-// Bundle filenames for each channel. Stop has TWO bundles (bin-stop +
-// bin-digital-twin-tap); the heuristic detects either as TeamAgent-owned so
-// re-install dedup catches both flavours. New bundles added 2026-05-09 (B+C).
+// Bundle filenames for each channel. Stop used to host both bin-stop and
+// bin-digital-twin-tap; with the digital-twin upload chain removed, Stop
+// now has exactly one bundle.
 const CHANNEL_BUNDLE_FILENAMES: Record<HookChannel, readonly string[]> = {
   PreToolUse: ["bin-pre-tool-use.cjs"],
   PostToolUse: ["bin-post-tool-use.cjs"],
   UserPromptSubmit: ["bin-user-prompt-submit.cjs"],
-  Stop: ["bin-stop.cjs", "bin-digital-twin-tap.cjs"],
+  Stop: ["bin-stop.cjs"],
   SessionStart: ["bin-session-start.cjs"],
   SessionEnd: ["bin-session-end.cjs"],
   PreCompact: ["bin-pre-compact.cjs"],
@@ -391,16 +279,11 @@ function isTeamagentEntry(entry: HookEntry, channel: HookChannel): boolean {
  * registration logic lives in exactly one place.
  *
  * `scopes` is the controlled distinction:
- * - "project" only — none today; project-level skips SessionStart and
- *   digital-twin-tap because both are whole-machine concerns.
- * - "user" only — `SessionStart` (whole-machine SessionStart auto-init)
- *   and the second `Stop` op (`bin-digital-twin-tap.cjs`).
+ * - "project" only — none today; project-level skips SessionStart because
+ *   it is a whole-machine concern.
+ * - "user" only — `SessionStart` (whole-machine SessionStart auto-init).
  * - "both" — the four shared channels (PreToolUse / PostToolUse /
- *   UserPromptSubmit / Stop@bin-stop) plus SessionEnd / PreCompact.
- *
- * `Stop` appears twice intentionally — `bin-stop.cjs` (learning pipeline)
- * and `bin-digital-twin-tap.cjs` (digital-twin tap). The `CHANNEL_BUNDLE_FILENAMES`
- * map already accounts for the dual-bundle channel.
+ *   UserPromptSubmit / Stop) plus SessionEnd / PreCompact.
  */
 type ChannelDef = {
   readonly channel: HookChannel;
@@ -422,11 +305,8 @@ export const ALL_CHANNELS: ReadonlyArray<ChannelDef> = [
   { channel: "SessionEnd",       tag: SESSION_END_TAG,    bundleFilename: "bin-session-end.cjs",                                              timeout: 30, scopes: ["project", "user"] },
   { channel: "PreCompact",       tag: PRE_COMPACT_TAG,    bundleFilename: "bin-pre-compact.cjs",                                              timeout: 30, scopes: ["project", "user"] },
   // user-level only. SessionStart is whole-machine semantics (the SessionStart
-  // hook auto-inits any project's knowledge.db). digital-twin-tap stays
-  // user-level too so v0.11's removal of digital-twin-tap.sh from committed
-  // .claude/settings.json doesn't reintroduce a project-level double-tap.
+  // hook auto-inits any project's knowledge.db).
   { channel: "SessionStart",     tag: SESSION_START_TAG,  bundleFilename: "bin-session-start.cjs",                                            timeout: 10, scopes: ["user"] },
-  { channel: "Stop",             tag: DIGITAL_TWIN_TAG,   bundleFilename: "bin-digital-twin-tap.cjs",                                         timeout: 5,  scopes: ["user"] },
 ];
 
 /**
@@ -479,7 +359,9 @@ const ALL_HOOK_CHANNELS: ReadonlyArray<HookChannel> = [
  *      B-086 dedup, mirrors the pre-v0.11 user-level behaviour. Project-level
  *      gains this for free; previously project-level only stripped tag-matches.
  *    - PRESERVE entries with a DIFFERENT teamagent tag for the same channel
- *      (Stop hosts both bin-stop and digital-twin-tap; they must coexist).
+ *      (defensive: Stop previously hosted both bin-stop and bin-digital-twin-tap;
+ *      digital-twin-tap is gone but we keep the cross-tag preservation pattern
+ *      in case a future channel grows multiple ops).
  *
  * 2. Resolve the bundle path via `resolveBundle(def.bundleFilename)`. An empty
  *    string or a non-existent path means "skip this op" (silent — matches the
@@ -538,13 +420,11 @@ function applyChannelOps(opts: {
 
     const bundlePath = resolveBundle(def.bundleFilename);
     if (!bundlePath || !fs.existsSync(bundlePath)) {
-      // Issue #299: previously a silent `continue` — the user-level
-      // digital-twin Stop tap was dropped without trace when 0.11.0 shipped
-      // without its bundle. Now we emit one stderr line so the user (and
-      // CI logs) can see exactly which channel was skipped and why. Install
-      // still continues — partial install is better than a hard failure for
-      // the cross-version-compat case the silent skip originally guarded
-      // against (older dist missing a newer bundle).
+      // Issue #299: emit one stderr line so the user (and CI logs) can see
+      // exactly which channel was skipped and why. Install still continues —
+      // partial install is better than a hard failure for the cross-version-
+      // compat case the silent skip originally guarded against (older dist
+      // missing a newer bundle).
       // The strict gate moved to `teamagent doctor` (checkInstallTableBundles),
       // which fails-loud with exit non-zero on any missing install-table bundle.
       process.stderr.write(
@@ -638,7 +518,6 @@ export function applyUserLevelChannelOps(
     sessionStartEntry: string;
     sessionEndEntry: string;
     preCompactEntry: string;
-    digitalTwinEntry: string;
   }>,
   opts: { channelFilter?: ReadonlyArray<HookChannel> } = {},
 ): void {
@@ -652,7 +531,6 @@ export function applyUserLevelChannelOps(
     "bin-session-start.cjs":     entries.sessionStartEntry,
     "bin-session-end.cjs":       entries.sessionEndEntry,
     "bin-pre-compact.cjs":       entries.preCompactEntry,
-    "bin-digital-twin-tap.cjs":  entries.digitalTwinEntry,
   };
 
   const channelFilter = opts.channelFilter
@@ -898,16 +776,6 @@ export function installHook(opts: InstallHookOptions = {}): {
   /** issue #104：本次 install 把哪一层用户 statusLine wrap 进了 chain；
    *  null = 用户原本就没有 statusLine，TeamBrain 独占 */
   statusLineMergedScope: "user" | "project" | null;
-  /**
-   * Issue #146 install-hook TODO — outcome of staging `bin-uploader.cjs`
-   * into `<homeDir>/.teamagent/digital-twin/`. Best-effort: when staging
-   * fails (source missing / copy error), `staged=false` and `reason`
-   * explains why, but installHook itself does NOT throw — the Stop hook's
-   * runtime `resolveDaemonBin` self-install path still serves as a safety
-   * net so first-time installs without a built digital-twin/dist still
-   * upload eventually.
-   */
-  daemonBinary: DaemonStagingResult;
 } {
   const cwd = opts.cwd ?? process.cwd();
   const settingsPath = path.join(cwd, ".claude", "settings.local.json");
@@ -923,7 +791,6 @@ export function installHook(opts: InstallHookOptions = {}): {
   const sessionStartEntry  = opts.sessionStartEntry  ?? defaultSessionStartEntry();
   const sessionEndEntry    = opts.sessionEndEntry    ?? defaultSessionEndEntry();
   const preCompactEntry    = opts.preCompactEntry    ?? defaultPreCompactEntry();
-  const digitalTwinEntry   = opts.digitalTwinEntry   ?? defaultDigitalTwinEntry();
   const statusLineEntry    = opts.statusLineEntry    ?? path.join(cliRoot(), "dist", "teamagent-statusline.cjs");
 
   // 确认 PreToolUse bundled .cjs 存在
@@ -945,7 +812,7 @@ export function installHook(opts: InstallHookOptions = {}): {
 
   // Single declarative loop replaces the six pre-v0.11 inline blocks
   // (PreToolUse / PostToolUse / UserPromptSubmit / Stop / SessionEnd / PreCompact).
-  // Project scope skips SessionStart and digital-twin-tap by ChannelDef.scopes.
+  // Project scope skips SessionStart by ChannelDef.scopes.
   const projectBundleMap: Record<string, string> = {
     "bin-pre-tool-use.cjs":      hookEntry,
     "bin-post-tool-use.cjs":     postHookEntry,
@@ -953,8 +820,8 @@ export function installHook(opts: InstallHookOptions = {}): {
     "bin-stop.cjs":              stopEntry,
     "bin-session-end.cjs":       sessionEndEntry,
     "bin-pre-compact.cjs":       preCompactEntry,
-    // SessionStart + digital-twin-tap are not project-level; map entries
-    // are harmless because ChannelDef.scopes filters them out anyway.
+    // SessionStart is not project-level; map entry is harmless because
+    // ChannelDef.scopes filters it out anyway.
   };
   applyChannelOps({
     scope: "project",
@@ -1048,20 +915,8 @@ export function installHook(opts: InstallHookOptions = {}): {
       sessionStartEntry,
       sessionEndEntry,
       preCompactEntry,
-      digitalTwinEntry,
     });
   }
-
-  // Issue #146 install-hook TODO — stage the digital-twin daemon binary
-  // (`bin-uploader.cjs`) alongside the hook bundles. The Stop hook
-  // (`bin-digital-twin-tap.cjs`) spawns this daemon detached when a session
-  // ends; pre-F1 the binary was self-installed lazily at first daemon spawn,
-  // which meant `git pull` -> rebuild never picked up changes (you had to
-  // delete `~/.teamagent/digital-twin/bin-uploader.cjs` by hand). Folding
-  // staging into install-hook makes `teamagent install-hook` upgrade the
-  // daemon binary too, mirroring how the hook bundles are kept fresh.
-  const daemonBinaryEntry = opts.daemonBinaryEntry ?? defaultDaemonBinaryEntry();
-  const daemonBinary = stageDaemonBinaryToUser(daemonBinaryEntry, homeDir);
 
   return {
     settingsPath,
@@ -1071,7 +926,6 @@ export function installHook(opts: InstallHookOptions = {}): {
     postAlreadyInstalled,
     statusLineSkipped,
     statusLineMergedScope,
-    daemonBinary,
   };
 }
 
@@ -1171,10 +1025,8 @@ export function uninstallHook(opts: { cwd?: string } = {}): {
 
   if (settings.hooks.Stop) {
     const before = settings.hooks.Stop.length;
-    // B+C scope (2026-05-09): Stop now hosts both bin-stop and the
-    // digital-twin-tap entry — drop both teamagent tags.
     settings.hooks.Stop = settings.hooks.Stop.filter(
-      (h) => h._teamagentTag !== STOP_HOOK_TAG && h._teamagentTag !== DIGITAL_TWIN_TAG,
+      (h) => h._teamagentTag !== STOP_HOOK_TAG,
     );
     if (settings.hooks.Stop.length !== before) removedAny = true;
     if (settings.hooks.Stop.length === 0) delete settings.hooks.Stop;
