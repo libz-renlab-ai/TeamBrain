@@ -20,17 +20,7 @@ export default defineConfig({
     "bin-session-end":        "src/bin-session-end.ts",
     "bin-pre-compact":        "src/bin-pre-compact.ts",
     "bin-updater":            "src/bin-updater.ts",
-    "bin-digital-twin-tap":   "src/bin-digital-twin-tap.ts",
     "bin-embedder":           "src/bin-embedder.ts",
-    // Issue #368 (v0.11.1) — uploader daemon spawned by bin-digital-twin-tap.
-    // Built into packages/cli/dist/ so `<cliRoot>/dist/bin-uploader.cjs`
-    // (`defaultDaemonBinaryEntry` in commands/install-hook.ts) resolves in
-    // monorepo dev where cliRoot() = packages/cli/. The published tarball
-    // gets its own copy from packages/teamagent/tsup.config.ts where
-    // cliRoot() = <install>/teamagent/. Both inline `ulid` via noExternal,
-    // fixing the silent MODULE_NOT_FOUND crash that zeroed uploads on every
-    // freshly-installed machine before v0.11.1.
-    "bin-uploader":           "../digital-twin/src/bin-uploader.ts",
   },
   format: ["cjs"],
   platform: "node",
@@ -49,7 +39,6 @@ export default defineConfig({
     "@teamagent/ports",
     "@teamagent/core",
     "@teamagent/adapters",
-    "@teamagent/digital-twin",
     "zod",
     "@xenova/transformers",
     "js-tiktoken",
