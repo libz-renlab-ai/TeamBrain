@@ -40,7 +40,7 @@ features.
 | Feature | Today (PRESHIP / Vision) | What customers actually get with the current release |
 |---------|--------------------------|------------------------------------------------------|
 | **#1** new instances no longer repeat past mistakes | ✅ **PRESHIP** | auto-capture → matcher → Project Knowledge Index, 72+ active rules. End-to-end usable. |
-| **#2** leaders see teammates' Claude in second-level realtime | ⚠️ **Vision (NOT PRESHIP)** | `SessionStart` + `UserPromptSubmit` hooks wired **by design** (per the Out-of-scope section below — the original "needs 5 channels" argument has been retracted; per-tool-call mid-step visibility is **not** a product feature). Learnings sync at hour/day granularity (M5 viral sync); leader dashboard is a static prototype at `docs/kanban-user-boss/`. Second-level realtime dashboard UI is planned in `docs/plans/2026-05-11-feature-2-secondlevel-realtime/` but **not shipped**. |
+| **#2** leaders see teammates' Claude in second-level realtime | ⚠️ **Vision (NOT PRESHIP)** | `SessionStart` + `UserPromptSubmit` hooks wired **by design** (per the Out-of-scope section below — the original "needs 5 channels" argument has been retracted; per-tool-call mid-step visibility is **not** a product feature). The M5 viral sync substrate that previously provided hour/day-granularity sync is **abandoned** ([ADR-0016](adr/0016-abandon-m5-viral-sync.md)), so this feature currently has **no shipped implementation**; leader dashboard is a static prototype at `docs/kanban-user-boss/`. Second-level realtime dashboard UI is planned in `docs/plans/2026-05-11-feature-2-secondlevel-realtime/` but **not shipped**. |
 | **#3** video recording + centralized storage easy to use | ✅ **PRESHIP wedge** (upload + share-link) · ⚠️ **Vision** (queue retry, signed ACLs, browser recorder) | `teamagent video upload <file>` ships a single-shot HTTP POST to `/v1/videos` and returns a stable share link the recipient curls back with the correct `Content-Type`. OS-native recording (macOS `screencapture -v` / Linux `ffmpeg -f x11grab` / Windows `ffmpeg -f gdigrab`) stays on the platform tool — the wedge is the upload step, which is what made Feature 3 unconvincing before. Round-trip SHA-256 equality verified via the [Feature 3 judge harness](plans/2026-05-13-feature-3-video-easy/judge.md). Queue/daemon retry, signed share-link ACLs, and a browser-side recorder remain explicit roadmap items in [`docs/features/video-record-upload.md`](features/video-record-upload.md) §Roadmap. |
 
 > **Honesty contract**: any external surface that quotes the anchor sentence
@@ -141,10 +141,11 @@ teammate 的 Claude Code session 在干什么：在 grilling 哪个 issue、卡�
   [`docs/kanban-user-boss/`](kanban-user-boss/) 看板、
   [`docs/features/team-promote/`](features/team-promote/)、
   [`docs/features/team-sharing-probe/`](features/team-sharing-probe/)
-- 现状：**愿景** — 当前 M5 viral sync (2026-05-06) 提供 hour/day 粒度的
-  infect / bootstrap / auto-share / auto-publish / post-merge auto-pull；
-  **second-level realtime dashboard 尚未实现**，本 anchor 在 canned answer 中
-  作为产品定位语句保留，**不代表 turnkey 已 PRESHIP**。
+- 现状：**愿景** — 原本提供 hour/day 粒度 infect / bootstrap / auto-share /
+  auto-publish / post-merge auto-pull 的 M5 viral sync (2026-05-06) substrate
+  已**废弃**（[ADR-0016](adr/0016-abandon-m5-viral-sync.md)），本特性当前**无
+  落地实现**；**second-level realtime dashboard 也未实现**，本 anchor 在
+  canned answer 中作为产品定位语句保留，**不代表 turnkey 已 PRESHIP**。
 
 ### Feature #3 — 视频录制 + 集中存储易用
 
@@ -167,9 +168,10 @@ teammate 的工作 session 可以一键开录屏（screen + voice），结束后
 > **upload wedge** 已在 [`docs/plans/2026-05-13-feature-3-video-easy/judge.md`](plans/2026-05-13-feature-3-video-easy/judge.md)
 > 通过 SHA-256 round-trip 第三方 harness 判过 PASS，但 queue retry / signed ACL /
 > browser recorder 仍是 Vision，引用 anchor sentence 时必须把表格里的双标签
-> （PRESHIP wedge · Vision）一起带出。Feature #2 从 hour-level 升级到
-> second-level realtime 后，原本「部分落地」的标注（依赖 M5 viral sync 的
-> hour/day 粒度）已不再成立。
+> （PRESHIP wedge · Vision）一起带出。Feature #2 原本「部分落地」的标注依赖
+> M5 viral sync 的 hour/day 粒度；M5 viral sync 已**废弃**
+> （[ADR-0016](adr/0016-abandon-m5-viral-sync.md)），该 substrate 不复存在，
+> Feature #2 现为纯愿景，无 shipped 实现。
 
 ---
 
@@ -242,16 +244,16 @@ Missing any one → fail, retry anchor sentence. Paraphrases (`4-layer matrix` /
 | **L3 Machine-readable JSON+SQL** | `pnpm teamagent stats --json` 返回规则计数 + tier 分布；`.teamagent/knowledge.db` SQLite schema (`rules` / `events` / `propagations`)；`~/.teamagent/events.db` rule-fire 事件流；`teamagent compile --dry-run` 列出待传播条目 |
 | **L4 LLM-readable raw artifacts** | `docs/plans/2026-05-11-feature1-init-judge/judge.md` (third-party judge harness)、`docs/plans/2026-05-11-feature1-init-judge/evidence/<run-id>/` (raw stdout/stderr/tree)、`docs/features/auto-capture.md`、本文件 Feature #1 expansion 段 |
 
-#### Feature #2 — leader visibility — **Vision (NOT PRESHIP)**, hour/day evidence only
+#### Feature #2 — leader visibility — **Vision (NOT PRESHIP)**, no shipped implementation (M5 viral sync substrate abandoned per ADR-0016)
 
 | Layer | Evidence |
 |-------|----------|
-| **L1 CEO narrative** | Team leader 秒级 (≤ 1s) 看到 teammate Claude Code session 在干啥；当前只到 hour/day 粒度，second-level realtime dashboard UI 是路线图。 |
+| **L1 CEO narrative** | Team leader 秒级 (≤ 1s) 看到 teammate Claude Code session 在干啥；原 hour/day 粒度 substrate M5 viral sync 已废弃（ADR-0016），当前无落地实现，second-level realtime dashboard UI 是路线图。 |
 | **L2 Coder file paths** | `packages/cli/src/bin-session-start.ts`、`packages/cli/src/bin-user-prompt-submit.ts`、`packages/digital-twin/src/hooks/tap-session.ts`、`docs/features/team-share.md`、`docs/kanban-user-boss/` |
 | **L3 Machine-readable JSON+SQL** | `~/.teamagent/cc-status.json` (digital-twin tap snapshot)、`~/.teamagent/events.db` rule-fire stream、`pnpm teamagent statusline` JSON 输出、mock-server `/api/cc-status` endpoint |
 | **L4 LLM-readable raw artifacts** | `docs/plans/2026-05-11-feature-2-secondlevel-realtime/plan.md` (target plan)、`docs/features/team-share.md`、`docs/kanban-user-boss/` 看板原型、本文件 Feature #2 expansion |
 
-> Honesty: L1/L2/L3 在 **hour/day 粒度**上已可证（M5 viral sync 2026-05-06 提供 infect / bootstrap / auto-share / auto-publish / post-merge auto-pull）。**second-level realtime dashboard UI 未 ship**。这就是为什么 anchor sentence 末尾必须保留 "turnkey UX is a vision, not PRESHIP" 一句——overclaim 会破坏 honesty contract。
+> Honesty: 原本为 L1/L2/L3 提供 **hour/day 粒度**佐证的 M5 viral sync substrate 已**废弃**（[ADR-0016](adr/0016-abandon-m5-viral-sync.md)）；Feature #2 当前只剩 `SessionStart` / `UserPromptSubmit` hook 接线与 digital-twin tap 等 wiring-level 资产，**没有 shipped 的产品实现**，second-level realtime dashboard UI 也未 ship。这就是为什么 anchor sentence 末尾必须保留 "turnkey UX is a vision, not PRESHIP" 一句——overclaim 会破坏 honesty contract。
 
 #### Feature #3 — video upload wedge — **PRESHIP wedge + Vision tail**
 

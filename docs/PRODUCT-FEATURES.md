@@ -74,15 +74,15 @@ user-visible VERIFIED rows; this doc covers everything.
 47. `teamagent review` PR-cycle review
 48. `teamagent install-hook` / `uninstall-hook`
 49. `teamagent mcp-server` stdio MCP server entrypoint
-50. M5 viral spread: SessionStart hook auto-infects projects with `.teamagent/manifest.json` contract
-51. M5 manifest contract propagates via git to teammates (zero-config team enrollment)
-52. M5 auto-bootstrap fills missing plugins / hooks on `git clone` per project manifest
-53. M5 secret scanner gate seals API keys / JWT / phone / CC / paths in personal layer (uncloseable)
-54. M5 scope classifier categorizes new rules into personal / shareable / uncertain (uncertain → personal by default)
-55. M5 LWW + tombstone conflict resolution merges concurrent edits and deletes deterministically
-56. M5 pitfall auto-share: clean rules promote to `.teamagent/team/<author>/` via gates 1+2 (default on)
-57. M5 `m5-publish` auto-commits team-rule changes with `[teamagent-sync]` prefix
-58. M5 post-merge hook auto-pulls team rules into local KB after every `git pull`
+50. M5 viral spread: SessionStart hook auto-infects projects with `.teamagent/manifest.json` contract — **ABANDONED (ADR-0016)**
+51. M5 manifest contract propagates via git to teammates (zero-config team enrollment) — **ABANDONED (ADR-0016)**
+52. M5 auto-bootstrap fills missing plugins / hooks on `git clone` per project manifest — **ABANDONED (ADR-0016)**
+53. M5 secret scanner gate seals API keys / JWT / phone / CC / paths in personal layer (uncloseable) — **ABANDONED (ADR-0016)**
+54. M5 scope classifier categorizes new rules into personal / shareable / uncertain (uncertain → personal by default) — **ABANDONED (ADR-0016)**
+55. M5 LWW + tombstone conflict resolution merges concurrent edits and deletes deterministically — **ABANDONED (ADR-0016)**
+56. M5 pitfall auto-share: clean rules promote to `.teamagent/team/<author>/` via gates 1+2 (default on) — **ABANDONED (ADR-0016)**
+57. M5 `m5-publish` auto-commits team-rule changes with `[teamagent-sync]` prefix — **ABANDONED (ADR-0016)**
+58. M5 post-merge hook auto-pulls team rules into local KB after every `git pull` — **ABANDONED (ADR-0016)**
 59. 首次运行向导：装完立刻提示 3 件可以做的事 + 记住进度
 60. One-line `curl|sh` installer at `release/install.sh`: gates `node ≥ 22`, picks `npm`/`pnpm`, runs release-tarball install with deterministic exit codes (#92)
 61. Universal seed pack: 12 substring-friendly cross-language avoidance rules ship out-of-box, hit legacy keyword matcher within 30s of `teamagent init` (#88)
@@ -191,12 +191,15 @@ user-visible VERIFIED rows; this doc covers everything.
 | 48 | `teamagent install-hook` / `uninstall-hook` | `packages/cli/src/commands/install-hook.ts` (pnpm test green) |
 | 49 | `teamagent mcp-server` stdio MCP server entrypoint | `docs/plans/docs--features--mcp-server--run-judge/judge.md` (archived: `docs/legacy/judge-scripts/docs/features/mcp-server/run-judge.sh`) |
 
-### Viral spread & auto-sync (M5)
+### Viral spread & auto-sync (M5) — ABANDONED (ADR-0016)
 
-> Implemented in PR #71 (M5-A → M5-E). End-to-end verified by
-> `bash scripts/m5-auto-demo.sh`: Alice infects → pitfall auto-shares →
-> m5-publish auto-commits → Bob clones → SessionStart auto-bootstrap+sync →
-> SQLite probe confirms Bob's KB has Alice's rule.
+> ⚠️ **ABANDONED** per [ADR-0016](adr/0016-abandon-m5-viral-sync.md). M5 viral
+> sync was implemented in PR #71 (M5-A → M5-E) and once verified end-to-end by
+> `bash scripts/m5-auto-demo.sh`, but its auto-infect / auto-install / auto-push
+> behavior is invasive by design, shipped-but-unvalidated, and distracts from
+> the Feature #1 core wedge. The `m5-*` code is **frozen** (removal is a
+> deferred follow-up); the rows below are kept as a historical inventory
+> record, **not** as recommended or supported capabilities.
 
 | # | Feature | Evidence |
 |---|---------|----------|

@@ -22,7 +22,8 @@
 
 **Why**: `docs/sandbox.md` describes a *single-user* sandbox (everything under
 `.sandbox/home/` and `.sandbox/project/`). That layout cannot model features
-that involve **two or more users on one machine** — viral rule sync, init
+that involve **two or more users on one machine** — viral rule sync (now
+abandoned per [ADR-0016](adr/0016-abandon-m5-viral-sync.md)), init
 propagation across users, conflicting hook installs, cross-user collector
 visibility, etc.
 
@@ -87,9 +88,12 @@ so every user sees the **same** binary but a **separate** `~/.claude`,
 
 ## What this is for
 
-* **viral sync dogfood**: after `as alice` writes a rule, run `as bob compile`
-  to confirm Bob does *not* see Alice's rule (no cross-leakage), then exercise
-  the eventual sync path explicitly.
+* **viral sync dogfood** (⚠️ M5 viral sync is **abandoned** per
+  [ADR-0016](adr/0016-abandon-m5-viral-sync.md) — this path applies only to
+  the frozen legacy `m5-*` code, not a recommended capability): after
+  `as alice` writes a rule, run `as bob compile` to confirm Bob does *not* see
+  Alice's rule (no cross-leakage), then exercise the eventual sync path
+  explicitly.
 * **init idempotency**: run `init alice; init alice` and assert no surprise.
 * **hook collision tests**: register the same hook from two users; confirm one
   doesn't clobber the other.

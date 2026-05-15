@@ -1,9 +1,18 @@
 # M5 团队病毒式传播与规则同步（Team Viral Sync）
 
 **Date:** 2026-05-06
-**Status:** Draft (pending user review)
+**Status:** Abandoned — superseded by [ADR-0016](../../adr/0016-abandon-m5-viral-sync.md) (2026-05-15)
 **Branch:** `m5/team-viral-sync`
 **Worktree:** `.codex/worktrees/m5-team-viral-sync`
+
+---
+
+> ⚠️ **ABANDONED (2026-05-15).** M5 viral sync is no longer a supported or
+> recommended capability. Its auto-infect / auto-install / auto-push behavior is
+> invasive by design, shipped-but-unvalidated, and distracts from the Feature #1
+> core wedge. See [ADR-0016: Abandon M5 viral sync](../../adr/0016-abandon-m5-viral-sync.md).
+> The `m5-*` code is frozen (removal is a deferred follow-up); this spec is kept
+> only as a historical design record. Do not build new work on it.
 
 ---
 
