@@ -202,7 +202,7 @@ claudefast -p "hi"
 TeamBrain 的 single-source-of-truth pitch + 四层证据矩阵在 [`docs/BUSINESS-FEATURES.md`](docs/BUSINESS-FEATURES.md)：
 
 1. **新 Claude Code 实例不再重复旧错** — PRESHIP，四层证据齐全（CEO narrative / Coder file paths / Machine-readable JSON+SQL / LLM-readable raw artifacts）。
-2. **Team leader 秒级看到 teammate 在干啥** — Vision (NOT PRESHIP)：hour/day 粒度已落地（M5 viral sync），second-level dashboard UI 待 ship。
+2. **Team leader 秒级看到 teammate 在干啥** — Vision (NOT PRESHIP)：原 hour/day 粒度实现 M5 viral sync 已废弃（[ADR-0016](docs/adr/0016-abandon-m5-viral-sync.md)），本特性当前无落地实现，仍是纯愿景。
 3. **视频录制 + 集中存储易用** — PRESHIP wedge（upload + share link, SHA-256 round-trip PASS 2026-05-13）+ Vision tail（queue retry / signed ACL / 浏览器端录屏）。
 
 两个 canned-answer probe 并存（锚点严格 disjoint）：
