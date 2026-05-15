@@ -7,7 +7,6 @@ import {
   applyUserLevelChannelOps,
   findMostRecentSettingsBackup,
   hasTeamagentChannelEntry,
-  stageDaemonBinaryToUser,
 } from "./install-hook.js";
 
 /**
@@ -57,18 +56,6 @@ export interface InstallUserHookOptions {
   homeDir?: string;
   /** 显式指定 SessionStart bundle 路径 */
   sessionStartEntry?: string;
-  /**
-   * Issue #368 (v0.11.1) — 显式指定 digital-twin Stop tap bundle 路径
-   * (`bin-digital-twin-tap.cjs`). 默认走与 SessionStart 一致的 dist 查找逻辑。
-   */
-  digitalTwinEntry?: string;
-  /**
-   * Issue #368 (v0.11.1) — 显式指定 uploader daemon bundle 路径
-   * (`bin-uploader.cjs`). postinstall 阶段就 stage 到
-   * `~/.teamagent/digital-twin/bin-uploader.cjs`, 让重开 CC 后**第一次**对话
-   * 的 Stop hook 就能 spawn daemon. 默认走与 SessionStart 一致的 dist 查找。
-   */
-  daemonBinaryEntry?: string;
 }
 
 export interface InstallUserHookResult {
@@ -76,20 +63,6 @@ export interface InstallUserHookResult {
   backupPath: string | null;
   hookEntry: string;
   alreadyInstalled: boolean;
-  /**
-   * Issue #368 (v0.11.1) — staged digital-twin Stop tap path, or null when
-   * the source bundle wasn't found on disk (best-effort; matches
-   * SessionStart's pre-flight existence check pattern).
-   */
-  digitalTwinTapPath: string | null;
-  /**
-   * Issue #368 (v0.11.1) — staged daemon binary path, or null when
-   * `stageDaemonBinaryToUser` couldn't copy (source missing on a partial
-   * build, EBUSY on Windows, EXDEV across fs boundaries, …). Install does
-   * not fail in that case — `resolveDaemonBin`'s runtime fallbacks still
-   * spawn the daemon on first Stop hook fire.
-   */
-  daemonBinaryPath: string | null;
 }
 
 /**
@@ -113,14 +86,6 @@ function findDistEntry(filename: string): string {
 
 function defaultSessionStartEntry(): string {
   return findDistEntry("bin-session-start.cjs");
-}
-
-function defaultDigitalTwinEntry(): string {
-  return findDistEntry("bin-digital-twin-tap.cjs");
-}
-
-function defaultDaemonBinaryEntry(): string {
-  return findDistEntry("bin-uploader.cjs");
 }
 
 /**
@@ -157,40 +122,15 @@ export function installUserHook(
   // be checked before applyUserLevelChannelOps strips and re-pushes.
   const alreadyInstalled = detectAlreadyInstalledSessionStart(settingsPath);
 
-  // Issue #368 (v0.11.1) — also register the digital-twin Stop tap + stage
-  // the uploader daemon binary. Pre-v0.11.1 this command only wrote
-  // SessionStart, leaving the entire upload pipeline silent until the user
-  // happened to run `teamagent init` inside a project. With the additions
-  // below, a colleague doing `curl install.sh` then `restart Claude Code`
-  // and chatting once is enough: the Stop hook fires → ensureDefaultConfig
-  // writes ~/.teamagent/digital-twin.json (endpoint baked in config.ts) →
-  // tapSession enqueues → resolveDaemonBin finds the staged bin-uploader.cjs
-  // → daemon POSTs → collector receives the chat. No project init required.
-  const digitalTwinEntry =
-    opts.digitalTwinEntry ?? defaultDigitalTwinEntry();
-  const daemonBinaryEntry =
-    opts.daemonBinaryEntry ?? defaultDaemonBinaryEntry();
-  const digitalTwinSourceExists = fs.existsSync(digitalTwinEntry);
-
-  // channelFilter = ["SessionStart", "Stop"] iterates ALL_CHANNELS twice.
-  // For Stop the table has two rows (bin-stop.cjs + bin-digital-twin-tap.cjs);
-  // we deliberately only provide `digitalTwinEntry`, leaving `stopEntry`
-  // unset. `applyUserLevelChannelOps`'s `resolveBundle` returns "" for
-  // missing keys, and `applyChannelOps` silently skips empty bundles — so
-  // only the digital-twin tap lands in user-level settings. bin-stop.cjs
-  // (the learning Stop hook) stays project-scope only, the way it did
-  // pre-v0.11.1.
+  // Upload-pipeline staging (digital-twin Stop tap + uploader daemon binary)
+  // that previously lived here was removed alongside the entire
+  // `packages/digital-twin/` package. This shim now only registers the
+  // user-level SessionStart hook, which is the surface `postinstall.mjs:365`
+  // still calls.
   applyUserLevelChannelOps(
     home,
-    {
-      sessionStartEntry: hookEntry,
-      ...(digitalTwinSourceExists ? { digitalTwinEntry } : {}),
-    },
-    {
-      channelFilter: digitalTwinSourceExists
-        ? ["SessionStart", "Stop"]
-        : ["SessionStart"],
-    },
+    { sessionStartEntry: hookEntry },
+    { channelFilter: ["SessionStart"] },
   );
 
   // B-091 stable path: applyUserLevelChannelOps stages the bundle to
@@ -203,17 +143,6 @@ export function installUserHook(
     "bin-session-start.cjs",
   );
 
-  // Issue #368 (v0.11.1) — stage the uploader daemon binary into
-  // `~/.teamagent/digital-twin/bin-uploader.cjs`. Best-effort: source
-  // missing / EBUSY / EXDEV → `resolveDaemonBin`'s same-dir runtime
-  // fallback (right next to bin-digital-twin-tap.cjs in the install dist)
-  // still spawns the daemon on first Stop fire.
-  const daemonResult = stageDaemonBinaryToUser(daemonBinaryEntry, home);
-  const daemonBinaryPath = daemonResult.staged ? daemonResult.destPath : null;
-  const digitalTwinTapPath = digitalTwinSourceExists
-    ? path.join(home, ".teamagent", "hooks", "bin-digital-twin-tap.cjs")
-    : null;
-
   // Test contract: `backupPath` is null on first install (no prior settings.json
   // existed → writeSettings did not create a .bak-<ts> sibling); non-null on
   // re-install pointing at the most recent `.bak-<ts>` left by writeSettings.
@@ -224,8 +153,6 @@ export function installUserHook(
     backupPath,
     hookEntry: stagedPath,
     alreadyInstalled,
-    digitalTwinTapPath,
-    daemonBinaryPath,
   };
 }
 
