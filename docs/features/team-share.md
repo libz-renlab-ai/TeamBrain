@@ -7,8 +7,8 @@
    │   │ local      │   │ local      │   │ machine-local     │   │
    │   └────────────┘   └────────────┘   └───────────────────┘   │
    │                                                             │
-   │   M5 viral sync (2026-05-06): infect / bootstrap / auto-     │
-   │   share / auto-publish / post-merge auto-pull all live      │
+   │   M5 viral sync (2026-05-06): ABANDONED - see ADR-0016.      │
+   │   Invasive auto-infect/install/push; do not build on it.    │
    └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -33,11 +33,20 @@ Let a team share rules / canon / wisdom across machines via a layered knowledge 
 - **Local review gate**: `teamagent review-candidates --approve-scope=team` can approve a pending candidate into local team scope
 - **Local privacy gate**: team approval blocks candidates containing emails, token-shaped secrets, internal hosts, private paths, UUIDs, or private IPs
 
-### IMPLEMENTED (M5 — viral sync, 2026-05-06)
+### ABANDONED (M5 — viral sync, 2026-05-06) — see ADR-0016
 
-The previous "NOT YET" gaps have all been closed by milestone M5
-(`docs/superpowers/specs/2026-05-06-m5-team-viral-sync-design.md` §10 phases
-A–E, merged to `main` via PR #71). Concretely:
+> ⚠️ **M5 viral sync is abandoned** per
+> [ADR-0016](../adr/0016-abandon-m5-viral-sync.md). Its auto-infect /
+> auto-install / auto-push behavior is invasive by design, shipped-but-
+> unvalidated, and distracts from the Feature #1 core wedge. The `m5-*` code
+> and the `TEAMAGENT_M5_*` env-var surface below are **frozen** (removal is a
+> deferred follow-up); treat the rest of this section as a historical record
+> of what was built, **not** as a recommended capability. Do not build new
+> work on it.
+
+Milestone M5 (`docs/superpowers/specs/2026-05-06-m5-team-viral-sync-design.md`
+§10 phases A–E, merged to `main` via PR #71) once closed the previous "NOT YET"
+gaps as follows — now abandoned per ADR-0016:
 
 - **Cross-machine git-sync transport** (M5-A/C): `teamagent sync push|pull` plus
   the higher-level auto-publish path (`teamagent m5-publish`) commit changes
@@ -111,15 +120,15 @@ pnpm exec vitest run \
   packages/cli/src/__tests__/m5-e2e.test.ts
 ```
 
-Expected product wording: **local team scope is verified; M5 viral sync (cross-machine) is verified end-to-end via `bash scripts/m5-auto-demo.sh`**.
+Expected product wording: **local team scope is verified; M5 viral sync
+(cross-machine) is ABANDONED per [ADR-0016](../adr/0016-abandon-m5-viral-sync.md)
+— do not present it as a shipped or recommended capability.**
 
-End-to-end verification of viral sync:
-
-```bash
-bash scripts/m5-auto-demo.sh   # 7 steps: infect → pitfall auto-share → m5-publish
-                               # → push → clone → SessionStart auto-bootstrap+sync
-                               # → SQLite probe confirms recipient KB has sender rule
-```
+`scripts/m5-auto-demo.sh` (7 steps: infect → pitfall auto-share → m5-publish →
+push → clone → SessionStart auto-bootstrap+sync → SQLite probe) is **frozen**
+historical demo scaffolding for the abandoned feature; it is not removed yet
+(removal is a deferred follow-up per ADR-0016) but it is no longer a product
+verification path.
 
 ## Known limitations (residual)
 
