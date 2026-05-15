@@ -74,7 +74,6 @@ import { rotateIfTooLarge } from "./log-rotate.js";
 import { runAdvancedHook } from "./hook-shell/index.js";
 import type { AdvancedHookOptions } from "./hook-shell/index.js";
 import { findTeamagentRoot } from "./lib/walk-up.js";
-import { emitCcStatus } from "./realtime-emit.js";
 
 // Issue #477: keep the node:sqlite-load guard import referenced (the actual
 // arming runs at hook-bootstrap module-load, above the adapters import).
@@ -966,21 +965,8 @@ async function main(): Promise<void> {
         return;
       }
 
-      // Issue #308 grill §11: Stop event drives green light → offline.
-      // Emit BEFORE the foreground/detached/async fork below so the kanban
-      // sees the offline transition even if the heavy stop pipeline is
-      // deferred to a detached child. We only emit on the foreground entry;
-      // skip when this process is itself the detached pipeline child
-      // (otherwise one Stop hook → two POSTs from the same fork).
-      if (!isDetachedPipelineInvocation(process.env, process.argv)) {
-        try {
-          emitCcStatus({
-            event: "stop",
-            sessionId: ctx.input.session_id,
-            cwd: ctx.cwd,
-          });
-        } catch { /* never propagate */ }
-      }
+      // Issue #308 grill §11 Stop-event presence offline POST was removed
+      // when the upload chain was deleted.
 
       const emit: EmitFn = (event) => ctx.bus.emit(event);
 

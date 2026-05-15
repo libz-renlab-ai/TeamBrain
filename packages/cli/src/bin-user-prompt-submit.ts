@@ -65,7 +65,6 @@ import {
 } from "./session-rule-injected.js";
 import { runHook } from "./hook-shell/index.js";
 import { DaemonFirstEmbedder } from "./daemon-first-embedder.js";
-import { emitCcStatus } from "./realtime-emit.js";
 
 // Issue #477: keep the node:sqlite-load guard import referenced (the actual
 // arming runs at hook-bootstrap module-load, above the adapters import).
@@ -131,31 +130,10 @@ async function main(): Promise<void> {
       const prompt = input.prompt;
       const sessionId = input.session_id ?? "";
 
-      // Feature #2 v3: fire-and-forget cc-status push so the boss kanban
-      // gets one snapshot per teammate prompt. The 2-channel scope in
-      // docs/BUSINESS-FEATURES.md is exactly SessionStart + UserPromptSubmit —
-      // this is the second channel. We fire BEFORE the (slow) rule retrieval
-      // path so the kanban reflects "what prompt just landed" as early as
-      // possible, even when the rest of the hook is still running.
-      //
-      // Issue #308 grill §3: when the leader has explicitly opted into raw
-      // prompt evidence via TEAMAGENT_REALTIME_RAW_PROMPT=1, thread the
-      // user's prompt text to the snapshot so the receiver can persist it to
-      // raw_events for evidence / replay. Default OFF — the hook is the
-      // policy boundary; realtime-emit is the transport. emitCcStatus also
-      // enforces loopback-only-by-default + TEAMAGENT_REALTIME_ALLOW_REMOTE,
-      // so even with the env opt-in a misconfigured remote URL still fails
-      // closed.
-      try {
-        const includeRawPrompt =
-          ctx.env.TEAMAGENT_REALTIME_RAW_PROMPT === "1" && prompt.length > 0;
-        emitCcStatus({
-          event: "user_prompt_submit",
-          ...(sessionId ? { sessionId } : {}),
-          cwd,
-          ...(includeRawPrompt ? { rawPrompt: prompt } : {}),
-        });
-      } catch { /* never propagate */ }
+      // Feature #2 v3 realtime cc-status push (formerly the second of
+      // SessionStart + UserPromptSubmit channels) was removed when the upload
+      // chain was deleted; the TEAMAGENT_REALTIME_RAW_PROMPT opt-in and the
+      // loopback-only / TEAMAGENT_REALTIME_ALLOW_REMOTE guards moved with it.
       const sessionsDir = path.join(home, ".teamagent", "sessions");
       const eventLog = ctx.eventLog as unknown as SqliteEventLog;
       const store = ctx.store as unknown as DualLayerStore;

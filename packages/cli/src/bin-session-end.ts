@@ -43,7 +43,6 @@ import {
   type StopHookInput,
 } from "./bin-stop.js";
 import { postShutdown } from "./embedder-client.js";
-import { emitCcStatus } from "./realtime-emit.js";
 
 // Issue #477: keep the node:sqlite-load guard import referenced (the actual
 // arming runs at hook-bootstrap module-load, above the bin-stop import).
@@ -97,18 +96,8 @@ async function main(): Promise<void> {
         return;
       }
 
-      // Issue #308 grill §11: SessionEnd also signals presence offline (the
-      // user closed the window / ran /clear / Ctrl+C). Emit on the
-      // foreground entry only, mirroring the Stop hook contract: one
-      // SessionEnd → one POST, not double-counted by the self-spawned child
-      // (the detached branch above already returned before reaching here).
-      try {
-        emitCcStatus({
-          event: "session_end",
-          sessionId: ctx.input.session_id,
-          cwd: ctx.cwd,
-        });
-      } catch { /* never propagate */ }
+      // Issue #308 grill §11 presence-offline POST (formerly emitCcStatus
+      // /v1/cc-status) was removed when the upload chain was deleted.
 
       // Issue #164: best-effort POST /shutdown to drop our refcount on the
       // embedder daemon. Daemon decrements its members list; when count
