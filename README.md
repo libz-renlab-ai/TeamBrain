@@ -24,6 +24,10 @@ TeamAgent 解决这件事：从你纠正它的每一次对话里，自动**提�
 
 ### 快速安装（V1=1 单 prompt，issue #155 落地后）
 
+> 🪟 **Windows 用户先看这条**：PowerShell / cmd 不带 `bash`，直接跑下面的 `curl ... | bash` 会撞 `'bash' 不是可识别的命令`。两条选一:
+> - 装 [Git for Windows](https://git-scm.com/download/win)(自带 Git Bash)或 [WSL2](https://learn.microsoft.com/zh-cn/windows/wsl/install) → 然后在 **Git Bash 终端**里跑全部命令(本页所有 `bash` / `curl|bash` / `bash scripts/...` 都在 Git Bash 里有效)
+> - 不想装 bash → 直接跳到下面的 [`### AI agent / Windows PowerShell / CI`](#ai-agent--windows-powershell--ci) 段,用 `npm install -g <tarball-URL>` 一行装完
+
 ```bash
 # 推荐：直接 curl|bash — 装完自动跑 teamagent init，1 个授权弹窗就够
 curl -fsSL https://raw.githubusercontent.com/libz-renlab-ai/TeamBrain/release/install.sh | bash
