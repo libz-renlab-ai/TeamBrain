@@ -66,10 +66,11 @@ export interface InstallUserHookResult {
 }
 
 /**
- * Walk up from this file looking for a `dist/<filename>` directory. Shared by
- * the SessionStart / digital-twin-tap / bin-uploader default resolvers so all
- * three land on the same package root in both dev (packages/cli) and bundled
- * (node_modules/teamagent) layouts.
+ * Walk up from this file looking for a `dist/<filename>` directory. Used by
+ * `defaultSessionStartEntry` to find the right `dist/` in both dev
+ * (packages/cli) and bundled (node_modules/teamagent) layouts. (Previously
+ * also fed the digital-twin-tap and bin-uploader resolvers, both removed
+ * with the upload pipeline.)
  */
 function findDistEntry(filename: string): string {
   const here = fileURLToPath(import.meta.url);
