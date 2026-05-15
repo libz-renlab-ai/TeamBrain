@@ -7,7 +7,6 @@ import { openDb } from "@teamagent/adapters";
 import {
   checkClaudeMd,
   checkInstallTableBundles,
-  checkDigitalTwinUploader,
   executeDoctor,
   renderDoctorResult,
   renderDoctorHelp,
@@ -29,13 +28,11 @@ import {
   type HookProbe,
   type HookProbeResult,
   type McpProbe,
-  type UploaderProbe,
   type DoctorCheckResult,
   type DoctorResult,
   type FixOutcome,
 } from "../commands/doctor.js";
 import type { NodeSqliteProbe } from "../lib/node-sqlite-probe.js";
-import { digitalTwinPaths } from "@teamagent/digital-twin";
 
 function makeResult(overrides: Partial<DoctorResult> = {}): DoctorResult {
   return {
@@ -946,121 +943,8 @@ describe("checkHookSpawn (issue #280)", () => {
   });
 });
 
-/**
- * Issue #368: `checkDigitalTwinUploader` — surfaces `digital-twin-uploader:
- * OK | BROKEN` for the staged uploader daemon. Probe is injectable; the
- * staged bin's presence is faked on disk.
- */
-describe("checkDigitalTwinUploader (issue #368)", () => {
-  // A staged bin built post-#368 contains the dry-run marker; the probe spawns
-  // it. A pre-#368 bin lacks the marker; the check must skip (never spawn it).
-  function makeHomeWithStagedBin(content = "// staged bin\nprocess.env.TEAMAGENT_UPLOADER_DRYRUN;\n"): {
-    home: string;
-    cleanup: () => void;
-  } {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-dtup-"));
-    const dir = digitalTwinPaths(home).digitalTwinDir;
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "bin-uploader.cjs"), content, "utf-8");
-    return { home, cleanup: () => fs.rmSync(home, { recursive: true, force: true }) };
-  }
-  function probeReturning(result: HookProbeResult): UploaderProbe {
-    return async () => result;
-  }
-
-  it("skips when the staged bin-uploader.cjs is not present", async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "teamagent-dtup-none-"));
-    try {
-      const out = await checkDigitalTwinUploader(home, probeReturning({ exitCode: 0, stderr: "", timedOut: false }));
-      expect(out.name).toBe("digital-twin-uploader");
-      expect(out.status).toBe("skip");
-      expect(out.detail).toContain("未安装");
-    } finally {
-      fs.rmSync(home, { recursive: true, force: true });
-    }
-  });
-
-  it("skips (does NOT spawn) when the staged bin predates the dry-run probe", async () => {
-    // Pre-#368 binary: no TEAMAGENT_UPLOADER_DRYRUN marker. Spawning it would
-    // run the real upload loop + race the live daemon for the PID lock.
-    const { home, cleanup } = makeHomeWithStagedBin("// old staged bin, no marker\n");
-    let probeCalled = false;
-    try {
-      const out = await checkDigitalTwinUploader(home, async () => {
-        probeCalled = true;
-        return { exitCode: 0, stderr: "", timedOut: false };
-      });
-      expect(out.status).toBe("skip");
-      expect(out.detail).toContain("install-hook");
-      expect(probeCalled).toBe(false);
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("passes (OK) when the dry-run probe exits 0 with no MODULE_NOT_FOUND", async () => {
-    const { home, cleanup } = makeHomeWithStagedBin();
-    try {
-      const out = await checkDigitalTwinUploader(home, probeReturning({ exitCode: 0, stderr: "", timedOut: false }));
-      expect(out.status).toBe("pass");
-      expect(out.detail).toContain("digital-twin-uploader: OK");
-      expect(out.fix).toBeUndefined();
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("fails (BROKEN) when the probe surfaces MODULE_NOT_FOUND on stderr", async () => {
-    const { home, cleanup } = makeHomeWithStagedBin();
-    try {
-      const stderr = ["node:internal/modules/cjs/loader", "Error: Cannot find module 'ulid'", "  code: 'MODULE_NOT_FOUND'"].join("\n");
-      const out = await checkDigitalTwinUploader(home, probeReturning({ exitCode: 1, stderr, timedOut: false }));
-      expect(out.status).toBe("fail");
-      expect(out.detail).toContain("digital-twin-uploader: BROKEN");
-      expect(out.detail).toContain("MODULE_NOT_FOUND");
-      expect(out.fix).toContain("pnpm --filter @teamagent/digital-twin build");
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("fails (BROKEN) on a spawn error", async () => {
-    const { home, cleanup } = makeHomeWithStagedBin();
-    try {
-      const out = await checkDigitalTwinUploader(home, probeReturning({ exitCode: null, stderr: "", timedOut: false, spawnError: "ENOENT" }));
-      expect(out.status).toBe("fail");
-      expect(out.detail).toContain("BROKEN");
-      expect(out.detail).toContain("ENOENT");
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("fails (BROKEN) on timeout", async () => {
-    const { home, cleanup } = makeHomeWithStagedBin();
-    try {
-      const out = await checkDigitalTwinUploader(home, probeReturning({ exitCode: null, stderr: "", timedOut: true }));
-      expect(out.status).toBe("fail");
-      expect(out.detail).toContain("BROKEN");
-      expect(out.detail).toContain("5s");
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("passes but notes a historical uploader.log error when one exists", async () => {
-    const { home, cleanup } = makeHomeWithStagedBin();
-    try {
-      fs.writeFileSync(digitalTwinPaths(home).uploaderLogFile, "Error: Cannot find module 'ulid' [MODULE_NOT_FOUND]\n", "utf-8");
-      const out = await checkDigitalTwinUploader(home, probeReturning({ exitCode: 0, stderr: "", timedOut: false }));
-      expect(out.status).toBe("pass");
-      expect(out.detail).toContain("digital-twin-uploader: OK");
-      expect(out.detail).toMatch(/历史错误.*MODULE_NOT_FOUND/);
-    } finally {
-      cleanup();
-    }
-  });
-});
+// The `checkDigitalTwinUploader` doctor probe (issue #368) was removed
+// alongside the digital-twin upload pipeline; its test suite is gone with it.
 
 describe("checkInstallTableBundles (issue #299)", () => {
   const userScope: ReadonlyArray<"project" | "user"> = ["user"];
