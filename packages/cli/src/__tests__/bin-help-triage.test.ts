@@ -13,11 +13,15 @@ import {
 } from "../help-text.js";
 
 /**
- * CLI surface triage — 67 subcommands cut into 3 tiers by the knife
+ * CLI surface triage — subcommands cut into 3 tiers by the knife
  * "can this command prove a business feature?":
- *   - 8 storefront  (default `teamagent --help`)
+ *   - 5 storefront  (default `teamagent --help`)
  *   - 13 folded     (one-line list in `--help`)
- *   - 46 background (only under `teamagent help --all`)
+ *   - 43 background (only under `teamagent help --all`)
+ *
+ * Sizes shrank from 8/13/46 = 67 after removing the upload pipeline:
+ * storefront lost `presence` / `record` / `video`; background lost
+ * `digital-twin` / `bpp` / `team-init` / `team-transfer-lead`.
  *
  * Presentation-only: every command keeps its `case` in bin.ts and stays
  * callable. These tests lock the tier counts, assert the union of the three
@@ -25,11 +29,11 @@ import {
  * and pin the `--all` flag semantics.
  */
 describe("CLI surface triage — 3-tier command split", () => {
-  it("tier sizes are 8 / 13 / 46, totalling 67", () => {
-    expect(STOREFRONT_COMMANDS).toHaveLength(8);
+  it("tier sizes are 5 / 13 / 43, totalling 61", () => {
+    expect(STOREFRONT_COMMANDS).toHaveLength(5);
     expect(FOLDED_COMMANDS).toHaveLength(13);
-    expect(BACKGROUND_COMMANDS).toHaveLength(46);
-    expect(ALL_TRIAGED_COMMANDS).toHaveLength(67);
+    expect(BACKGROUND_COMMANDS).toHaveLength(43);
+    expect(ALL_TRIAGED_COMMANDS).toHaveLength(61);
   });
 
   it("the three tiers are disjoint (no command in two tiers)", () => {
@@ -41,16 +45,13 @@ describe("CLI surface triage — 3-tier command split", () => {
     expect(dupes).toEqual([]);
   });
 
-  it("storefront tier matches the 8 commands chosen by the 3 business features", () => {
+  it("storefront tier matches the 5 commands surfaced by the single business feature", () => {
     expect([...STOREFRONT_COMMANDS]).toEqual([
       "init",
       "analyze",
       "doctor",
       "dashboard",
-      "presence",
       "daily",
-      "record",
-      "video",
     ]);
   });
 
