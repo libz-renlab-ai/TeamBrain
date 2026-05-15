@@ -89,27 +89,48 @@ teamagent try
 
 ---
 
-## AI guidance — `pnpm teamagent install`
+## AI agent / Windows PowerShell / CI
+
+给 **AI coding agent**(Claude Code、Cursor、Codex CLI 等)、**Windows PowerShell 用户**、**CI 容器**、**离线环境** 的入口。这里不依赖 `bash` 也不依赖 `curl|bash`,纯 npm,跨平台。
+
+按你手头工具二选一:
+
+### 路径 A — 已装 `pnpm`(开发机)
 
 ```bash
 pnpm teamagent install
 ```
 
-会跑 `pnpm` 的开发者和 AI coding agent 用这个单步入口：它会先打印 5 段安装清单，再用一次确认完成 hooks、团队插件、用户级 hook、后台向量模型 warmup，并在结尾跑 health check。
+打印 5 段安装清单 → 一次确认 → 装 hooks / 团队插件 / 用户级 hook → 后台 warmup 向量模型 → 收尾跑 health check。Claude Code、Cursor、Codex CLI 等会跑 `pnpm` 的 AI agent 都走这条。
 
-<details>
-<summary>不能 curl 的环境（离线、Windows PowerShell、CI 容器）— 用 tarball URL 直装</summary>
+### 路径 B — 没装 pnpm,PowerShell / cmd / CI / 离线
 
 ```bash
 npm install -g https://github.com/libz-renlab-ai/TeamBrain/archive/refs/heads/release.tar.gz
+teamagent init
 ```
 
-为什么用 tarball URL 而不是 `npm install -g github:libz-renlab-ai/TeamBrain#release`？
-npm 的 `github:` shorthand 默认走 SSH（`git+ssh://git@github.com/...`），没配 SSH key 的机器（绝大多数 Windows 用户、CI/容器）会直接失败。tarball URL 走 HTTPS，绕开 git clone，更稳定。
+走 HTTPS tarball,**不依赖 SSH key、不依赖 bash、不依赖 git clone**,Windows PowerShell / cmd 直接能跑。装完跑一次 `teamagent init` 完成 hook 注册。
 
-</details>
+> 为什么走 tarball URL 而不是 `npm install -g github:libz-renlab-ai/TeamBrain#release`?
+> npm 的 `github:` shorthand 默认走 SSH(`git+ssh://git@github.com/...`),没配 SSH key 的机器(绝大多数 Windows 用户 / CI / 容器)会直接失败。tarball URL 走 HTTPS,绕开 git clone,跨平台稳定。
 
-之后**不用做任何事**——继续正常开发，TeamAgent 自动学习 + 自动更新。
+### AI agent 决策树(给智能体读)
+
+```
+你手头是什么?
+├─ Linux / macOS / Git Bash (有 bash + curl)
+│   → 上面的 "快速安装" curl|bash 一行;
+│     完事自动 teamagent init。
+├─ Windows PowerShell / cmd (无 bash)
+│   → 路径 B (npm install -g <tarball> + teamagent init)
+├─ 已装 pnpm 的开发机
+│   → 路径 A (pnpm teamagent install)
+└─ CI / 容器 / 离线
+    → 路径 B (HTTPS tarball,无 git/ssh 依赖)
+```
+
+装完**不用做任何事** —— 继续正常开发,TeamAgent 自动学习 + 自动更新。想看实时状态走 [实时 dashboard](#实时-dashboard) 段。
 
 ---
 
