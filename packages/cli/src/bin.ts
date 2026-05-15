@@ -201,29 +201,10 @@ import {
   renderPackList,
   renderPackRemove,
 } from "./commands/pack.js";
-import { executePresence } from "./commands/presence.js";
-import {
-  executeDigitalTwin,
-  parseDigitalTwinArgs,
-  DigitalTwinArgError,
-} from "./commands/digital-twin.js";
-import {
-  executeRecord,
-  parseRecordArgs,
-  RecordArgError,
-} from "./commands/record.js";
-import {
-  executeVideo,
-  parseVideoArgs,
-  VideoArgError,
-  VIDEO_HELP,
-} from "./commands/video.js";
-import { runBpp, BppArgError } from "./commands/bpp.js";
-// BPP Phase 5 — `teamagent team init` / `team transfer-lead`. These two
-// command files shipped in PR #430 but were never wired into this
-// dispatcher; the `case "team":` block below is that wiring.
-import { runTeamInit } from "./commands/team-init.js";
-import { runTeamTransferLead } from "./commands/team-transfer-lead.js";
+// presence / digital-twin / record / video / bpp / team-init /
+// team-transfer-lead imports were removed alongside the deletion of the
+// upload-chain commands they implemented; M5 viral sync imports below
+// stay intact since they do not depend on @teamagent/digital-twin.
 import {
   executeFixtureReplay,
   parseFixtureReplayArgs,
@@ -897,35 +878,6 @@ async function main(): Promise<void> {
       }
       return;
     }
-    case "presence": {
-      if (rest.includes("--help") || rest.includes("-h")) {
-        process.stdout.write(
-          "Usage: teamagent presence\n" +
-          "\n" +
-          "Probes ${TEAMAGENT_REALTIME_URL}/api/cc-status/latest for the\n" +
-          "current teammate's latest snapshot and prints the derived green\n" +
-          "light state (active | idle | offline | error). One-line output.\n" +
-          "\n" +
-          "Env:\n" +
-          "  TEAMAGENT_REALTIME_URL    receiver base URL (required for live state)\n" +
-          "  TEAMAGENT_REALTIME_TOKEN  optional bearer\n" +
-          "\n" +
-          "Issue #308 grill verdict §11: presence = green/yellow/gray/red.\n",
-        );
-        return;
-      }
-      try {
-        const result = await executePresence({});
-        process.stdout.write(result.stdout);
-        if (result.exitCode !== 0) process.exit(result.exitCode);
-      } catch (err) {
-        process.stderr.write(
-          `${err instanceof Error ? err.message : String(err)}\n`,
-        );
-        process.exit(2);
-      }
-      return;
-    }
     case "recording": {
       try {
         const opts = parseRecordingArgs(rest);
@@ -976,96 +928,6 @@ async function main(): Promise<void> {
         const result = executePackRemove(args.names, {});
         process.stdout.write(renderPackRemove(result));
         return;
-      }
-      return;
-    }
-    case "digital-twin": {
-      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
-        process.stdout.write(
-          "Usage:\n" +
-            "  teamagent digital-twin login <token>     Save the bearer token to ~/.teamagent/digital-twin.json\n" +
-            "  teamagent digital-twin logout            Clear uploader.token\n" +
-            "  teamagent digital-twin status            Show config + queue + daemon status\n" +
-            "  teamagent digital-twin pause             Disable uploader (uploader.enabled=false)\n" +
-            "  teamagent digital-twin resume            Enable uploader (uploader.enabled=true)\n" +
-            "  teamagent digital-twin inject-mock       Write a synthetic transcript and tap it (end-to-end smoke test)\n" +
-            "         [--cwd <path>] [--session-id <id>]\n" +
-            "  teamagent digital-twin member-stats      Show this member's upload stats (total / last upload / redaction count)\n" +
-            "         [--server <url>] [--user <id>] [--json]\n" +
-            "\n" +
-            "Manages the TeamBrain Digital Twin sidecar configuration in ~/.teamagent/.\n",
-        );
-        return;
-      }
-      let parsed;
-      try {
-        parsed = parseDigitalTwinArgs(rest);
-      } catch (err) {
-        if (err instanceof DigitalTwinArgError) {
-          process.stderr.write(err.message + "\n");
-          process.exit(2);
-        }
-        throw err;
-      }
-      const result = await executeDigitalTwin(parsed);
-      if (result.exitCode !== 0) process.exit(result.exitCode);
-      return;
-    }
-    case "record": {
-      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
-        process.stdout.write(
-          "Usage:\n" +
-            "  teamagent record start [--id <id>] [--label <l>]   Spawn ffmpeg detached, write pid sidecar to queue/recording_temp/\n" +
-            "  teamagent record stop  [--id <id>]                 SIGTERM ffmpeg, finalize ogg + metadata to queue/pending/\n" +
-            "  teamagent record import <file> [--label <l>]       Transcode to Opus/OGG and drop into queue/pending/\n" +
-            "\n" +
-            "Records local work audio to ~/.teamagent/digital-twin/queue/ via ffmpeg.\n" +
-            "Requires ffmpeg on PATH; install hint printed on failure.\n",
-        );
-        return;
-      }
-      let parsed;
-      try {
-        parsed = parseRecordArgs(rest);
-      } catch (err) {
-        if (err instanceof RecordArgError) {
-          process.stderr.write(err.message + "\n");
-          process.exit(2);
-        }
-        throw err;
-      }
-      const result = await executeRecord(parsed);
-      if (result.exitCode !== 0) process.exit(result.exitCode);
-      return;
-    }
-    case "video": {
-      if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
-        process.stdout.write(VIDEO_HELP);
-        return;
-      }
-      let parsedVideo;
-      try {
-        parsedVideo = parseVideoArgs(rest, process.env.TEAMAGENT_VIDEO_ENDPOINT);
-      } catch (err) {
-        if (err instanceof VideoArgError) {
-          process.stderr.write(err.message + "\n");
-          process.exit(2);
-        }
-        throw err;
-      }
-      const result = await executeVideo(parsedVideo);
-      if (result.exitCode !== 0) process.exit(result.exitCode);
-      return;
-    }
-    case "bpp": {
-      try {
-        await runBpp(rest);
-      } catch (err) {
-        if (err instanceof BppArgError) {
-          process.stderr.write(`[bpp] ${err.message}\n`);
-          process.exit(2);
-        }
-        throw err;
       }
       return;
     }
@@ -1264,131 +1126,6 @@ async function main(): Promise<void> {
       const result = executeTeamImport(parseTeamImportArgs(rest));
       process.stdout.write(result.output);
       if (!result.ok) process.exit(1);
-      return;
-    }
-    case "team": {
-      // BPP team setup — `team init` (join + become lead) / `team
-      // transfer-lead`. `--dir` defaults to the same store dir
-      // bin-prod-server.ts uses so the CLI and BPP server share it.
-      const teamSub = rest[0];
-      const teamRest = rest.slice(1);
-      const resolveTeamDir = (argv: string[]): string => {
-        for (const a of argv) {
-          if (a.startsWith("--dir=")) return a.slice("--dir=".length);
-        }
-        return (
-          process.env.TEAMAGENT_COLLECTOR_DIR ??
-          path.join(os.homedir(), "teamagent-collector")
-        );
-      };
-      const teamWrite = (s: string, channel?: "stdout" | "stderr"): void => {
-        (channel === "stderr" ? process.stderr : process.stdout).write(s);
-      };
-      if (
-        teamSub === undefined ||
-        teamSub === "--help" ||
-        teamSub === "-h" ||
-        teamSub === "help"
-      ) {
-        process.stdout.write(
-          [
-            "teamagent team — BPP 团队设置",
-            "",
-            "用法:",
-            "  teamagent team init --user-id=<id> --display-name=<名字> [--dir=<path>]",
-            "                                   加入团队并成为团队负责人（交互中输入 I AGREE 确认）",
-            "  teamagent team transfer-lead --from=<id> --to=<id> [--dir=<path>]",
-            "                                   把主 lead 角色从 --from 转移给 --to",
-            "",
-            "  --dir=<path>   BPP 数据目录（默认 $TEAMAGENT_COLLECTOR_DIR 或 ~/teamagent-collector）",
-            "",
-          ].join("\n"),
-        );
-        return;
-      }
-      if (teamSub === "init") {
-        if (teamRest.includes("--help") || teamRest.includes("-h")) {
-          process.stdout.write(
-            "Usage: teamagent team init --user-id=<id> --display-name=<名字> [--dir=<path>]\n",
-          );
-          return;
-        }
-        let userId: string | undefined;
-        let displayName: string | undefined;
-        for (const a of teamRest) {
-          if (a.startsWith("--dir=")) {
-            // consumed by resolveTeamDir
-          } else if (a.startsWith("--user-id=")) {
-            userId = a.slice("--user-id=".length);
-          } else if (a.startsWith("--display-name=")) {
-            displayName = a.slice("--display-name=".length);
-          } else {
-            process.stderr.write(`team init: 未知参数 ${a}\n`);
-            process.exit(2);
-          }
-        }
-        if (userId === undefined || displayName === undefined) {
-          process.stderr.write(
-            "team init: 必须提供 --user-id / --display-name\n",
-          );
-          process.exit(2);
-        }
-        const readlineMod = await import("node:readline/promises");
-        const rl = readlineMod.createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        });
-        try {
-          const result = await runTeamInit({
-            readline: () => rl.question(""),
-            write: teamWrite,
-            now: () => new Date().toISOString(),
-            rootDir: resolveTeamDir(teamRest),
-            user_id: userId,
-            display_name: displayName,
-          });
-          if (!result.ok) process.exit(result.exitCode);
-        } finally {
-          rl.close();
-        }
-        return;
-      }
-      if (teamSub === "transfer-lead") {
-        if (teamRest.includes("--help") || teamRest.includes("-h")) {
-          process.stdout.write(
-            "Usage: teamagent team transfer-lead --from=<id> --to=<id> [--dir=<path>]\n",
-          );
-          return;
-        }
-        let fromUserId: string | undefined;
-        const transferArgv: string[] = [];
-        for (const a of teamRest) {
-          if (a.startsWith("--dir=")) {
-            // consumed by resolveTeamDir
-          } else if (a.startsWith("--from=")) {
-            fromUserId = a.slice("--from=".length);
-          } else {
-            // --to=<id> is parsed by team-transfer-lead's own parser
-            transferArgv.push(a);
-          }
-        }
-        if (fromUserId === undefined) {
-          process.stderr.write(
-            "team transfer-lead: 必须提供 --from=<当前主 lead 的 id>\n",
-          );
-          process.exit(2);
-        }
-        const result = runTeamTransferLead({
-          write: teamWrite,
-          rootDir: resolveTeamDir(teamRest),
-          from_user_id: fromUserId,
-          argv: transferArgv,
-        });
-        if (!result.ok) process.exit(result.exitCode);
-        return;
-      }
-      process.stderr.write(`未知 team 子命令: ${teamSub}\n`);
-      process.exit(1);
       return;
     }
     case "sync": {
@@ -1739,26 +1476,10 @@ async function main(): Promise<void> {
           "                                   列出已安装 / 可用的 stack packs（ADR 0002 — agent 决定装哪些）",
           "  teamagent pack add <names>       例 pack add frontend-js,ops-safety；从 seed/packs/<name>.{jsonl,meta.json} 读取并注入用户全局 store",
           "  teamagent pack remove <names>    按 tag pack:<name> 过滤删除全局 store 中对应规则",
-          "  teamagent digital-twin <login|logout|status|pause|resume|inject-mock>",
-          "                                   管理 TeamBrain Digital Twin sidecar 配置（~/.teamagent/digital-twin.json）；inject-mock 走端到端 smoke",
-          "  teamagent record <start|stop|import>",
-          "                                   本地工作录音子命令（ffmpeg → Opus/OGG → queue/pending/）",
-          "  teamagent video upload <file> [--endpoint <url>] [--label <l>] [--user-id <id>] [--json]",
-          "                                   Feature #3 wedge：上传屏幕录像到中心化存储（mov/mp4/webm/mkv），返回 shareable link",
-          "                                   录制本身用系统原生工具（macOS `screencapture -v`/Linux `ffmpeg -f x11grab`/Win `ffmpeg -f gdigrab`）",
-          "                                   详见 docs/features/video-record-upload.md",
           "  teamagent ingest --from-insights <path> | --from-audit | --from-pr <n>",
           "                   | --from-git [--since=30d] | --from-ci [--since=30d] | --from-candidates <path>",
           "                                   多源摄入：Claude /insights / npm audit / PR review / git hotspot / CI failure",
           "                                   半自动源加 --dry-run 只产出候选 md 供人工勾选",
-          "  teamagent bpp serve [--port=<n>] [--host=<host>] [--dir=<path>]",
-          "                                   启动 BPP（团队最佳实践推送）中心服务；子命令见 `teamagent bpp --help`",
-          "  teamagent bpp join --user-id=<id> --display-name=<名字> [--server=<url>]",
-          "                                   BPP 成员客户端：以 member 身份一键接入中心服务",
-          "  teamagent team init --user-id=<id> --display-name=<名字> [--dir=<path>]",
-          "                                   加入 BPP 团队并成为团队负责人；子命令见 `teamagent team --help`",
-          "  teamagent team transfer-lead --from=<id> --to=<id> [--dir=<path>]",
-          "                                   把 BPP 主 lead 角色转移给另一个成员",
           "",
           "环境变量:",
           "  TEAMAGENT_VISIBILITY=silent|smart|verbose    归因渲染模式（默认 verbose）",
