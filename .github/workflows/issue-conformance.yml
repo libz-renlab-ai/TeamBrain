@@ -116,9 +116,9 @@ jobs:
           echo "stale_issues=${STALE}"
           for NUM in $STALE; do
             if [ "${ENFORCEMENT}" = "enforce" ]; then
-              gh issue comment "$NUM" --body "⛔ FIXEDFLOW: 24 小时内未加 \`grill-ready\` label。本 issue 自动关闭。详见 [docs/FIXEDFLOW.md](${DOC_LINK})。"
-              gh issue close "$NUM" --reason "not planned"
+              gh issue comment "$NUM" --repo "$REPO" --body "⛔ FIXEDFLOW: 24 小时内未加 \`grill-ready\` label。本 issue 自动关闭。详见 [docs/FIXEDFLOW.md](${DOC_LINK})。"
+              gh issue close "$NUM" --repo "$REPO" --reason "not planned"
             else
-              gh issue comment "$NUM" --body "⚠️ FIXEDFLOW (warn-only): 24 小时内未加 \`grill-ready\` label。当前为 7 天软提醒期；切到 enforce 后会自动 close。详见 [docs/FIXEDFLOW.md](${DOC_LINK})。"
+              gh issue comment "$NUM" --repo "$REPO" --body "⚠️ FIXEDFLOW (warn-only): 24 小时内未加 \`grill-ready\` label。当前为 7 天软提醒期；切到 enforce 后会自动 close。详见 [docs/FIXEDFLOW.md](${DOC_LINK})。"
             fi
           done
