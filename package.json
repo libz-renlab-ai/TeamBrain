@@ -1,0 +1,35 @@
+{
+  "name": "teamagent",
+  "version": "0.11.1",
+  "description": "自进化 AI 规则引擎 for Claude Code | Self-evolving AI rule engine",
+  "keywords": [
+    "claude-code",
+    "ai",
+    "hooks",
+    "rules",
+    "self-evolving"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "teamagent": "./dist/bin.js"
+  },
+  "files": [
+    "dist/",
+    "postinstall.mjs"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsup",
+    "postinstall": "node postinstall.mjs"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.0",
+    "onnxruntime-node": "1.14.0",
+    "sqlite-vec": "^0.1.9",
+    "ulid": "^2.4.0"
+  }
+}
