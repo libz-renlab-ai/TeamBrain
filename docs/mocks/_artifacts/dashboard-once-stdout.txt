@@ -1,0 +1,7 @@
+
+> teamagent@0.1.0 teamagent /Users/m1/projects/TeamBrain
+> tsx packages/cli/src/bin.ts dashboard --once
+
+Dashboard generated: /Users/m1/projects/TeamBrain/docs/dashboard.html
+(node:20507) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
