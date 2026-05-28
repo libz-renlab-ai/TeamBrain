@@ -271,3 +271,33 @@ hook bundle edits, kanban JS) is blocked until the user manually:
 5. (Optional) Runs `/grill-with-docs` to save grill to ADR
 6. Manually invokes `/fixed-flow-driver <N>` (no watcher, no
    auto-dispatch per `docs/FIXEDFLOW.md`)
+
+### 12. CEO-facing cockpit mock artifact (2026-05-13)
+
+Aspirational dashboard mock published as visual proof of work to
+demonstrate Feature #2 from a CEO perspective, hosted on the PR
+proposer's own GitHub Pages site (`LiuShiyuMath/teambrain-proof`,
+per `docs/VISUAL-PROOF-FORMAT.md § Hosting`):
+
+- URL: <https://liushiyumath.github.io/teambrain-proof/pr-feature-2-ceo-proof/>
+- Contents:
+  - 2×2 dashboard layout — 3 tmux panels (real `claudefast -p` byte
+    captures, dashboard content byte-identical to ④ section linked
+    `.txt` files) + 1 boss kanban snapshot (replicates the inline HTML
+    visual in `packages/digital-twin/src/bin-realtime-demo.ts` lines
+    100–148)
+  - OS-level evidence section — real Chrome screenshot + 8 s
+    `combined.gif` (`screencapture -V 8` → ffmpeg) + macOS Terminal
+    screenshot + raw `tmux capture-pane` bytes as forensic supplement
+  - Honest disclosure inline: macOS Sequoia "Merge All Windows"
+    prevented separate-window screenshot of 3 independent Terminal
+    windows alongside Chrome; degraded path documented in HTML
+- Honesty-tag system: `REAL` (verifiable from PR #401 / `docs/BUSINESS-FEATURES.md` /
+  `realtime-stream.ts`), `TARGET` (`plan v2 §5` thresholds p50 ≤ 1 s
+  / p99 ≤ 3 s), `MOCK` (illustrative演示 内容; tagged inline so no
+  fabricated KPI can be confused with verified numbers)
+
+Per `docs/BUSINESS-FEATURES.md § Feature #2` Honesty clause, this
+artifact does NOT upgrade Feature #2's evidence grain (still hour/day,
+second-level realtime dashboard UI is Vision NOT PRESHIP). It only
+shows what the cockpit would look like once M-F2-B/C/D ship.
